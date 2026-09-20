@@ -13,6 +13,7 @@
   <link rel="icon" type="image/png" sizes="48x48" href="./icons/favicon-48.png" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <title>OdontoView — Visualizador</title>
+  <meta name="odontoview-build" content="orientation-v4" />
   <style>
     :root {
       color-scheme: light;
@@ -846,6 +847,12 @@
               </label>
             </div>
             <div class="tools glass">
+              <button class="icon-btn" id="flipSIBtn" title="Inverter superior/inferior" aria-label="Inverter superior/inferior">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="m8 7 4-4 4 4"/><path d="m8 17 4 4 4-4"/></svg>
+              </button>
+              <button class="icon-btn" id="flipLRBtn" title="Inverter direita/esquerda" aria-label="Inverter direita/esquerda">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><path d="m7 8-4 4 4 4"/><path d="m17 8 4 4-4 4"/></svg>
+              </button>
               <button class="icon-btn" id="zoomOut" title="Diminuir zoom" aria-label="Diminuir zoom">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6"/><path d="M8 11h6M16 16l4 4"/></svg>
               </button>
@@ -910,6 +917,7 @@
             <div class="adjust-note" id="artifactNote" style="margin-top:8px;">Artefatos: desligado</div>
             <div class="adjust-note" id="noiseNote">Ruído: desligado</div>
             <div class="adjust-note" id="measureNote">Régua: desligada</div>
+            <div class="adjust-note" id="orientationNote">Orientação: aguardando DICOM</div>
           </div>
 
 
@@ -1040,6 +1048,9 @@
       const measurePill = $('measurePill');
       const measureText = $('measureText');
       const measureValue = $('measureValue');
+      const flipSIBtn = $('flipSIBtn');
+      const flipLRBtn = $('flipLRBtn');
+      const orientationNote = $('orientationNote');
 
       const aiAssistBtn = $('aiAssistBtn');
       const aiPanel = $('aiPanel');
@@ -1100,6 +1111,16 @@
       let toothManual = false;
       let regionManual = false;
       let syncingRegion = false;
+      let manualFlipSI = false;
+      let manualFlipLR = false;
+      let seriesGeometry = {
+        xDir: null,
+        yDir: null,
+        zDir: null,
+        hasOrientation: false,
+        hasPositionZ: false,
+        patientPosition: ''
+      };
 
       function hideAdjustPanel() {
         adjustPanel.classList.remove('show');
@@ -1122,6 +1143,148 @@
       function hideAiPanel() {
         aiPanel.classList.remove('show');
         aiAssistBtn.classList.remove('active');
+      }
+
+      function vecDot(a, b) {
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+      }
+
+      function vecCross(a, b) {
+        return [
+          a[1] * b[2] - a[2] * b[1],
+          a[2] * b[0] - a[0] * b[2],
+          a[0] * b[1] - a[1] * b[0]
+        ];
+      }
+
+      function vecNormalize(v) {
+        const n = Math.hypot(v[0], v[1], v[2]);
+        if (!Number.isFinite(n) || n < 1e-6) return null;
+        return [v[0] / n, v[1] / n, v[2] / n];
+      }
+
+      function validVec3(v) {
+        return Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every(Number.isFinite);
+      }
+
+      function buildSeriesGeometry(items) {
+        const oriented = (items || []).find(item => Array.isArray(item.orientation) && item.orientation.length === 6 && item.orientation.every(Number.isFinite));
+        let xDir = null;
+        let yDir = null;
+        let zDir = null;
+        let hasOrientation = false;
+
+        if (oriented) {
+          xDir = vecNormalize(oriented.orientation.slice(0, 3));
+          yDir = vecNormalize(oriented.orientation.slice(3, 6));
+          if (xDir && yDir) {
+            zDir = vecNormalize(vecCross(xDir, yDir));
+            hasOrientation = !!zDir;
+          }
+        }
+
+        const hasPositionZ = (items || []).some(item => Number.isFinite(item.zPos));
+        if (!zDir && hasPositionZ) zDir = [0, 0, 1];
+
+        const patientPosition = (items || []).map(item => item.patientPosition).find(Boolean) || '';
+        seriesGeometry = { xDir, yDir, zDir, hasOrientation, hasPositionZ, patientPosition };
+
+        if (zDir) {
+          for (const item of items || []) {
+            item.sliceCoord = validVec3(item.imagePosition) ? vecDot(item.imagePosition, zDir) : null;
+          }
+        } else {
+          for (const item of items || []) item.sliceCoord = null;
+        }
+      }
+
+      function reliableComponent(v, index, threshold = 0.35) {
+        if (!v || !Number.isFinite(v[index]) || Math.abs(v[index]) < threshold) return null;
+        return v[index];
+      }
+
+      function getPlaneDisplayTransform(plane) {
+        let flipX = false;
+        let flipY = false;
+
+        if (plane === 'axial') {
+          const lr = reliableComponent(seriesGeometry.xDir, 0);
+          const ap = reliableComponent(seriesGeometry.yDir, 1);
+          if (lr !== null) flipX = lr < 0; // tela: direita do paciente à esquerda, esquerda à direita
+          if (ap !== null) flipY = ap < 0; // tela: anterior em cima, posterior embaixo
+          if (manualFlipLR) flipX = !flipX;
+        } else if (plane === 'coronal') {
+          const lr = reliableComponent(seriesGeometry.xDir, 0);
+          const si = reliableComponent(seriesGeometry.zDir, 2, 0.2);
+          if (lr !== null) flipX = lr < 0;
+          // pixel vertical cresce para baixo; +Z DICOM é superior, portanto deve subir na tela.
+          if (si !== null) flipY = si > 0;
+          if (manualFlipLR) flipX = !flipX;
+          if (manualFlipSI) flipY = !flipY;
+        } else {
+          const ap = reliableComponent(seriesGeometry.yDir, 1);
+          const si = reliableComponent(seriesGeometry.zDir, 2, 0.2);
+          if (ap !== null) flipX = ap < 0; // sagital: anterior à esquerda, posterior à direita
+          if (si !== null) flipY = si > 0;
+          if (manualFlipSI) flipY = !flipY;
+        }
+
+        return { flipX, flipY };
+      }
+
+      function orientationStatusText() {
+        const siKnown = reliableComponent(seriesGeometry.zDir, 2, 0.2) !== null;
+        const lrKnown = reliableComponent(seriesGeometry.xDir, 0) !== null;
+        const source = seriesGeometry.hasOrientation ? 'DICOM' : (seriesGeometry.hasPositionZ ? 'posição DICOM' : 'manual');
+        const parts = [`Orientação: ${source}`];
+        if (siKnown) parts.push('S↑ I↓');
+        else parts.push('S/I a confirmar');
+        if (lrKnown) parts.push('R← L→');
+        else parts.push('D/E a confirmar');
+        if (manualFlipSI) parts.push('S/I invertido manualmente');
+        if (manualFlipLR) parts.push('D/E invertido manualmente');
+        return parts.join(' • ');
+      }
+
+      function syncOrientationUI() {
+        flipSIBtn.classList.toggle('active', manualFlipSI);
+        flipLRBtn.classList.toggle('active', manualFlipLR);
+        if (orientationNote) orientationNote.textContent = orientationStatusText();
+      }
+
+      function planeDisplayCoords(point, plane, pw, ph) {
+        const raw = planeCoords(point, plane);
+        if (!raw) return null;
+        const t = getPlaneDisplayTransform(plane);
+        return {
+          a: t.flipX ? (pw - 1 - raw.a) : raw.a,
+          b: t.flipY ? (ph - 1 - raw.b) : raw.b
+        };
+      }
+
+      function drawOrientationMarkers(ctx, plane, ox, oy, dw, dh) {
+        ctx.save();
+        ctx.font = '700 11px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,.72)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        if (plane === 'coronal') {
+          ctx.fillText('S', ox + dw / 2, oy + 11);
+          ctx.fillText('I', ox + dw / 2, oy + dh - 11);
+          ctx.fillText('R', ox + 11, oy + dh / 2);
+          ctx.fillText('L', ox + dw - 11, oy + dh / 2);
+        } else if (plane === 'sagittal') {
+          ctx.fillText('S', ox + dw / 2, oy + 11);
+          ctx.fillText('I', ox + dw / 2, oy + dh - 11);
+          ctx.fillText('A', ox + 11, oy + dh / 2);
+          ctx.fillText('P', ox + dw - 11, oy + dh / 2);
+        } else {
+          ctx.fillText('A', ox + dw / 2, oy + 11);
+          ctx.fillText('P', ox + dw / 2, oy + dh - 11);
+          ctx.fillText('R', ox + 11, oy + dh / 2);
+          ctx.fillText('L', ox + dw - 11, oy + dh / 2);
+        }
+        ctx.restore();
       }
 
       function extractFdiTooth(text) {
@@ -1594,6 +1757,7 @@
           const seriesDescription = dataSet.string('x0008103e') || '';
           const bodyPartExamined = dataSet.string('x00180015') || '';
           const protocolName = dataSet.string('x00181030') || '';
+          const patientPosition = dataSet.string('x00185100') || '';
           return {
             instanceNumber: Number.isFinite(instanceNumber) ? instanceNumber : Number.MAX_SAFE_INTEGER,
             sliceLocation: Number.isFinite(sliceLocation) ? sliceLocation : null,
@@ -1603,10 +1767,11 @@
             studyDescription,
             seriesDescription,
             bodyPartExamined,
-            protocolName
+            protocolName,
+            patientPosition
           };
         } catch (_) {
-          return { instanceNumber: Number.MAX_SAFE_INTEGER, sliceLocation: null, zPos: null, imagePosition: null, orientation: null, studyDescription: '', seriesDescription: '', bodyPartExamined: '', protocolName: '' };
+          return { instanceNumber: Number.MAX_SAFE_INTEGER, sliceLocation: null, zPos: null, imagePosition: null, orientation: null, studyDescription: '', seriesDescription: '', bodyPartExamined: '', protocolName: '', patientPosition: '', sliceCoord: null };
         }
       }
 
@@ -1624,7 +1789,10 @@
           ...(await readDicomMeta(file))
         })));
 
+        buildSeriesGeometry(prepared);
+
         prepared.sort((a, b) => {
+          if (a.sliceCoord != null && b.sliceCoord != null && a.sliceCoord !== b.sliceCoord) return a.sliceCoord - b.sliceCoord;
           if (a.zPos != null && b.zPos != null && a.zPos !== b.zPos) return a.zPos - b.zPos;
           if (a.sliceLocation != null && b.sliceLocation != null && a.sliceLocation !== b.sliceLocation) {
             return a.sliceLocation - b.sliceLocation;
@@ -1661,6 +1829,9 @@
         if (reportSide) reportSide.value = 'auto';
         reportTooth.value = '';
         toothManual = false;
+        manualFlipSI = false;
+        manualFlipLR = false;
+        syncOrientationUI();
 
         await buildVolume();
         showMpr();
@@ -1685,7 +1856,8 @@
         spacingY = Number(first.rowPixelSpacing) || 1;
         const zPositions = [];
         for (const item of preparedSeries || []) {
-          if (item && Number.isFinite(item.zPos)) zPositions.push(item.zPos);
+          if (item && Number.isFinite(item.sliceCoord)) zPositions.push(item.sliceCoord);
+          else if (item && Number.isFinite(item.zPos)) zPositions.push(item.zPos);
         }
         let derivedZ = null;
         for (let i = 1; i < zPositions.length; i++) {
@@ -1850,33 +2022,21 @@
         const dh = ph * scale;
         const ox = (w - dw) / 2;
         const oy = (h - dh) / 2;
+        const transform = getPlaneDisplayTransform(plane);
 
         const img = ctx.createImageData(pw, ph);
         const data = img.data;
         let p = 0;
-        if (plane === 'axial') {
-          const z = cursor.z;
-          for (let y = 0; y < volH; y++) {
-            for (let x = 0; x < volW; x++) {
-              const g = applyWL(sample(src, x, y, z), wc, ww);
-              data[p++] = g; data[p++] = g; data[p++] = g; data[p++] = 255;
-            }
-          }
-        } else if (plane === 'coronal') {
-          const y = cursor.y;
-          for (let z = 0; z < volD; z++) {
-            for (let x = 0; x < volW; x++) {
-              const g = applyWL(sample(src, x, y, z), wc, ww);
-              data[p++] = g; data[p++] = g; data[p++] = g; data[p++] = 255;
-            }
-          }
-        } else {
-          const x = cursor.x;
-          for (let z = 0; z < volD; z++) {
-            for (let y = 0; y < volH; y++) {
-              const g = applyWL(sample(src, x, y, z), wc, ww);
-              data[p++] = g; data[p++] = g; data[p++] = g; data[p++] = 255;
-            }
+        for (let j = 0; j < ph; j++) {
+          const b = transform.flipY ? (ph - 1 - j) : j;
+          for (let i = 0; i < pw; i++) {
+            const a = transform.flipX ? (pw - 1 - i) : i;
+            let value = 0;
+            if (plane === 'axial') value = sample(src, a, b, cursor.z);
+            else if (plane === 'coronal') value = sample(src, a, cursor.y, b);
+            else value = sample(src, cursor.x, a, b);
+            const g = applyWL(value, wc, ww);
+            data[p++] = g; data[p++] = g; data[p++] = g; data[p++] = 255;
           }
         }
 
@@ -1890,21 +2050,13 @@
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(tmp, ox, oy, dw, dh);
 
-        // crosshair
+        // crosshair in display coordinates after DICOM orientation transform
+        const cursorDisplay = planeDisplayCoords(cursor, plane, pw, ph);
         ctx.save();
         ctx.strokeStyle = 'rgba(80, 200, 255, .85)';
         ctx.lineWidth = 1;
-        let hx, hy, vx, vy;
-        if (plane === 'axial') {
-          hx = ox + (cursor.x + 0.5) * scale;
-          hy = oy + (cursor.y + 0.5) * scale;
-        } else if (plane === 'coronal') {
-          hx = ox + (cursor.x + 0.5) * scale;
-          hy = oy + (cursor.z + 0.5) * scale;
-        } else {
-          hx = ox + (cursor.y + 0.5) * scale;
-          hy = oy + (cursor.z + 0.5) * scale;
-        }
+        const hx = ox + (cursorDisplay.a + 0.5) * scale;
+        const hy = oy + (cursorDisplay.b + 0.5) * scale;
         ctx.beginPath();
         ctx.moveTo(hx, oy);
         ctx.lineTo(hx, oy + dh);
@@ -1913,9 +2065,8 @@
         ctx.stroke();
         ctx.restore();
 
-
         if (measurement && measurement.plane === plane && measurement.start) {
-          const p1 = planeCoords(measurement.start, plane);
+          const p1 = planeDisplayCoords(measurement.start, plane, pw, ph);
           const x1 = ox + (p1.a + 0.5) * scale;
           const y1 = oy + (p1.b + 0.5) * scale;
           ctx.save();
@@ -1926,7 +2077,7 @@
           ctx.arc(x1, y1, 4, 0, Math.PI * 2);
           ctx.fill();
           if (measurement.end) {
-            const p2 = planeCoords(measurement.end, plane);
+            const p2 = planeDisplayCoords(measurement.end, plane, pw, ph);
             const x2 = ox + (p2.a + 0.5) * scale;
             const y2 = oy + (p2.b + 0.5) * scale;
             ctx.beginPath();
@@ -1952,7 +2103,8 @@
           ctx.restore();
         }
 
-        canvas._map = { ox, oy, scale, pw, ph, plane };
+        drawOrientationMarkers(ctx, plane, ox, oy, dw, dh);
+        canvas._map = { ox, oy, scale, pw, ph, plane, flipX: transform.flipX, flipY: transform.flipY };
 
         if (plane === 'axial') metas.axial.textContent = `Z ${cursor.z + 1}/${volD}`;
         if (plane === 'coronal') metas.coronal.textContent = `Y ${cursor.y + 1}/${volH}`;
@@ -1966,6 +2118,7 @@
         drawPlane('sagittal');
         syncSliceSlider();
         updateAiSummary();
+        syncOrientationUI();
       }
 
       function queueRender() {
@@ -2012,9 +2165,11 @@
         const dpr = canvas.width / rect.width;
         const cx = (ev.clientX - rect.left) * dpr;
         const cy = (ev.clientY - rect.top) * dpr;
-        const i = Math.floor((cx - map.ox) / map.scale);
-        const j = Math.floor((cy - map.oy) / map.scale);
-        if (i < 0 || j < 0 || i >= map.pw || j >= map.ph) return null;
+        const di = Math.floor((cx - map.ox) / map.scale);
+        const dj = Math.floor((cy - map.oy) / map.scale);
+        if (di < 0 || dj < 0 || di >= map.pw || dj >= map.ph) return null;
+        const i = map.flipX ? (map.pw - 1 - di) : di;
+        const j = map.flipY ? (map.ph - 1 - dj) : dj;
         return { i, j, plane: map.plane };
       }
 
@@ -2162,6 +2317,30 @@
       });
 
 
+      flipSIBtn.addEventListener('click', () => {
+        if (mode !== 'dicom' || !volume) {
+          showToast('Abra um volume DICOM para inverter superior/inferior.');
+          return;
+        }
+        manualFlipSI = !manualFlipSI;
+        syncOrientationUI();
+        clearMeasurement();
+        queueRender();
+        showToast(manualFlipSI ? 'Superior/inferior invertido manualmente.' : 'Superior/inferior voltou à orientação DICOM.');
+      });
+
+      flipLRBtn.addEventListener('click', () => {
+        if (mode !== 'dicom' || !volume) {
+          showToast('Abra um volume DICOM para inverter direita/esquerda.');
+          return;
+        }
+        manualFlipLR = !manualFlipLR;
+        syncOrientationUI();
+        clearMeasurement();
+        queueRender();
+        showToast(manualFlipLR ? 'Direita/esquerda invertido manualmente.' : 'Direita/esquerda voltou à orientação DICOM.');
+      });
+
       reportTooth.addEventListener('input', () => {
         toothManual = reportTooth.value.trim().length > 0;
         const clean = reportTooth.value.replace(/\D/g, '').slice(0, 2);
@@ -2180,6 +2359,8 @@
         if (viewerArcade) viewerArcade.value = reportArcade.value;
         if (!regionManual) refreshRegionAuto();
         updateAiSummary();
+        syncOrientationUI();
+        queueRender();
         aiOutputStatus.textContent = 'Arcada atualizada';
       });
 
@@ -2188,11 +2369,13 @@
         toothManual = false;
         if (!regionManual) refreshRegionAuto();
         updateAiSummary();
+        syncOrientationUI();
+        queueRender();
         aiOutputStatus.textContent = 'Arcada atualizada';
         const label = viewerArcade.value === 'superior' ? 'Maxila'
           : viewerArcade.value === 'inferior' ? 'Mandíbula'
           : viewerArcade.value === 'ambas' ? 'Ambas as arcadas' : 'Arcada a confirmar';
-        showToast(`${label} selecionada.`);
+        showToast(`${label} selecionada • orientação anatômica aplicada.`);
       });
 
       reportSide.addEventListener('change', () => {
