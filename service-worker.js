@@ -1,5 +1,5 @@
-const SHELL_CACHE = 'odontoview-shell-v1';
-const RUNTIME_CACHE = 'odontoview-runtime-v1';
+const SHELL_CACHE = 'odontoview-shell-v3';
+const RUNTIME_CACHE = 'odontoview-runtime-v3';
 
 const APP_SHELL = [
   './',

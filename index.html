@@ -260,6 +260,44 @@
 
     .topbar > * { pointer-events: auto; }
 
+    .viewer-context {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      pointer-events: auto;
+    }
+
+    .arcade-chip {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 9px 7px 11px;
+      font-size: 11px;
+      color: rgba(255,255,255,.72);
+      white-space: nowrap;
+    }
+
+    .arcade-chip select {
+      appearance: none;
+      -webkit-appearance: none;
+      border: 0;
+      outline: 0;
+      background: rgba(255,255,255,.10);
+      color: white;
+      border-radius: 9px;
+      padding: 7px 28px 7px 9px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      background-image: linear-gradient(45deg, transparent 50%, rgba(255,255,255,.85) 50%), linear-gradient(135deg, rgba(255,255,255,.85) 50%, transparent 50%);
+      background-position: calc(100% - 12px) 50%, calc(100% - 8px) 50%;
+      background-size: 4px 4px, 4px 4px;
+      background-repeat: no-repeat;
+    }
+
+    .arcade-chip select option { color: #111827; background: white; }
+
     .glass {
       background: rgba(20, 23, 29, .72);
       border: 1px solid rgba(255,255,255,.10);
@@ -685,6 +723,10 @@
       .drop-zone { padding: 26px 18px; }
       .file-chip { max-width: 55vw; }
       .topbar { top: 10px; left: 10px; right: 10px; }
+      .viewer-context { gap: 6px; max-width: 64vw; }
+      .arcade-chip { padding: 5px 6px; }
+      .arcade-chip > span { display: none; }
+      .arcade-chip select { max-width: 132px; padding: 6px 25px 6px 8px; }
       .adjust-panel { top: 62px; right: 10px; width: min(300px, calc(100vw - 20px)); }
       .ai-panel { top: 62px; right: 10px; bottom: 10px; width: min(360px, calc(100vw - 20px)); }
       .status { bottom: 12px; }
@@ -788,9 +830,20 @@
           </div>
 
           <div class="topbar">
-            <div class="file-chip glass">
-              <span>◉</span>
-              <strong id="fileName">Exame local</strong>
+            <div class="viewer-context">
+              <div class="file-chip glass">
+                <span>◉</span>
+                <strong id="fileName">Exame local</strong>
+              </div>
+              <label class="arcade-chip glass" for="viewerArcade">
+                <span>Arcada</span>
+                <select id="viewerArcade" aria-label="Selecionar arcada">
+                  <option value="auto">A confirmar</option>
+                  <option value="superior">Maxila</option>
+                  <option value="inferior">Mandíbula</option>
+                  <option value="ambas">Ambas</option>
+                </select>
+              </label>
             </div>
             <div class="tools glass">
               <button class="icon-btn" id="zoomOut" title="Diminuir zoom" aria-label="Diminuir zoom">
@@ -870,6 +923,8 @@
               <div class="ai-stat"><span>Exame</span><strong id="aiStatExam">Volume não carregado</strong></div>
               <div class="ai-stat"><span>Cortes</span><strong id="aiStatSlices">Axial • Coronal • Sagital</strong></div>
               <div class="ai-stat"><span>Região foco</span><strong id="aiStatCursor">Centro do volume</strong></div>
+              <div class="ai-stat"><span>Arcada</span><strong id="aiStatArcade">Aguardando análise</strong></div>
+              <div class="ai-stat"><span>Lado</span><strong id="aiStatSide">Aguardando análise</strong></div>
               <div class="ai-stat"><span>Dente sugerido</span><strong id="aiStatTooth">Aguardando análise</strong></div>
               <div class="ai-stat"><span>Espaçamento</span><strong id="aiStatSpacing">Aguardando DICOM</strong></div>
             </div>
@@ -881,6 +936,24 @@
                   <option value="panoramica">Panorâmica / exame geral</option>
                   <option value="siso">Siso incluso / cirurgia</option>
                   <option value="implante">Planejamento de implante</option>
+                </select>
+              </div>
+              <div class="ai-field">
+                <label for="reportArcade">Arcada</label>
+                <select id="reportArcade">
+                  <option value="auto">A confirmar / detectar</option>
+                  <option value="superior">Maxila / superior</option>
+                  <option value="inferior">Mandíbula / inferior</option>
+                  <option value="ambas">Ambas</option>
+                </select>
+              </div>
+              <div class="ai-field">
+                <label for="reportSide">Lado</label>
+                <select id="reportSide">
+                  <option value="auto">Automático</option>
+                  <option value="esquerda">Esquerdo</option>
+                  <option value="direita">Direito</option>
+                  <option value="central">Linha média / central</option>
                 </select>
               </div>
               <div class="ai-field">
@@ -980,8 +1053,13 @@
       const aiStatExam = $('aiStatExam');
       const aiStatSlices = $('aiStatSlices');
       const aiStatCursor = $('aiStatCursor');
+      const aiStatArcade = $('aiStatArcade');
+      const aiStatSide = $('aiStatSide');
       const aiStatTooth = $('aiStatTooth');
       const aiStatSpacing = $('aiStatSpacing');
+      const reportArcade = $('reportArcade');
+      const viewerArcade = $('viewerArcade');
+      const reportSide = $('reportSide');
       const reportTooth = $('reportTooth');
 
       const canvases = {
@@ -1020,6 +1098,8 @@
       let renderQueued = false;
       let preparedSeries = [];
       let toothManual = false;
+      let regionManual = false;
+      let syncingRegion = false;
 
       function hideAdjustPanel() {
         adjustPanel.classList.remove('show');
@@ -1049,41 +1129,122 @@
         return match ? match[0] : '';
       }
 
-      function inferSisoTooth() {
-        if (!volume || !volW || !volD) return '';
-        const regionText = String(reportRegion.value || '').toLowerCase();
+      function normalizeArcadeLabel(value) {
+        if (value === 'superior') return 'Maxila • superior';
+        if (value === 'inferior') return 'Mandíbula • inferior';
+        if (value === 'ambas') return 'Ambas as arcadas';
+        return 'A confirmar';
+      }
 
-        let left = null;
-        let upper = null;
+      function normalizeSideLabel(value) {
+        if (value === 'esquerda') return 'Esquerdo';
+        if (value === 'direita') return 'Direito';
+        if (value === 'central') return 'Linha média';
+        return 'A confirmar';
+      }
 
-        if (/esquerd|lado e|hemiarco e/.test(regionText)) left = true;
-        if (/direit|lado d|hemiarco d/.test(regionText)) left = false;
-        if (/maxila|superior/.test(regionText)) upper = true;
-        if (/mandib|inferior/.test(regionText)) upper = false;
+      function normalizeSearchText(text) {
+        return String(text || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase();
+      }
 
-        // DICOM ImageOrientationPatient: o primeiro vetor indica a direção
-        // de aumento das colunas. Em coordenadas do paciente, +X aponta para a esquerda.
-        if (left === null) {
+      function arcadeSideFromFdi(tooth) {
+        const t = extractFdiTooth(tooth);
+        if (!t) return { arcade: null, side: null };
+        const quadrant = Number(t[0]);
+        if (quadrant === 1) return { arcade: 'superior', side: 'direita' };
+        if (quadrant === 2) return { arcade: 'superior', side: 'esquerda' };
+        if (quadrant === 3) return { arcade: 'inferior', side: 'esquerda' };
+        if (quadrant === 4) return { arcade: 'inferior', side: 'direita' };
+        return { arcade: null, side: null };
+      }
+
+      function inferArcadeFromDicomMetadata() {
+        if (!preparedSeries || !preparedSeries.length) return null;
+        const item = preparedSeries[0] || {};
+        const raw = [item.studyDescription, item.seriesDescription, item.bodyPartExamined, item.protocolName]
+          .filter(Boolean).join(' ');
+        const text = normalizeSearchText(raw);
+        if (!text) return null;
+        const hasUpper = /maxila|maxilla|upper jaw|upper arch|arcada superior/.test(text);
+        const hasLower = /mandib|mandible|lower jaw|lower arch|arcada inferior/.test(text);
+        if (hasUpper && hasLower) return 'ambas';
+        if (hasUpper) return 'superior';
+        if (hasLower) return 'inferior';
+        return null;
+      }
+
+      function inferArcadeAndSide() {
+        const regionText = normalizeSearchText(reportRegion.value || '');
+        let arcade = null;
+        let side = null;
+
+        if (/ambas|arcadas/.test(regionText)) arcade = 'ambas';
+        if (/maxila|maxilla|superior/.test(regionText)) arcade = 'superior';
+        if (/mandib|mandible|inferior/.test(regionText)) arcade = 'inferior';
+        if (/esquerd|lado e|hemiarco e/.test(regionText)) side = 'esquerda';
+        if (/direit|lado d|hemiarco d/.test(regionText)) side = 'direita';
+        if (/linha media|central|mediana/.test(regionText)) side = 'central';
+
+        const fdiInfo = arcadeSideFromFdi(reportTooth.value || reportRegion.value);
+        if (!arcade && fdiInfo.arcade) arcade = fdiInfo.arcade;
+        if (!side && fdiInfo.side) side = fdiInfo.side;
+
+        if (reportArcade && reportArcade.value !== 'auto') arcade = reportArcade.value;
+        if (reportSide && reportSide.value !== 'auto') side = reportSide.value;
+
+        // Só usa metadados explícitos para distinguir maxila/mandíbula.
+        // A posição Z relativa dentro do volume não é suficiente para decidir a arcada.
+        if (!arcade) arcade = inferArcadeFromDicomMetadata();
+
+        if (volume && !side) {
           const orientation = preparedSeries?.[0]?.orientation;
           const rowCosX = orientation && Number.isFinite(orientation[0]) ? orientation[0] : null;
           const deltaX = cursor.x - ((volW - 1) / 2);
           if (rowCosX !== null && Math.abs(rowCosX) > 0.2) {
-            left = (deltaX * rowCosX) >= 0;
-          } else {
-            left = cursor.x >= volW / 2;
+            side = (deltaX * rowCosX) >= 0 ? 'esquerda' : 'direita';
           }
         }
 
-        if (upper === null) {
-          // A série é ordenada por posição Z quando disponível; metade superior do
-          // volume é usada apenas como estimativa visual para o modo demonstrativo.
-          upper = cursor.z >= volD / 2;
-        }
+        return { arcade: arcade || 'a_confirmar', side: side || 'a_confirmar' };
+      }
 
-        if (upper && !left) return '18';
+      function inferSisoTooth() {
+        if (!volume || !volW || !volD) return '';
+        const info = inferArcadeAndSide();
+        const upper = info.arcade === 'superior';
+        const lower = info.arcade === 'inferior';
+        const left = info.side === 'esquerda';
+        const right = info.side === 'direita';
+        if (info.arcade === 'ambas' || info.side === 'central' || (!left && !right) || (!upper && !lower)) return '';
+        if (upper && right) return '18';
         if (upper && left) return '28';
-        if (!upper && left) return '38';
-        return '48';
+        if (lower && left) return '38';
+        if (lower && right) return '48';
+        return '';
+      }
+
+      function composeAutoRegionText() {
+        const info = inferArcadeAndSide();
+        const parts = [];
+        if (info.arcade === 'superior') parts.push('Maxila');
+        else if (info.arcade === 'inferior') parts.push('Mandíbula');
+        else if (info.arcade === 'ambas') parts.push('Arcadas superior e inferior');
+        if (info.side === 'esquerda') parts.push('lado esquerdo');
+        else if (info.side === 'direita') parts.push('lado direito');
+        else if (info.side === 'central') parts.push('linha média');
+        if (!parts.length) return 'Região selecionada pelo profissional';
+        return parts.join(' • ');
+      }
+
+      function refreshRegionAuto() {
+        if (!regionManual || reportRegion.value === '' || reportRegion.value === 'Região selecionada pelo profissional') {
+          syncingRegion = true;
+          reportRegion.value = composeAutoRegionText();
+          syncingRegion = false;
+        }
       }
 
       function getSuggestedTooth() {
@@ -1107,6 +1268,11 @@
         aiStatSlices.textContent = volume ? `A ${volD} • C ${volH} • S ${volW}` : 'Axial • Coronal • Sagital';
         aiStatCursor.textContent = volume ? `X ${cursor.x + 1} • Y ${cursor.y + 1} • Z ${cursor.z + 1}` : 'Centro do volume';
         aiStatSpacing.textContent = volume ? `${spacingX.toFixed(2)} × ${spacingY.toFixed(2)} × ${spacingZ.toFixed(2)} mm` : 'Aguardando DICOM';
+        const info = inferArcadeAndSide();
+        if (viewerArcade && reportArcade) viewerArcade.value = reportArcade.value;
+        aiStatArcade.textContent = normalizeArcadeLabel(info.arcade);
+        aiStatSide.textContent = normalizeSideLabel(info.side);
+        refreshRegionAuto();
         syncSuggestedTooth();
       }
 
@@ -1119,7 +1285,9 @@
           `Exame: ${examName}`,
           `Tipo: ${reportType.options[reportType.selectedIndex].text}`,
           `Região de interesse: ${region}`,
-          `Dente sugerido (FDI): ${extractFdiTooth(reportTooth.value) || getSuggestedTooth() || 'a confirmar'}`, 
+          `Arcada sugerida: ${normalizeArcadeLabel(inferArcadeAndSide().arcade)}`,
+          `Lado sugerido: ${normalizeSideLabel(inferArcadeAndSide().side)}`,
+          `Dente sugerido (FDI): ${extractFdiTooth(reportTooth.value) || getSuggestedTooth() || 'a confirmar'}`,
           `Gerado em: ${today}`,
           'Status: rascunho para revisão profissional',
           ''
@@ -1142,8 +1310,11 @@
         let body = '';
         if (reportType.value === 'siso') {
           const tooth = extractFdiTooth(reportTooth.value) || getSuggestedTooth() || 'a confirmar';
+          const info = inferArcadeAndSide();
           body = [
             'Achados observados:',
+            `- Arcada sugerida: ${normalizeArcadeLabel(info.arcade)}.`,
+            `- Lado sugerido: ${normalizeSideLabel(info.side)}.`,
             `- Dente sugerido pela análise de posição: ${tooth} (FDI), sujeito à confirmação profissional.`,
             `- Exame tomográfico analisado em cortes axial, coronal e sagital, com foco em ${region}.`,
             '- A interface localiza a região de interesse e permite revisão multiplanar para avaliação de posição dentária, relação com estruturas adjacentes e planejamento cirúrgico.',
@@ -1160,8 +1331,11 @@
             '- considerar acesso cirúrgico e necessidade de odontosecção.'
           ].join(String.fromCharCode(10));
         } else if (reportType.value === 'implante') {
+          const info = inferArcadeAndSide();
           body = [
             'Achados observados:',
+            `- Arcada sugerida: ${normalizeArcadeLabel(info.arcade)}.`,
+            `- Lado sugerido: ${normalizeSideLabel(info.side)}.`,
             `- Exame tomográfico avaliado nos três planos com foco em ${region}.`,
             '- A navegação multiplanar permite revisar altura óssea, espessura vestíbulo-lingual/palatina e relação com estruturas anatômicas relevantes.',
             '- O caso deve ser conferido quanto à proximidade com canal mandibular, seio maxilar e eixo protético desejado.',
@@ -1177,8 +1351,11 @@
             '- integrar planejamento protético-cirúrgico.'
           ].join(String.fromCharCode(10));
         } else {
+          const info = inferArcadeAndSide();
           body = [
             'Achados observados:',
+            `- Arcada sugerida: ${normalizeArcadeLabel(info.arcade)}.`,
+            `- Lado sugerido: ${normalizeSideLabel(info.side)}.`,
             `- Exame odontológico revisado em cortes axial, coronal e sagital, com foco em ${region}.`,
             '- O visualizador permite inspeção multiplanar da anatomia dentária e óssea, navegação por fatias e medições diretas com régua.',
             '- Devem ser revisadas presença/ausência dentária, áreas periapicais suspeitas, perdas ósseas aparentes, relações anatômicas relevantes e eventuais alterações estruturais visíveis.',
@@ -1413,15 +1590,23 @@
           const sliceLocation = Number.parseFloat(dataSet.string('x00201041') || '');
           const imagePosition = (dataSet.string('x00200032') || '').split('\\').map(Number);
           const orientation = (dataSet.string('x00200037') || '').split('\\').map(Number);
+          const studyDescription = dataSet.string('x00081030') || '';
+          const seriesDescription = dataSet.string('x0008103e') || '';
+          const bodyPartExamined = dataSet.string('x00180015') || '';
+          const protocolName = dataSet.string('x00181030') || '';
           return {
             instanceNumber: Number.isFinite(instanceNumber) ? instanceNumber : Number.MAX_SAFE_INTEGER,
             sliceLocation: Number.isFinite(sliceLocation) ? sliceLocation : null,
             zPos: Number.isFinite(imagePosition[2]) ? imagePosition[2] : null,
             imagePosition,
-            orientation: orientation.length === 6 && orientation.every(Number.isFinite) ? orientation : null
+            orientation: orientation.length === 6 && orientation.every(Number.isFinite) ? orientation : null,
+            studyDescription,
+            seriesDescription,
+            bodyPartExamined,
+            protocolName
           };
         } catch (_) {
-          return { instanceNumber: Number.MAX_SAFE_INTEGER, sliceLocation: null, zPos: null, imagePosition: null, orientation: null };
+          return { instanceNumber: Number.MAX_SAFE_INTEGER, sliceLocation: null, zPos: null, imagePosition: null, orientation: null, studyDescription: '', seriesDescription: '', bodyPartExamined: '', protocolName: '' };
         }
       }
 
@@ -1467,6 +1652,15 @@
         fileName.textContent = files.length === 1 ? files[0].name : `Volume DICOM • ${files.length} fatias`;
         resetAdjustmentsUI();
         hideAdjustPanel();
+        regionManual = false;
+        syncingRegion = true;
+        reportRegion.value = 'Região selecionada pelo profissional';
+        syncingRegion = false;
+        if (reportArcade) reportArcade.value = 'auto';
+        if (viewerArcade) viewerArcade.value = 'auto';
+        if (reportSide) reportSide.value = 'auto';
+        reportTooth.value = '';
+        toothManual = false;
 
         await buildVolume();
         showMpr();
@@ -1976,13 +2170,42 @@
       });
 
       reportRegion.addEventListener('input', () => {
+        if (!syncingRegion) regionManual = reportRegion.value.trim().length > 0;
         if (extractFdiTooth(reportRegion.value)) toothManual = false;
         updateAiSummary();
+      });
+
+      reportArcade.addEventListener('change', () => {
+        toothManual = false;
+        if (viewerArcade) viewerArcade.value = reportArcade.value;
+        if (!regionManual) refreshRegionAuto();
+        updateAiSummary();
+        aiOutputStatus.textContent = 'Arcada atualizada';
+      });
+
+      viewerArcade.addEventListener('change', () => {
+        reportArcade.value = viewerArcade.value;
+        toothManual = false;
+        if (!regionManual) refreshRegionAuto();
+        updateAiSummary();
+        aiOutputStatus.textContent = 'Arcada atualizada';
+        const label = viewerArcade.value === 'superior' ? 'Maxila'
+          : viewerArcade.value === 'inferior' ? 'Mandíbula'
+          : viewerArcade.value === 'ambas' ? 'Ambas as arcadas' : 'Arcada a confirmar';
+        showToast(`${label} selecionada.`);
+      });
+
+      reportSide.addEventListener('change', () => {
+        toothManual = false;
+        if (!regionManual) refreshRegionAuto();
+        updateAiSummary();
+        aiOutputStatus.textContent = 'Lado atualizado';
       });
 
       reportType.addEventListener('change', () => {
         toothManual = false;
         reportTooth.value = '';
+        if (!regionManual) refreshRegionAuto();
         updateAiSummary();
       });
 
