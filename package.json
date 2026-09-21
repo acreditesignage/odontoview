@@ -1,0 +1,14 @@
+{
+  "name": "odontoview",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "test:viewer": "node tests/viewer-validation.cjs"
+  },
+  "devDependencies": {
+    "cornerstone-core": "2.6.1",
+    "cornerstone-wado-image-loader": "4.13.2",
+    "dicom-parser": "1.8.21",
+    "playwright": "1.62.1"
+  }
+}

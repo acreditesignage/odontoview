@@ -1013,6 +1013,7 @@
   <script src="https://unpkg.com/cornerstone-core@2.6.1/dist/cornerstone.min.js"></script>
   <script src="https://unpkg.com/dicom-parser@1.8.21/dist/dicomParser.min.js"></script>
   <script src="https://unpkg.com/cornerstone-wado-image-loader@4.13.2/dist/cornerstoneWADOImageLoaderNoWebWorkers.bundle.min.js"></script>
+  <script src="./js/dicom-metadata.js"></script>
 
   <script>
     (() => {
@@ -1685,8 +1686,13 @@
           }
           await openDicomFiles(files);
         } catch (err) {
-          console.error(err);
           setLoading(false);
+          if (err.name === 'DicomValidationError') {
+            showToast('DICOM não carregado. Confira a série selecionada.');
+            window.alert(err.message);
+            return;
+          }
+          console.error(err);
           showToast('Não consegui abrir esse exame nesta versão. Tente um DICOM P10, JPG ou PNG.');
         }
       }
@@ -1748,47 +1754,35 @@
       async function readDicomMeta(file) {
         try {
           const buffer = await file.arrayBuffer();
-          const dataSet = dicomParser.parseDicom(new Uint8Array(buffer));
-          const instanceNumber = Number.parseInt(dataSet.string('x00200013') || '', 10);
-          const sliceLocation = Number.parseFloat(dataSet.string('x00201041') || '');
-          const imagePosition = (dataSet.string('x00200032') || '').split('\\').map(Number);
-          const orientation = (dataSet.string('x00200037') || '').split('\\').map(Number);
-          const studyDescription = dataSet.string('x00081030') || '';
-          const seriesDescription = dataSet.string('x0008103e') || '';
-          const bodyPartExamined = dataSet.string('x00180015') || '';
-          const protocolName = dataSet.string('x00181030') || '';
-          const patientPosition = dataSet.string('x00185100') || '';
-          return {
-            instanceNumber: Number.isFinite(instanceNumber) ? instanceNumber : Number.MAX_SAFE_INTEGER,
-            sliceLocation: Number.isFinite(sliceLocation) ? sliceLocation : null,
-            zPos: Number.isFinite(imagePosition[2]) ? imagePosition[2] : null,
-            imagePosition,
-            orientation: orientation.length === 6 && orientation.every(Number.isFinite) ? orientation : null,
-            studyDescription,
-            seriesDescription,
-            bodyPartExamined,
-            protocolName,
-            patientPosition
-          };
+          const dataSet = dicomParser.parseDicom(new Uint8Array(buffer), { untilTag: 'x7fe00010' });
+          return window.OdontoDicomMetadata.readDataSet(dataSet);
         } catch (_) {
-          return { instanceNumber: Number.MAX_SAFE_INTEGER, sliceLocation: null, zPos: null, imagePosition: null, orientation: null, studyDescription: '', seriesDescription: '', bodyPartExamined: '', protocolName: '', patientPosition: '', sliceCoord: null };
+          return { parseError: true };
         }
       }
 
       async function openDicomFiles(files) {
         ensureCornerstone();
-        mode = 'dicom';
-        imageViewport.style.display = 'none';
-        dicomViewport.style.display = 'none';
-        cornerstoneWADOImageLoader.wadouri.fileManager.purge();
-        setLoading(true, files.length > 1 ? `Montando volume • ${files.length} fatias…` : 'Abrindo DICOM…');
+        if (!window.OdontoDicomMetadata) {
+          const error = new Error('A validação DICOM não foi carregada. Conecte-se à internet e recarregue o aplicativo.');
+          error.name = 'DicomValidationError';
+          throw error;
+        }
+        setLoading(true, `Validando série DICOM • ${files.length} arquivo(s)…`);
 
-        const prepared = await Promise.all(files.map(async (file, originalIndex) => ({
+        const candidates = await Promise.all(files.map(async (file, originalIndex) => ({
           file,
           originalIndex,
           ...(await readDicomMeta(file))
         })));
 
+        // Validate before replacing the currently displayed exam or purging its files.
+        const validation = window.OdontoDicomMetadata.assertValidImport(candidates);
+        const prepared = validation.sortedItems;
+        mode = 'dicom';
+        imageViewport.style.display = 'none';
+        dicomViewport.style.display = 'none';
+        cornerstoneWADOImageLoader.wadouri.fileManager.purge();
         buildSeriesGeometry(prepared);
 
         prepared.sort((a, b) => {
@@ -1843,6 +1837,11 @@
         status.textContent = volD > 1
           ? `3 cortes • ${volW}×${volH}×${volD} • local • não salvo`
           : 'DICOM local • volume de 1 fatia';
+        if (validation.warnings.length) {
+          const warning = [...new Set(validation.warnings.map(item => item.message))].join(' ');
+          status.textContent += ` • Aviso: ${warning}`;
+          showToast(warning);
+        }
       }
 
       async function buildVolume() {
