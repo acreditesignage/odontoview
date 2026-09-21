@@ -801,11 +801,11 @@
                 </svg>
               </div>
               <p class="drop-title">Arraste o exame para cá</p>
-              <p class="drop-help">ou selecione um arquivo / sequência DICOM</p>
+              <p class="drop-help">selecione seu ZIP, RAR ou arquivos DICOM</p>
               <button class="primary-btn" id="openButton" type="button">Abrir exame</button>
-              <div class="formats">DICOM (.dcm) • JPG • PNG • WEBP</div>
+              <div class="formats">ZIP • RAR • DICOM (.dcm) • JPG • PNG • WEBP<br>ZIP/RAR: até 128 MB • extração no seu dispositivo</div>
             </div>
-            <input id="fileInput" type="file" hidden multiple accept=".dcm,.dicom,application/dicom,image/*" />
+            <input id="fileInput" type="file" hidden multiple accept=".zip,.rar,.dcm,.dicom,.ima,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed,application/dicom,image/*" />
           </div>
         </div>
 
@@ -1000,6 +1000,7 @@
             <div>
               <div class="spinner"></div>
               <div id="loadingText">Abrindo exame…</div>
+              <button id="cancelImport" type="button" hidden>Cancelar importação</button>
             </div>
           </div>
         </div>
@@ -1014,6 +1015,16 @@
   <script src="https://unpkg.com/dicom-parser@1.8.21/dist/dicomParser.min.js"></script>
   <script src="https://unpkg.com/cornerstone-wado-image-loader@4.13.2/dist/cornerstoneWADOImageLoaderNoWebWorkers.bundle.min.js"></script>
   <script src="./js/dicom-metadata.js"></script>
+  <script src="./js/archive-import.js"></script>
+  <style>
+    #cancelImport { margin-top:16px;padding:12px 20px;border:1px solid #aaa;border-radius:10px;cursor:pointer; }
+    .archive-series { width:min(520px,92vw);max-height:85vh;overflow:auto;padding:24px;border:0;border-radius:16px;color:#15202b;background:#fff; }
+    .archive-series::backdrop { background:rgba(0,0,0,.65); }
+    .archive-series h2 { font-size:20px; }
+    .archive-series p { margin:12px 0;font-size:14px; }
+    .archive-series button { display:block;width:100%;min-height:48px;margin-top:12px;padding:12px;text-align:left;border:1px solid #aebdc5;border-radius:10px;background:#eff8fb;color:#15202b;cursor:pointer;overflow-wrap:anywhere; }
+    .archive-series button:disabled { opacity:.6;cursor:default; }
+  </style>
 
   <script>
     (() => {
@@ -1168,7 +1179,7 @@
         return Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every(Number.isFinite);
       }
 
-      function buildSeriesGeometry(items) {
+      function buildSeriesGeometry(items, commit = true) {
         const oriented = (items || []).find(item => Array.isArray(item.orientation) && item.orientation.length === 6 && item.orientation.every(Number.isFinite));
         let xDir = null;
         let yDir = null;
@@ -1188,7 +1199,8 @@
         if (!zDir && hasPositionZ) zDir = [0, 0, 1];
 
         const patientPosition = (items || []).map(item => item.patientPosition).find(Boolean) || '';
-        seriesGeometry = { xDir, yDir, zDir, hasOrientation, hasPositionZ, patientPosition };
+        const geometry = { xDir, yDir, zDir, hasOrientation, hasPositionZ, patientPosition };
+        if (commit) seriesGeometry = geometry;
 
         if (zDir) {
           for (const item of items || []) {
@@ -1197,6 +1209,7 @@
         } else {
           for (const item of items || []) item.sliceCoord = null;
         }
+        return geometry;
       }
 
       function reliableComponent(v, index, threshold = 0.35) {
@@ -1675,11 +1688,40 @@
         return file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif)$/i.test(file.name);
       }
 
+      let importBusy = false;
       async function handleFiles(files) {
-        if (!files.length) return;
+        if (!files.length || importBusy) return;
+        importBusy = true;
+        const controller = new AbortController();
+        const cancel = $('cancelImport');
+        cancel.onclick = () => controller.abort();
         setLoading(true, 'Lendo arquivos…');
         showViewer();
         try {
+          const archives = files.filter(file => window.OdontoArchiveImport?.isArchive(file));
+          if (archives.length) {
+            if (files.length !== 1) throw new Error('Selecione somente um ZIP ou RAR por vez.');
+            cancel.hidden = false;
+            setLoading(true, 'Preparando extração local…');
+            const extracted = await window.OdontoArchiveImport.extract(archives[0], {
+              signal:controller.signal,
+              onProgress: ({entries,bytes}) => setLoading(true, `Extraindo • ${entries} arquivo(s) • ${(bytes/1048576).toFixed(1)} MB…`)
+            });
+            ensureCornerstone();
+            const candidates = [];
+            // Parse sequentially to avoid retaining thousands of simultaneous buffers.
+            for (const [originalIndex,file] of extracted.entries()) {
+              if (controller.signal.aborted) throw new DOMException('Importação cancelada.', 'AbortError');
+              setLoading(true, `Identificando DICOM • ${originalIndex+1}/${extracted.length}…`);
+              candidates.push({file,originalIndex,...await readDicomMeta(file)});
+            }
+            const report = window.OdontoDicomMetadata.validateImport(candidates);
+            const selected = await window.OdontoArchiveImport.chooseSeries(report,controller.signal);
+            if (controller.signal.aborted) throw new DOMException('Importação cancelada.', 'AbortError');
+            cancel.hidden = true;
+            await openDicomFiles(selected.map(item=>item.file),selected);
+            return;
+          }
           if (files.length === 1 && looksLikeImage(files[0])) {
             openStandardImage(files[0]);
             return;
@@ -1687,13 +1729,20 @@
           await openDicomFiles(files);
         } catch (err) {
           setLoading(false);
+          if (err.name === 'AbortError') { showToast('Importação cancelada.'); return; }
           if (err.name === 'DicomValidationError') {
             showToast('DICOM não carregado. Confira a série selecionada.');
             window.alert(err.message);
             return;
           }
           console.error(err);
-          showToast('Não consegui abrir esse exame nesta versão. Tente um DICOM P10, JPG ou PNG.');
+          showToast(err.message || 'Não consegui abrir esse exame.');
+          window.alert(err.message || 'Não consegui abrir esse exame.');
+        } finally {
+          importBusy = false;
+          cancel.hidden = true;
+          cancel.onclick = null;
+          setLoading(false);
         }
       }
 
@@ -1761,7 +1810,7 @@
         }
       }
 
-      async function openDicomFiles(files) {
+      async function openDicomFiles(files, checkedCandidates) {
         ensureCornerstone();
         if (!window.OdontoDicomMetadata) {
           const error = new Error('A validação DICOM não foi carregada. Conecte-se à internet e recarregue o aplicativo.');
@@ -1770,7 +1819,7 @@
         }
         setLoading(true, `Validando série DICOM • ${files.length} arquivo(s)…`);
 
-        const candidates = await Promise.all(files.map(async (file, originalIndex) => ({
+        const candidates = checkedCandidates || await Promise.all(files.map(async (file, originalIndex) => ({
           file,
           originalIndex,
           ...(await readDicomMeta(file))
@@ -1779,11 +1828,10 @@
         // Validate before replacing the currently displayed exam or purging its files.
         const validation = window.OdontoDicomMetadata.assertValidImport(candidates);
         const prepared = validation.sortedItems;
-        mode = 'dicom';
-        imageViewport.style.display = 'none';
-        dicomViewport.style.display = 'none';
-        cornerstoneWADOImageLoader.wadouri.fileManager.purge();
-        buildSeriesGeometry(prepared);
+        if (checkedCandidates && prepared[0].rows * prepared[0].columns * prepared.length * 2 > 256 * 1024 * 1024) {
+          throw new Error('O volume DICOM excede o limite de 256 MB após a decodificação. Abra uma série menor.');
+        }
+        const nextGeometry = buildSeriesGeometry(prepared, false);
 
         prepared.sort((a, b) => {
           if (a.sliceCoord != null && b.sliceCoord != null && a.sliceCoord !== b.sliceCoord) return a.sliceCoord - b.sliceCoord;
@@ -1795,6 +1843,23 @@
           return a.file.name.localeCompare(b.file.name, undefined, { numeric: true });
         });
 
+        const stagingIds = prepared.map(item => cornerstoneWADOImageLoader.wadouri.fileManager.add(item.file));
+        let staged;
+        try {
+          staged = await buildVolume(stagingIds, prepared);
+        } finally {
+          for (const id of stagingIds) {
+            try { cornerstone.imageCache.removeImageLoadObject(id); } catch (_) {}
+            cornerstoneWADOImageLoader.wadouri.fileManager.remove(Number(id.split(':')[1]));
+          }
+        }
+        // Commit only after every slice has decoded and the new volume exists.
+        mode = 'dicom';
+        imageViewport.style.display = 'none';
+        dicomViewport.style.display = 'none';
+        cornerstoneWADOImageLoader.wadouri.fileManager.purge();
+        seriesGeometry = nextGeometry;
+        ({volume,volW,volH,volD,spacingX,spacingY,spacingZ,spacingKnown,baseWindowCenter,baseWindowWidth,cursor} = staged);
         preparedSeries = prepared;
         dicomImageIds = prepared.map(item => cornerstoneWADOImageLoader.wadouri.fileManager.add(item.file));
         currentIndex = 0;
@@ -1827,7 +1892,6 @@
         manualFlipLR = false;
         syncOrientationUI();
 
-        await buildVolume();
         showMpr();
         sliceRangeWrap.classList.add('show');
         sliceRangeWrap.classList.add('multi');
@@ -1844,7 +1908,8 @@
         }
       }
 
-      async function buildVolume() {
+      async function buildVolume(dicomImageIds, preparedSeries) {
+        let volume, volW, volH, volD, spacingX, spacingY, spacingZ, spacingKnown, baseWindowCenter, baseWindowWidth, cursor;
         const first = await cornerstone.loadAndCacheImage(dicomImageIds[0]);
         volW = first.columns;
         volH = first.rows;
@@ -1883,6 +1948,9 @@
           if (z % 8 === 0) setLoading(true, `Montando volume… ${z + 1}/${volD}`);
           const image = z === 0 ? first : await cornerstone.loadAndCacheImage(dicomImageIds[z]);
           const pixels = image.getPixelData();
+          if (image.columns !== volW || image.rows !== volH || !pixels || pixels.length < volW * volH) {
+            throw new Error('DICOM com dados de pixels incompletos ou dimensões incompatíveis.');
+          }
           const s = Number(image.slope) || slope;
           const i = Number(image.intercept) || intercept;
           const offset = z * volW * volH;
@@ -1895,6 +1963,7 @@
           y: Math.floor(volH / 2),
           z: Math.floor(volD / 2)
         };
+        return {volume,volW,volH,volD,spacingX,spacingY,spacingZ,spacingKnown,baseWindowCenter,baseWindowWidth,cursor};
       }
 
       function sample(src, x, y, z) {

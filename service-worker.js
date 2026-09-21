@@ -1,10 +1,16 @@
-const SHELL_CACHE = 'odontoview-shell-v4';
-const RUNTIME_CACHE = 'odontoview-runtime-v4';
+const SHELL_CACHE = 'odontoview-shell-v5';
+const RUNTIME_CACHE = 'odontoview-runtime-v5';
 
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './js/dicom-metadata.js',
+  './js/archive-import.js',
+  './js/archive-core.js',
+  './js/archive-worker.js',
+  './vendor/libarchive/libarchive.js',
+  './vendor/libarchive/libarchive.wasm',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',

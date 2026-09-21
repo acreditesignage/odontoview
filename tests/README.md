@@ -71,3 +71,17 @@ posicionamento por arcada. Cache e publicação devem ser revistos na etapa de
 lançamento, especialmente para instalações antigas e primeira abertura offline.
 
 Referência geométrica: [DICOM PS3.3 C.7.6.2](https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.7.6.2.html).
+# ZIP/RAR import
+
+Run `pnpm test` for metadata and archive unit tests, `pnpm test:archives` for the
+real browser ZIP/RAR4/RAR5 flow, series selection, cancellation, preservation of
+the current exam, desktop/mobile emulation and PWA offline extraction after
+online warm-up. Set `CHROME_PATH` to an installed Chrome executable if needed.
+`pnpm test:viewer` runs the existing DICOM/image controls regression suite.
+
+The mobile test uses Chromium emulation, not a physical iOS/Android device.
+Synthetic DICOM and stored RAR4/RAR5 fixtures verify the integration; they do
+not establish support for every vendor's compressed RAR variant or DICOM codec.
+ZIP is tested with DEFLATE. Archives with passwords or split volumes are refused.
+Limits: 128 MiB archive, 256 MiB total expanded, 32 MiB per entry, 5000 entries.
+Files stay in memory on the user's device; no examination is uploaded.
