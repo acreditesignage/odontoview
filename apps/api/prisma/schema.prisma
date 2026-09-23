@@ -60,13 +60,17 @@ model Patient {
   birthDate          DateTime?
   phone              String?
   email              String?
-  createdByDentistId String
+  createdByDentistId String?
+  createdByUnitId    String?
   createdAt          DateTime  @default(now())
 
-  createdByDentist Dentist @relation(fields: [createdByDentistId], references: [id], onDelete: Restrict)
+  createdByDentist Dentist? @relation(fields: [createdByDentistId], references: [id], onDelete: Restrict)
+  createdByUnit    Unit?    @relation(fields: [createdByUnitId], references: [id], onDelete: Restrict)
   orders           Order[]
 
   @@index([createdByDentistId])
+  @@index([createdByUnitId])
+  @@index([name])
 }
 
 model RadiologyOrganization {
@@ -93,6 +97,7 @@ model Unit {
   availability UnitAvailability[]
   orders       Order[]
   members      UnitMembership[]
+  patients     Patient[]
 
   @@index([city, state])
 }
