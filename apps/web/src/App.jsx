@@ -9,6 +9,13 @@ import {setViewerSession} from "./viewerSession.js";
 function routeForRole(role){return role==="UNIT_USER"?"/radiologia":"/novo-pedido"}
 function logout(){localStorage.removeItem("odontoview_token");localStorage.removeItem("odontoview_role");location.href="/"}
 function formatBytes(value){if(!value)return "0 MB";return (value/1024/1024).toFixed(value>10*1024*1024?1:2)+" MB"}
+function BrandLockup({role="NETWORK",light=false}){
+ return <div className={"brand-lockup"+(light?" is-light":"")}>
+   <div className="brand-word">Odonto<span>View</span></div>
+   <div className="brand-sub">Marketplace + IA + Viewer + Laudo + Planejamento</div>
+   <div className="brand-role">{role}</div>
+ </div>
+}
 
 function Login(){
  const nav=useNavigate(),[mode,setMode]=useState("login"),[err,setErr]=useState(""),[f,setF]=useState({name:"",email:"",password:"",cro:"",uf:"RJ"});
@@ -21,10 +28,21 @@ function Login(){
      nav(routeForRole(d.user.role));
    }catch(x){setErr(x.message)}
  }
- return <main className="page centered"><section className="card auth">
-   <div className="brand">OdontoView</div><p className="eyebrow">NETWORK</p>
-   <h1>{mode==="login"?"Seu acesso ao ecossistema.":"Cadastro do dentista."}</h1>
-   <p className="muted">{mode==="login"?"Dentista ou radiologia entram pelo mesmo OdontoView.":"Crie seu acesso profissional para solicitar exames."}</p>
+ return <main className="page login-page"><section className="login-shell">
+   <aside className="login-brand-panel">
+     <BrandLockup role="ECOSSISTEMA ODONTOLÓGICO"/>
+     <div className="login-message"><p className="eyebrow">DA IMAGEM À MELHOR DECISÃO</p><h1>Mais diagnóstico.<br/>Mais clareza.<br/><span>Mais sorrisos.</span></h1><p>Tecnologia que conecta dentistas, pacientes e radiologias em uma jornada única.</p></div>
+     <div className="ecosystem-mini">
+       <div><span>01</span><strong>Pedido</strong><small>Dentista solicita</small></div>
+       <div><span>02</span><strong>Radiologia</strong><small>Paciente agenda</small></div>
+       <div><span>03</span><strong>Viewer + IA</strong><small>Exame ganha contexto</small></div>
+       <div><span>04</span><strong>Planejamento</strong><small>Decisão clínica</small></div>
+     </div>
+   </aside>
+   <section className="card auth auth-premium">
+   <BrandLockup role={mode==="login"?"ACESSO PROFISSIONAL":"CADASTRO DO DENTISTA"}/>
+   <h1>{mode==="login"?"Bem-vindo.":"Crie seu acesso."}</h1>
+   <p className="muted">{mode==="login"?"Dentista ou radiologia entram pelo mesmo OdontoView.":"Solicite exames, acompanhe o paciente e acesse o Viewer em um só lugar."}</p>
    <form className="stack" onSubmit={submit}>
      {mode==="register"&&<input placeholder="Nome" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/>}
      <input type="email" placeholder="Email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/>
@@ -33,7 +51,7 @@ function Login(){
      {err&&<div className="error">{err}</div>}<button className="primary">{mode==="login"?"Entrar":"Criar conta"}</button>
    </form>
    <button className="link" onClick={()=>setMode(mode==="login"?"register":"login")}>{mode==="login"?"Sou dentista e quero criar conta":"Já tenho conta"}</button>
- </section></main>
+   </section></section></main>
 }
 
 function NewOrder(){
@@ -41,8 +59,8 @@ function NewOrder(){
  useEffect(()=>{api("/api/catalog/exam-types").then(x=>{setTypes(x);if(x[0])setType(x[0].id)}).catch(e=>setErr(e.message))},[]);
  async function submit(e){e.preventDefault();setErr("");try{const patient=await api("/api/patients",{method:"POST",body:JSON.stringify(p)});const order=await api("/api/orders",{method:"POST",body:JSON.stringify({patientId:patient.id,examTypeId:type})});setOut(order)}catch(x){setErr(x.message)}}
  return <main className="page"><section className="content">
-   <header className="topbar"><div><div className="brand">OdontoView</div><p className="eyebrow">DENTISTA</p></div><button className="ghost" onClick={logout}>Sair</button></header>
-   <h1>Um pedido simples.</h1>
+   <header className="topbar"><BrandLockup role="DENTISTA"/><button className="ghost" onClick={logout}>Sair</button></header>
+   <div className="section-intro"><p className="eyebrow">MARKETPLACE DE EXAMES</p><h1>Um pedido simples.</h1><p className="muted">Solicite o exame e deixe o OdontoView organizar o restante da jornada.</p></div>
    <form className="card stack" onSubmit={submit}><input placeholder="Paciente" value={p.name} onChange={e=>setP({...p,name:e.target.value})}/><div className="two"><input type="date" value={p.birthDate} onChange={e=>setP({...p,birthDate:e.target.value})}/><input placeholder="Telefone" value={p.phone} onChange={e=>setP({...p,phone:e.target.value})}/></div><select value={type} onChange={e=>setType(e.target.value)}>{types.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>{err&&<div className="error">{err}</div>}<button className="primary">Criar pedido</button></form>
    {out&&<section className="card success"><strong>Pedido criado.</strong><p>Envie este link ao paciente:</p><code>{out.patientAccessUrl}</code><button className="secondary" onClick={()=>navigator.clipboard.writeText(out.patientAccessUrl)}>Copiar link</button></section>}
  </section></main>
@@ -122,8 +140,8 @@ function Radiology(){
  const tomorrow=()=>{const x=new Date();x.setDate(x.getDate()+1);setDate(localDateValue(x))};
  return <main className="page radiology"><section className="wide">
    <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
-   <header className="topbar"><div><div className="brand">OdontoView</div><p className="eyebrow">RADIOLOGIA</p></div><button className="ghost" onClick={logout}>Sair</button></header>
-   <div className="hero-row"><div><h1>Agenda da unidade.</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:"Carregando unidade…"}</p></div><div className="date-actions"><input aria-label="Data da agenda" type="date" value={date} onChange={e=>setDate(e.target.value)}/><button className="secondary compact" onClick={tomorrow}>Amanhã</button></div></div>
+   <header className="topbar"><BrandLockup role="RADIOLOGIA"/><button className="ghost" onClick={logout}>Sair</button></header>
+   <div className="hero-row"><div><p className="eyebrow">AQUISIÇÃO + ENVIO</p><h1>Agenda da unidade.</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:"Carregando unidade…"}</p></div><div className="date-actions"><input aria-label="Data da agenda" type="date" value={date} onChange={e=>setDate(e.target.value)}/><button className="secondary compact" onClick={tomorrow}>Amanhã</button></div></div>
    {err&&<div className="error">{err}</div>}
    {!data?<section className="card">Carregando agenda…</section>:data.orders.length===0?<section className="card empty"><strong>Nenhum exame nesta data.</strong><p>Escolha outra data para visualizar os agendamentos da unidade.</p></section>:
    <div className="agenda stack">{data.orders.map(o=>{
@@ -151,8 +169,8 @@ function Patient(){
  useEffect(()=>{if(token)api("/api/public/orders/access/"+token).then(setD).catch(e=>setErr(e.message));else setErr("Link incompleto.")},[token]);
  if(err)return <main className="page centered"><section className="card"><h2>Link indisponível</h2><p>{err}</p></section></main>;
  if(!d)return <main className="page centered">Carregando…</main>;
- if(d.order.status!=="SOLICITADO")return <main className="page centered"><section className="card auth"><div className="brand">OdontoView</div><p className="eyebrow">SEU EXAME</p><h1>{d.order.examType.name}</h1><p>Olá, {d.order.patient.name}. Status: <strong>{STATUS[d.order.status]?.label||d.order.status}</strong>.</p>{d.order.appointment&&<p>{new Date(d.order.appointment.availability.startAt).toLocaleString("pt-BR")}</p>}</section></main>;
- return <main className="page centered"><section className="card auth"><div className="brand">OdontoView</div><p className="eyebrow">EXAME SOLICITADO</p><h1>{d.order.examType.name}</h1><p>Olá, {d.order.patient.name}. Solicitação de {d.order.dentist.name} • CRO {d.order.dentist.cro}/{d.order.dentist.uf}.</p><button className="primary" onClick={()=>nav("/paciente/unidade?token="+encodeURIComponent(token))}>Escolher onde fazer</button></section></main>
+ if(d.order.status!=="SOLICITADO")return <main className="page centered"><section className="card auth patient-card"><BrandLockup role="PACIENTE"/><p className="eyebrow">SEU EXAME</p><h1>{d.order.examType.name}</h1><p>Olá, {d.order.patient.name}. Status: <strong>{STATUS[d.order.status]?.label||d.order.status}</strong>.</p>{d.order.appointment&&<p>{new Date(d.order.appointment.availability.startAt).toLocaleString("pt-BR")}</p>}</section></main>;
+ return <main className="page centered"><section className="card auth patient-card"><BrandLockup role="PACIENTE"/><p className="eyebrow">EXAME SOLICITADO</p><h1>{d.order.examType.name}</h1><p>Olá, {d.order.patient.name}. Solicitação de {d.order.dentist.name} • CRO {d.order.dentist.cro}/{d.order.dentist.uf}.</p><button className="primary" onClick={()=>nav("/paciente/unidade?token="+encodeURIComponent(token))}>Escolher onde fazer</button></section></main>
 }
 
 function Units(){
