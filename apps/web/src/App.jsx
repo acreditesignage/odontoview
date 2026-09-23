@@ -1,4 +1,4 @@
-import {useEffect,useState} from "react";import {Navigate,Route,Routes,useNavigate,useSearchParams} from "react-router-dom";import {api} from "./api.js";
+import React from "react";import {useEffect,useState} from "react";import {Navigate,Route,Routes,useNavigate,useSearchParams} from "react-router-dom";import {api} from "./api.js";
 
 function Login(){
  const nav=useNavigate(),[mode,setMode]=useState("login"),[err,setErr]=useState(""),[f,setF]=useState({name:"",email:"",password:"",cro:"",uf:"RJ"});
