@@ -3,6 +3,8 @@ import {useEffect,useMemo,useRef,useState} from "react";
 import {Navigate,Route,Routes,useNavigate,useSearchParams} from "react-router-dom";
 import {api} from "./api.js";
 import {importExam} from "./ingest.js";
+import Viewer2 from "./Viewer2.jsx";
+import {setViewerSession} from "./viewerSession.js";
 
 function routeForRole(role){return role==="UNIT_USER"?"/radiologia":"/novo-pedido"}
 function logout(){localStorage.removeItem("odontoview_token");localStorage.removeItem("odontoview_role");location.href="/"}
@@ -62,7 +64,7 @@ const STATUS={
  IMAGENS_RECEBIDAS:{label:"Imagens recebidas",tone:"green"}
 };
 
-function IngestResult({state,onClear}){
+function IngestResult({state,onClear,onOpenViewer}){
  if(!state)return null;
  if(state.status==="reading"){
    const p=state.progress||{};
@@ -80,11 +82,12 @@ function IngestResult({state,onClear}){
      <span className={"series-status "+(s.valid?"ok":"bad")}>{s.valid?"Série válida":"Revisar"}</span>
    </div>)}</div>
    <p className="privacy-note">Leitura local. Nesta etapa nenhum arquivo foi enviado para a nuvem e o pedido ainda permanece como “Exame realizado”.</p>
-   <button className="secondary" disabled>Associar ao pedido e enviar • próxima etapa</button>
+   <div className="ingest-actions"><button className="primary" onClick={onOpenViewer}>Abrir Viewer 2.0 Beta</button><button className="secondary" disabled>Associar ao pedido e enviar • próxima etapa</button></div>
  </div>;
 }
 
 function Radiology(){
+ const nav=useNavigate();
  const [date,setDate]=useState(localDateValue()),[data,setData]=useState(null),[err,setErr]=useState(""),[busy,setBusy]=useState(""),[ingest,setIngest]=useState(null);
  const fileInput=useRef(null),orderForFile=useRef(null);
  const range=useMemo(()=>dayRange(date),[date]);
@@ -137,7 +140,7 @@ function Radiology(){
            {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Exame recebido pelo OdontoView</span>}
          </div>
        </div>
-       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)}/>}
+       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{setViewerSession({result:ingest.result,order:o});nav("/viewer2")}}/>}
      </article>
    })}</div>}
  </section></main>
@@ -170,6 +173,7 @@ export default function App(){return <Routes>
  <Route path="/" element={<Login/>}/>
  <Route path="/novo-pedido" element={<NewOrder/>}/>
  <Route path="/radiologia" element={<Radiology/>}/>
+ <Route path="/viewer2" element={<Viewer2/>}/>
  <Route path="/paciente" element={<Patient/>}/>
  <Route path="/paciente/unidade" element={<Units/>}/>
  <Route path="/paciente/agendar" element={<Schedule/>}/>
