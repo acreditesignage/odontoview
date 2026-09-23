@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS web
+FROM node:22-bookworm-slim AS web
 WORKDIR /web
 COPY apps/web/package*.json ./
 RUN npm install
