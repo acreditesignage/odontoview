@@ -1,0 +1,47 @@
+name: Entrega 1 - OdontoView Network
+on:
+  push:
+    branches: [feat/entrega-1-odonto-view-network]
+  pull_request:
+    branches: [main]
+    paths: ["apps/api/**","apps/web/**",".github/workflows/entrega1-network-ci.yml"]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_USER: odontoview, POSTGRES_PASSWORD: odontoview, POSTGRES_DB: odontoview_test}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U odontoview"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://odontoview:odontoview@localhost:5432/odontoview_test?schema=public
+      JWT_SECRET: ci-secret-only
+      PATIENT_APP_URL: http://localhost:5173/paciente
+      CORS_ORIGIN: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - name: API install
+        working-directory: apps/api
+        run: npm install
+      - name: Prisma generate
+        working-directory: apps/api
+        run: npx prisma generate
+      - name: Prepare database
+        working-directory: apps/api
+        run: npx prisma db push
+      - name: API tests
+        working-directory: apps/api
+        run: npm test
+      - name: Web install
+        working-directory: apps/web
+        run: npm install
+      - name: Web build
+        working-directory: apps/web
+        run: npm run build
