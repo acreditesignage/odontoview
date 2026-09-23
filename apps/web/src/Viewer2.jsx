@@ -3,6 +3,8 @@ import {useNavigate} from "react-router-dom";
 import {jsPDF} from "jspdf";
 import {clearViewerSession,getViewerSession} from "./viewerSession.js";
 
+const PANORAMIC_BAND_HALF_MM=2;
+
 let cornerstoneConfigured=false;
 function configureCornerstone(){
   if(cornerstoneConfigured)return;
@@ -179,8 +181,18 @@ export default function Viewer2(){
   }
 
   function toImagePoint(canvas,event){
+    const rect=canvas.getBoundingClientRect();
+    const dpr=canvas._map?.dpr||Math.min(window.devicePixelRatio||1,1.5);
+    const x=(event.clientX-rect.left)*dpr,y=(event.clientY-rect.top)*dpr;
+    if(canvas._tangentialPanels?.length){
+      for(const map of canvas._tangentialPanels){
+        if(!map||map.curveIndex==null)continue;
+        const a=(x-map.ox)/map.dw*map.pixelW,b=(y-map.oy)/map.dh*map.pixelH;
+        if(a>=0&&b>=0&&a<map.pixelW&&b<map.pixelH)return {a,b,tangentialIndex:map.curveIndex};
+      }
+      return null;
+    }
     const map=canvas._map;if(!map)return null;
-    const rect=canvas.getBoundingClientRect(),x=(event.clientX-rect.left)*map.dpr,y=(event.clientY-rect.top)*map.dpr;
     const a=(x-map.ox)/map.dw*map.pixelW,b=(y-map.oy)/map.dh*map.pixelH;
     if(a<0||b<0||a>=map.pixelW||b>=map.pixelH)return null;
     return {a,b};
@@ -224,6 +236,40 @@ export default function Viewer2(){
     ctx.restore();
   }
 
+  function drawMmScale(ctx,canvas,mapOverride=null){
+    const map=mapOverride||canvas?._map;if(!map)return;
+    const physicalW=map.pixelW*map.spacingA,physicalH=map.pixelH*map.spacingB;
+    const minor=5,major=10;
+    ctx.save();
+    ctx.strokeStyle="rgba(210,230,245,.72)";
+    ctx.fillStyle="rgba(220,238,250,.84)";
+    ctx.lineWidth=Math.max(1,map.dpr*.75);
+    ctx.font=`${Math.max(8,9*map.dpr)}px -apple-system,sans-serif`;
+    ctx.textBaseline="top";
+    for(let mm=0;mm<=physicalW+0.001;mm+=minor){
+      const x=map.ox+(mm/physicalW)*map.dw;
+      const len=(mm%major===0?7:4)*map.dpr;
+      ctx.beginPath();ctx.moveTo(x,map.oy+map.dh);ctx.lineTo(x,map.oy+map.dh-len);ctx.stroke();
+      if(mm>0&&mm%major===0&&map.dw>170*map.dpr)ctx.fillText(mm+"",x+2*map.dpr,map.oy+map.dh-15*map.dpr);
+    }
+    ctx.textBaseline="middle";
+    for(let mm=0;mm<=physicalH+0.001;mm+=minor){
+      const y=map.oy+map.dh-(mm/physicalH)*map.dh;
+      const len=(mm%major===0?7:4)*map.dpr;
+      ctx.beginPath();ctx.moveTo(map.ox,y);ctx.lineTo(map.ox+len,y);ctx.stroke();
+      if(mm>0&&mm%major===0&&map.dh>170*map.dpr)ctx.fillText(mm+"",map.ox+9*map.dpr,y);
+    }
+    ctx.restore();
+  }
+
+  function curveOffsetPoint(index,offsetMm){
+    const m=metaRef.current,frame=tangentFrame(index);if(!m||!frame)return null;
+    return {
+      x:frame.c.x+frame.nx*offsetMm/m.spacingX,
+      y:frame.c.y+frame.ny*offsetMm/m.spacingY
+    };
+  }
+
   function drawAxial(canvas){
     const m=metaRef.current,v=volumeRef.current;if(!m||!v)return;
     const {w,h,d,spacingX,spacingY}=m,z=clamp(Math.round(cursor.z),0,d-1);
@@ -234,7 +280,19 @@ export default function Viewer2(){
     ctx.fillStyle="#05070a";ctx.fillRect(0,0,cw,ch);ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
     const map=canvas._map,screen=(pt)=>({x:map.ox+pt.x/w*map.dw,y:map.oy+pt.y/h*map.dh});
     if(curve.length){
-      ctx.save();ctx.strokeStyle="#31d7d2";ctx.lineWidth=2*map.dpr;ctx.beginPath();
+      ctx.save();
+      const upper=curve.map((_,i)=>curveOffsetPoint(i,PANORAMIC_BAND_HALF_MM)).filter(Boolean);
+      const lower=curve.map((_,i)=>curveOffsetPoint(i,-PANORAMIC_BAND_HALF_MM)).filter(Boolean);
+      if(upper.length===curve.length&&lower.length===curve.length){
+        ctx.fillStyle="rgba(49,215,210,.10)";
+        ctx.strokeStyle="rgba(49,215,210,.48)";
+        ctx.lineWidth=1*map.dpr;
+        ctx.beginPath();
+        upper.forEach((pt,i)=>{const q=screen(pt);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)});
+        [...lower].reverse().forEach(pt=>{const q=screen(pt);ctx.lineTo(q.x,q.y)});
+        ctx.closePath();ctx.fill();ctx.stroke();
+      }
+      ctx.strokeStyle="#31d7d2";ctx.lineWidth=2*map.dpr;ctx.beginPath();
       curve.forEach((pt,i)=>{const q=screen(pt);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)});ctx.stroke();
       curvePoints.forEach(pt=>{const q=screen(pt);ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(q.x,q.y,4*map.dpr,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#31d7d2";ctx.stroke()});
       const active=curve[curveIndex];if(active){const q=screen(active);ctx.fillStyle="#31d7d2";ctx.beginPath();ctx.arc(q.x,q.y,6*map.dpr,0,Math.PI*2);ctx.fill()}
@@ -253,6 +311,7 @@ export default function Viewer2(){
       ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(q.x,q.y,7*map.dpr,0,Math.PI*2);ctx.stroke();
     });
     if(crosshairVisible)drawCrosshair(ctx,canvas,cursor.x,cursor.y);
+    drawMmScale(ctx,canvas);
     drawMeasurementOverlay(ctx,canvas,"axial",z);
   }
 
@@ -271,6 +330,7 @@ export default function Viewer2(){
     const tmp=document.createElement("canvas");tmp.width=pixelW;tmp.height=pixelH;tmp.getContext("2d").putImageData(img,0,0);
     ctx.fillStyle="#05070a";ctx.fillRect(0,0,cw,ch);ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
     if(crosshairVisible){if(isCoronal)drawCrosshair(ctx,canvas,cursor.x,d-1-cursor.z);else drawCrosshair(ctx,canvas,cursor.y,d-1-cursor.z)}
+    drawMmScale(ctx,canvas);
     drawMeasurementOverlay(ctx,canvas,plane,fixed);
   }
 
@@ -404,27 +464,76 @@ export default function Viewer2(){
 
   function drawTangential(canvas){
     const m=metaRef.current,v=volumeRef.current;if(!m||!v||!curve.length)return;
-    const {w,h,d,spacingX,spacingY,spacingZ}=m,frame=tangentFrame(curveIndex);if(!frame)return;
+    const {w,h,d,spacingX,spacingY,spacingZ}=m;
+    const rect=canvas.parentElement.getBoundingClientRect();
+    const dpr=Math.min(window.devicePixelRatio||1,1.5);
+    const cw=Math.max(1,Math.floor(rect.width*dpr)),ch=Math.max(1,Math.floor(rect.height*dpr));
+    if(canvas.width!==cw||canvas.height!==ch){canvas.width=cw;canvas.height=ch}
+    const ctx=canvas.getContext("2d",{alpha:false});
+    ctx.fillStyle="#05070a";ctx.fillRect(0,0,cw,ch);
+
+    const gap=4*dpr,panelW=(cw-gap*2)/3;
+    const indices=[curveIndex-1,curveIndex,curveIndex+1];
+    const labels=["ANTERIOR","ATUAL","POSTERIOR"];
     const widthMm=40,stepMm=.25,pixelW=Math.round(widthMm/stepMm),pixelH=d;
-    const {cw,ch,ox,oy,dw,dh}=fit(canvas,pixelW,pixelH,stepMm,spacingZ,"tangential");
-    const ctx=canvas.getContext("2d",{alpha:false}),img=ctx.createImageData(pixelW,pixelH);let p=0;
-    for(let z=d-1;z>=0;z--)for(let a=0;a<pixelW;a++){
-      const off=(a-pixelW/2)*stepMm,x=frame.c.x+frame.nx*off/spacingX,y=frame.c.y+frame.ny*off/spacingY;
-      const g=wl(bilinear(v,w,h,d,x,y,z),windowLevel.wc,windowLevel.ww);
-      img.data[p++]=g;img.data[p++]=g;img.data[p++]=g;img.data[p++]=255;
-    }
-    const tmp=document.createElement("canvas");tmp.width=pixelW;tmp.height=pixelH;tmp.getContext("2d").putImageData(img,0,0);
-    ctx.fillStyle="#05070a";ctx.fillRect(0,0,cw,ch);ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
-    const map=canvas._map;
-    [...nervePoints.map(n=>({...n,type:"nerve"})),...foramina.map(n=>({...n,type:"foramen"}))].filter(n=>n.curveIndex===curveIndex).forEach(n=>{
-      const a=pixelW/2+n.offsetMm/stepMm,b=d-1-n.z;
-      const x=map.ox+a/pixelW*map.dw,y=map.oy+b/pixelH*map.dh;
-      ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(x,y,(n.type==="foramen"?8:4)*map.dpr,0,Math.PI*2);n.type==="foramen"?ctx.stroke():ctx.fill();
+    const t=transforms.tangential||{zoom:1,panX:0,panY:0};
+    const maps=[];
+
+    indices.forEach((idx,slot)=>{
+      const panelX=slot*(panelW+gap);
+      ctx.fillStyle="#070a0f";ctx.fillRect(panelX,0,panelW,ch);
+      if(idx<0||idx>=curve.length){
+        ctx.fillStyle="rgba(180,195,210,.55)";
+        ctx.font=`${11*dpr}px -apple-system,sans-serif`;
+        ctx.textAlign="center";ctx.fillText("fim da série",panelX+panelW/2,ch/2);
+        maps.push(null);return;
+      }
+      const frame=tangentFrame(idx);if(!frame){maps.push(null);return}
+      const img=ctx.createImageData(pixelW,pixelH);let p=0;
+      for(let z=d-1;z>=0;z--)for(let a=0;a<pixelW;a++){
+        const off=(a-pixelW/2)*stepMm;
+        const x=frame.c.x+frame.nx*off/spacingX,y=frame.c.y+frame.ny*off/spacingY;
+        const g=wl(bilinear(v,w,h,d,x,y,z),windowLevel.wc,windowLevel.ww);
+        img.data[p++]=g;img.data[p++]=g;img.data[p++]=g;img.data[p++]=255;
+      }
+      const tmp=document.createElement("canvas");tmp.width=pixelW;tmp.height=pixelH;tmp.getContext("2d").putImageData(img,0,0);
+      const physicalW=pixelW*stepMm,physicalH=pixelH*spacingZ;
+      const base=Math.min((panelW-8*dpr)/physicalW,(ch-8*dpr)/physicalH);
+      const dw=physicalW*base*t.zoom,dh=physicalH*base*t.zoom;
+      const ox=panelX+(panelW-dw)/2+t.panX*dpr,oy=(ch-dh)/2+t.panY*dpr;
+      const map={ox,oy,dw,dh,pixelW,pixelH,spacingA:stepMm,spacingB:spacingZ,dpr,plane:"tangential",curveIndex:idx};
+      maps.push(map);
+      ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
+
+      [...nervePoints.map(n=>({...n,type:"nerve"})),...foramina.map(n=>({...n,type:"foramen"}))].filter(n=>n.curveIndex===idx).forEach(n=>{
+        const a=pixelW/2+n.offsetMm/stepMm,b=d-1-n.z;
+        const x=map.ox+a/pixelW*map.dw,y=map.oy+b/pixelH*map.dh;
+        ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*dpr;
+        ctx.beginPath();ctx.arc(x,y,(n.type==="foramen"?8:4)*dpr,0,Math.PI*2);n.type==="foramen"?ctx.stroke():ctx.fill();
+      });
+
+      if(idx===curveIndex&&crosshairVisible){
+        const dx=(cursor.x-frame.c.x)*spacingX,dy=(cursor.y-frame.c.y)*spacingY;
+        const offsetMm=dx*frame.nx+dy*frame.ny;
+        const previousMap=canvas._map;canvas._map=map;
+        drawCrosshair(ctx,canvas,pixelW/2+offsetMm/stepMm,d-1-cursor.z);
+        canvas._map=previousMap;
+      }
+
+      const previousMap=canvas._map;canvas._map=map;
+      drawMmScale(ctx,canvas,map);
+      drawMeasurementOverlay(ctx,canvas,"tangential",idx);
+      canvas._map=previousMap;
+
+      ctx.fillStyle=idx===curveIndex?"rgba(49,215,210,.92)":"rgba(205,220,235,.72)";
+      ctx.font=`${10*dpr}px -apple-system,sans-serif`;ctx.textAlign="left";ctx.textBaseline="top";
+      ctx.fillText(`${labels[slot]} • ${idx+1}`,panelX+7*dpr,7*dpr);
+      if(idx===curveIndex){
+        ctx.strokeStyle="rgba(49,215,210,.72)";ctx.lineWidth=1.5*dpr;ctx.strokeRect(panelX+1*dpr,1*dpr,panelW-2*dpr,ch-2*dpr);
+      }
     });
-    const dx=(cursor.x-frame.c.x)*spacingX,dy=(cursor.y-frame.c.y)*spacingY;
-    const offsetMm=dx*frame.nx+dy*frame.ny;
-    if(crosshairVisible)drawCrosshair(ctx,canvas,pixelW/2+offsetMm/stepMm,d-1-cursor.z);
-    drawMeasurementOverlay(ctx,canvas,"tangential",curveIndex);
+    canvas._tangentialPanels=maps.filter(Boolean);
+    canvas._map=maps[1]||maps.find(Boolean)||null;
   }
 
   function drawPanoramic(canvas){
@@ -445,6 +554,13 @@ export default function Viewer2(){
     if(sorted.length){ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();sorted.forEach((n,i)=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();sorted.forEach(n=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.beginPath();ctx.arc(x,y,3*map.dpr,0,Math.PI*2);ctx.fill()})}
     foramina.forEach(n=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(x,y,7*map.dpr,0,Math.PI*2);ctx.stroke()});
     if(crosshairVisible)drawCrosshair(ctx,canvas,curveIndex,d-1-cursor.z);
+    drawMmScale(ctx,canvas);
+    ctx.save();
+    ctx.fillStyle="rgba(49,215,210,.88)";
+    ctx.font=`${10*map.dpr}px -apple-system,sans-serif`;
+    ctx.textAlign="right";ctx.textBaseline="top";
+    ctx.fillText(`Faixa panorâmica ${PANORAMIC_BAND_HALF_MM*2} mm`,map.ox+map.dw-6*map.dpr,map.oy+6*map.dpr);
+    ctx.restore();
   }
 
   useEffect(()=>{
@@ -500,7 +616,8 @@ export default function Viewer2(){
     return [1,1];
   }
   function handleMeasurement(plane,pt){
-    const slice=planeSlice(metaRef.current,plane,cursor,curveIndex),[spacingA,spacingB]=currentSpacing(plane);
+    const slice=(plane==="tangential"&&Number.isInteger(pt.tangentialIndex))?pt.tangentialIndex:planeSlice(metaRef.current,plane,cursor,curveIndex),[spacingA,spacingB]=currentSpacing(plane);
+    if(plane==="tangential"&&Number.isInteger(pt.tangentialIndex)&&pt.tangentialIndex!==curveIndex)setCurveIndex(pt.tangentialIndex);
     if(!pendingMeasure||pendingMeasure.plane!==plane||pendingMeasure.slice!==slice){
       setPendingMeasure({plane,slice,a:pt,b:null,spacingA,spacingB});
     }else{
@@ -519,9 +636,11 @@ export default function Viewer2(){
     }else if(plane==="sagittal"){
       setCursor(c=>({...c,y:clamp(Math.round(pt.a),0,m.h-1),z:clamp(Math.round(m.d-1-pt.b),0,m.d-1)}));
     }else if(plane==="tangential"){
-      const frame=tangentFrame(curveIndex);if(!frame)return;
-      const stepMm=.25,pixelW=canvas._map.pixelW;
+      const targetIndex=Number.isInteger(pt.tangentialIndex)?pt.tangentialIndex:curveIndex;
+      const frame=tangentFrame(targetIndex);if(!frame)return;
+      const stepMm=.25,pixelW=Math.round(40/stepMm);
       const off=(pt.a-pixelW/2)*stepMm;
+      setCurveIndex(targetIndex);
       setCursor(c=>({
         ...c,
         x:clamp(Math.round(frame.c.x+frame.nx*off/m.spacingX),0,m.w-1),
@@ -545,9 +664,11 @@ export default function Viewer2(){
       if(best>=0&&bestDist<20){curveDragRef.current=best;canvas.setPointerCapture(e.pointerId)}return;
     }
     if((tool==="nerve"||tool==="foramen")&&plane==="tangential"){
-      const pixelW=canvas._map.pixelW,d=metaRef.current.d,offsetMm=(pt.a-pixelW/2)*.25,z=clamp(Math.round(d-1-pt.b),0,d-1);
-      const mark={id:(crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random())),curveIndex,z,offsetMm};
-      if(tool==="nerve")setNervePoints(ns=>[...ns.filter(n=>Math.abs(n.curveIndex-curveIndex)>1),mark].sort((a,b)=>a.curveIndex-b.curveIndex));
+      const targetIndex=Number.isInteger(pt.tangentialIndex)?pt.tangentialIndex:curveIndex;
+      const pixelW=Math.round(40/.25),d=metaRef.current.d,offsetMm=(pt.a-pixelW/2)*.25,z=clamp(Math.round(d-1-pt.b),0,d-1);
+      setCurveIndex(targetIndex);
+      const mark={id:(crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random())),curveIndex:targetIndex,z,offsetMm};
+      if(tool==="nerve")setNervePoints(ns=>[...ns.filter(n=>Math.abs(n.curveIndex-targetIndex)>1),mark].sort((a,b)=>a.curveIndex-b.curveIndex));
       else setForamina(fs=>[...fs,mark]);
       return;
     }
@@ -608,7 +729,7 @@ export default function Viewer2(){
     <section className="viewer2-grid">
       {[
         ["axial","Axial",canvases.axial],["coronal","Coronal",canvases.coronal],["sagittal","Sagital",canvases.sagittal],
-        ["tangential","Tangencial",canvases.tangential],["panoramic","Panorâmica reconstruída",canvases.panoramic]
+        ["tangential","Tangencial • 3 cortes",canvases.tangential],["panoramic","Panorâmica reconstruída",canvases.panoramic]
       ].map(([id,label,ref])=><article className={"viewer2-pane "+id} key={id}>
         <div className="viewer2-pane-head"><strong>{label}</strong><button onClick={()=>resetPlane(id)}>1:1</button></div>
         {(()=>{const pc=planeControl(id);return <div className="viewer2-slice-control"><span>{pc.label}</span><input aria-label={"Navegação "+label} type="range" min={pc.min} max={pc.max} step="1" value={pc.value} onChange={e=>pc.set(e.target.value)}/></div>})()}
@@ -618,7 +739,7 @@ export default function Viewer2(){
         <section>
           <p className="eyebrow">CURVA DA ARCADA</p><strong>Sempre ativa • ajuste manual</strong>
           <input type="range" min="0" max={Math.max(0,curve.length-1)} value={curveIndex} onChange={e=>setCurveIndex(Number(e.target.value))}/>
-          <small>Corte tangencial {curveIndex+1}/{curve.length}. A curva inicial ainda é uma proposta geométrica, não uma segmentação automática da arcada. Ajuste os pontos no axial antes de usar os tangenciais.</small>
+          <small>Corte tangencial {curveIndex+1}/{curve.length}. A faixa azul mostra os {PANORAMIC_BAND_HALF_MM*2} mm usados na reconstrução panorâmica. A curva inicial ainda é uma proposta geométrica; ajuste os pontos no axial antes de usar os tangenciais.</small>
           <button className="viewer2-small" onClick={resetArch}>Restaurar curva inicial</button>
         </section>
         <section className="viewer2-export">
