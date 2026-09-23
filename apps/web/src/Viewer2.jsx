@@ -1,6 +1,7 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {jsPDF} from "jspdf";
+import Viewer3DPanel from "./Viewer3DPanel.jsx";
 import {clearViewerSession,getViewerSession} from "./viewerSession.js";
 
 const PANORAMIC_BAND_HALF_MM=2;
@@ -923,12 +924,25 @@ export default function Viewer2(){
     <section className="viewer2-grid">
       {[
         ["axial","Axial",canvases.axial],["coronal","Coronal",canvases.coronal],["sagittal","Sagital",canvases.sagittal],
-        ["tangential","Tangencial • 3 cortes",canvases.tangential],["panoramic","Panorâmica reconstruída",canvases.panoramic]
+        ["tangential","Tangencial • 3 cortes",canvases.tangential]
       ].map(([id,label,ref])=><article className={"viewer2-pane "+id} key={id}>
         <div className="viewer2-pane-head"><strong>{label}</strong><button onClick={()=>resetPlane(id)}>1:1</button></div>
         {(()=>{const pc=planeControl(id);return <div className="viewer2-slice-control"><span>{pc.label}</span><input aria-label={"Navegação "+label} type="range" min={pc.min} max={pc.max} step="1" value={pc.value} onChange={e=>pc.set(e.target.value)}/></div>})()}
         <div className="viewer2-canvas-wrap"><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
       </article>)}
+      <article className="viewer2-pane panoramic visual3d-composite">
+        <div className="viewer2-pane-head"><strong>Modelo 3D + Panorâmica</strong><span className="viewer3d-badge">3D EXPERIMENTAL</span></div>
+        <div className="viewer3d-split">
+          <div className="viewer3d-primary">
+            <Viewer3DPanel volume={volumeRef.current} meta={meta} nervePoints={nerveDisplayPoints} curve={curve}/>
+          </div>
+          <div className="viewer3d-mini-pano">
+            <div className="viewer3d-mini-head"><strong>Panorâmica reconstruída</strong><button onClick={()=>resetPlane("panoramic")}>1:1</button></div>
+            {(()=>{const pc=planeControl("panoramic");return <div className="viewer2-slice-control"><span>{pc.label}</span><input aria-label="Navegação Panorâmica reconstruída" type="range" min={pc.min} max={pc.max} step="1" value={pc.value} onChange={e=>pc.set(e.target.value)}/></div>})()}
+            <div className="viewer2-canvas-wrap viewer3d-pano-canvas"><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.panoramic} onWheel={e=>onWheel("panoramic",e)} onPointerDown={e=>onPointerDown("panoramic",e)} onPointerMove={e=>onPointerMove("panoramic",e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
+          </div>
+        </div>
+      </article>
       <aside className="viewer2-side">
         <section>
           <p className="eyebrow">CURVA DA ARCADA</p><strong>{archRange.label}</strong>
