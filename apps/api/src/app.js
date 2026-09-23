@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import path from "node:path";
 import cors from "cors";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -80,7 +81,7 @@ export function createApp(){
         return created;
       });
       const access=await createAccessToken(prisma,order.id);
-      const base=process.env.PATIENT_APP_URL||"http://localhost:5173/paciente";
+      const base=process.env.PATIENT_APP_URL||(`${req.protocol}://${req.get("host")}/paciente`);
       res.status(201).json({order,patientAccessUrl:base+"?token="+encodeURIComponent(access.rawToken),accessExpiresAt:access.expiresAt});
     }catch(e){next(e);}
   });
@@ -126,6 +127,14 @@ export function createApp(){
       res.status(201).json(result);
     }catch(e){next(e);}
   });
+
+  if(process.env.WEB_DIST){
+    app.use(express.static(process.env.WEB_DIST));
+    app.get("*",(req,res,next)=>{
+      if(req.path.startsWith("/api/")||req.path==="/health") return next();
+      res.sendFile(path.join(process.env.WEB_DIST,"index.html"));
+    });
+  }
 
   app.use((err,_req,res,_next)=>{console.error(err);res.status(err.status||500).json({error:err.status?err.message:"Erro interno do servidor."});});
   return app;
