@@ -1,48 +1,98 @@
-import React,{useEffect,useMemo,useRef,useState} from "react";
-import * as THREE from "three";
-import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
-import {MarchingCubes} from "three/examples/jsm/objects/MarchingCubes.js";
+import React,{useEffect,useRef,useState} from "react";
+import "@kitware/vtk.js/Rendering/Profiles/Volume";
+
+import vtkGenericRenderWindow from "@kitware/vtk.js/Rendering/Misc/GenericRenderWindow";
+import vtkImageData from "@kitware/vtk.js/Common/DataModel/ImageData";
+import vtkDataArray from "@kitware/vtk.js/Common/Core/DataArray";
+import vtkColorTransferFunction from "@kitware/vtk.js/Rendering/Core/ColorTransferFunction";
+import vtkPiecewiseFunction from "@kitware/vtk.js/Common/DataModel/PiecewiseFunction";
+import vtkVolume from "@kitware/vtk.js/Rendering/Core/Volume";
+import vtkVolumeMapper from "@kitware/vtk.js/Rendering/Core/VolumeMapper";
+
+import vtkPolyData from "@kitware/vtk.js/Common/DataModel/PolyData";
+import vtkPoints from "@kitware/vtk.js/Common/Core/Points";
+import vtkCellArray from "@kitware/vtk.js/Common/Core/CellArray";
+import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
+import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
+import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
 
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 
-function sampledPercentiles(volume){
+function sampledStats(volume){
   const values=[];
-  const step=Math.max(1,Math.floor(volume.length/45000));
+  const step=Math.max(1,Math.floor(volume.length/90000));
   for(let i=0;i<volume.length;i+=step)values.push(volume[i]);
   values.sort((a,b)=>a-b);
-  const pick=q=>values[Math.floor((values.length-1)*q)]||0;
-  return {lo:pick(.28),hi:pick(.995)};
+  const p=q=>values[Math.floor((values.length-1)*q)]||0;
+  const raw=[p(.03),p(.48),p(.70),p(.84),p(.94),p(.985),p(.998)];
+  for(let i=1;i<raw.length;i++)if(raw[i]<=raw[i-1])raw[i]=raw[i-1]+1;
+  return {
+    air:raw[0],soft:raw[1],trab:raw[2],bone:raw[3],
+    cortical:raw[4],dense:raw[5],max:raw[6]
+  };
 }
 
-function buildField(volume,meta,resolution){
-  const {w,h,d}=meta;
-  const {lo,hi}=sampledPercentiles(volume);
-  const span=Math.max(1,hi-lo);
-  const field=new Float32Array(resolution*resolution*resolution);
-  let q=0;
-  for(let z=0;z<resolution;z++){
-    const oz=Math.round(z*(d-1)/(resolution-1));
-    const zOff=oz*w*h;
-    for(let y=0;y<resolution;y++){
-      const oy=Math.round(y*(h-1)/(resolution-1));
-      const yOff=zOff+oy*w;
-      for(let x=0;x<resolution;x++){
-        const ox=Math.round(x*(w-1)/(resolution-1));
-        const n=clamp((volume[yOff+ox]-lo)/span,0,1);
-        field[q++]=n*100;
-      }
-    }
+const PRESETS={
+  clinical:{
+    label:"Clínico",bg:[.035,.055,.075],
+    colors:[
+      ["air",0,0,0],["soft",.11,.08,.065],["trab",.38,.27,.18],
+      ["bone",.73,.57,.39],["cortical",.93,.80,.61],["dense",1,.96,.86],["max",1,1,.96]
+    ],
+    opacity:[["air",0],["soft",0],["trab",.008],["bone",.055],["cortical",.18],["dense",.52],["max",.72]],
+    ambient:.32,diffuse:.78,specular:.32,specularPower:18
+  },
+  anatomic:{
+    label:"Anatômico",bg:[.03,.045,.06],
+    colors:[
+      ["air",0,0,0],["soft",.08,.055,.045],["trab",.34,.22,.13],
+      ["bone",.68,.50,.31],["cortical",.88,.70,.48],["dense",.98,.90,.76],["max",1,.98,.90]
+    ],
+    opacity:[["air",0],["soft",0],["trab",.014],["bone",.09],["cortical",.26],["dense",.58],["max",.78]],
+    ambient:.26,diffuse:.82,specular:.24,specularPower:14
+  },
+  patient:{
+    label:"Paciente",bg:[.055,.085,.11],
+    colors:[
+      ["air",0,0,0],["soft",.16,.10,.075],["trab",.48,.31,.17],
+      ["bone",.82,.62,.38],["cortical",1,.84,.57],["dense",1,.98,.90],["max",1,1,1]
+    ],
+    opacity:[["air",0],["soft",0],["trab",.006],["bone",.045],["cortical",.16],["dense",.64],["max",.86]],
+    ambient:.42,diffuse:.74,specular:.44,specularPower:24
+  },
+  translucent:{
+    label:"Translúcido",bg:[.025,.045,.065],
+    colors:[
+      ["air",0,0,0],["soft",.06,.05,.04],["trab",.30,.23,.18],
+      ["bone",.64,.53,.39],["cortical",.85,.73,.56],["dense",1,.95,.84],["max",1,1,.94]
+    ],
+    opacity:[["air",0],["soft",0],["trab",.003],["bone",.018],["cortical",.07],["dense",.42],["max",.66]],
+    ambient:.38,diffuse:.70,specular:.34,specularPower:20
+  },
+  detail:{
+    label:"Detalhe",bg:[.018,.028,.04],
+    colors:[
+      ["air",0,0,0],["soft",.04,.04,.04],["trab",.28,.26,.24],
+      ["bone",.62,.60,.56],["cortical",.88,.86,.80],["dense",1,1,1],["max",1,1,1]
+    ],
+    opacity:[["air",0],["soft",0],["trab",.004],["bone",.035],["cortical",.17],["dense",.72],["max",.92]],
+    ambient:.30,diffuse:.82,specular:.50,specularPower:30
   }
-  return field;
+};
+
+function buildTransferFunctions(stats,presetName,opacityScale,denseBoost){
+  const cfg=PRESETS[presetName]||PRESETS.clinical;
+  const ctf=vtkColorTransferFunction.newInstance();
+  cfg.colors.forEach(([key,r,g,b])=>ctf.addRGBPoint(stats[key],r,g,b));
+  const ofun=vtkPiecewiseFunction.newInstance();
+  cfg.opacity.forEach(([key,value])=>{
+    const boost=denseBoost&&(key==="dense"||key==="max")?1.28:1;
+    ofun.addPoint(stats[key],clamp(value*opacityScale*boost,0,1));
+  });
+  return {cfg,ctf,ofun};
 }
 
-function physicalScales(meta){
-  const px=meta.w*meta.spacingX,py=meta.h*meta.spacingY,pz=meta.d*meta.spacingZ;
-  const max=Math.max(px,py,pz)||1;
-  return {x:px/max*46,y:py/max*46,z:pz/max*46};
-}
-
-function curvePointToLocal(n,curve,meta,scale){
+function nervePointToWorld(n,curve,meta){
   const c=curve[n.curveIndex];if(!c)return null;
   const prev=curve[Math.max(0,n.curveIndex-1)]||c;
   const next=curve[Math.min(curve.length-1,n.curveIndex+1)]||c;
@@ -51,256 +101,212 @@ function curvePointToLocal(n,curve,meta,scale){
   const nx=-ty,ny=tx;
   const x=c.x+nx*n.offsetMm/meta.spacingX;
   const y=c.y+ny*n.offsetMm/meta.spacingY;
-  const z=n.z;
-  return new THREE.Vector3(
-    ((x/(meta.w-1))*2-1)*scale.x,
-    ((y/(meta.h-1))*2-1)*scale.y,
-    ((z/(meta.d-1))*2-1)*scale.z
-  );
+  return [x*meta.spacingX,y*meta.spacingY,n.z*meta.spacingZ];
+}
+
+function createTubeActor(worldPoints,radius,color){
+  if(worldPoints.length<2)return null;
+  const pts=vtkPoints.newInstance();
+  const flat=new Float32Array(worldPoints.length*3);
+  worldPoints.forEach((p,i)=>{flat[i*3]=p[0];flat[i*3+1]=p[1];flat[i*3+2]=p[2]});
+  pts.setData(flat,3);
+
+  const ids=new Uint32Array(worldPoints.length+1);
+  ids[0]=worldPoints.length;
+  for(let i=0;i<worldPoints.length;i++)ids[i+1]=i;
+
+  const lines=vtkCellArray.newInstance({values:ids});
+  const poly=vtkPolyData.newInstance();
+  poly.setPoints(pts);
+  poly.setLines(lines);
+
+  const tube=vtkTubeFilter.newInstance({radius,numberOfSides:16,capping:true});
+  tube.setInputData(poly);
+  const mapper=vtkMapper.newInstance();
+  mapper.setInputConnection(tube.getOutputPort());
+  const actor=vtkActor.newInstance();
+  actor.setMapper(mapper);
+  actor.getProperty().setColor(...color);
+  actor.getProperty().setAmbient(.35);
+  actor.getProperty().setDiffuse(.75);
+  actor.getProperty().setSpecular(.45);
+  actor.getProperty().setSpecularPower(24);
+  return {actor,tube,mapper,poly,pts,lines};
 }
 
 export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
   const hostRef=useRef(null);
-  const sceneRef=useRef(null);
-  const cameraRef=useRef(null);
-  const controlsRef=useRef(null);
-  const boneRef=useRef(null);
-  const denseRef=useRef(null);
-  const nerveRef=useRef(null);
-  const lightRigRef=useRef(null);
+  const genericRef=useRef(null);
   const rendererRef=useRef(null);
-  const groupRef=useRef(null);
-  const rafRef=useRef(0);
+  const renderWindowRef=useRef(null);
+  const imageDataRef=useRef(null);
+  const volumeActorRef=useRef(null);
+  const mapperRef=useRef(null);
+  const statsRef=useRef(null);
+  const nerveActorRef=useRef(null);
 
   const [ready,setReady]=useState(false);
-  const [status,setStatus]=useState("Preparando reconstrução 3D…");
-  const [boneVisible,setBoneVisible]=useState(true);
-  const [denseVisible,setDenseVisible]=useState(true);
-  const [nerveVisible,setNerveVisible]=useState(true);
+  const [status,setStatus]=useState("Preparando GPU Volume Rendering…");
   const [preset,setPreset]=useState("clinical");
-  const [boneOpacity,setBoneOpacity]=useState(.30);
-  const [realistic,setRealistic]=useState(true);
+  const [volumeVisible,setVolumeVisible]=useState(true);
+  const [nerveVisible,setNerveVisible]=useState(true);
+  const [denseBoost,setDenseBoost]=useState(true);
   const [lighting,setLighting]=useState(true);
+  const [opacityScale,setOpacityScale]=useState(1);
 
-  const quality=useMemo(()=>{
-    if(typeof window==="undefined")return 52;
-    if(window.innerWidth<760)return 42;
-    if(window.innerWidth<1200)return 50;
-    return 58;
-  },[]);
+  function renderNow(){renderWindowRef.current?.render?.()}
+
+  function applyPreset(name=preset){
+    const actor=volumeActorRef.current,stats=statsRef.current,renderer=rendererRef.current;
+    if(!actor||!stats||!renderer)return;
+    const {cfg,ctf,ofun}=buildTransferFunctions(stats,name,opacityScale,denseBoost);
+    const prop=actor.getProperty();
+    prop.setRGBTransferFunction(0,ctf);
+    prop.setScalarOpacity(0,ofun);
+    prop.setInterpolationTypeToLinear();
+    prop.setShade(lighting);
+    prop.setAmbient(cfg.ambient);
+    prop.setDiffuse(cfg.diffuse);
+    prop.setSpecular(cfg.specular);
+    prop.setSpecularPower(cfg.specularPower);
+    renderer.setBackground(...cfg.bg);
+    renderNow();
+  }
+
+  function setView(kind){
+    const renderer=rendererRef.current,img=imageDataRef.current;
+    if(!renderer||!img)return;
+    const b=img.getBounds(),c=[(b[0]+b[1])/2,(b[2]+b[3])/2,(b[4]+b[5])/2];
+    const sx=b[1]-b[0],sy=b[3]-b[2],sz=b[5]-b[4],r=Math.max(sx,sy,sz)||100;
+    const cam=renderer.getActiveCamera();
+    cam.setFocalPoint(...c);
+    if(kind==="front"){cam.setPosition(c[0],c[1]-r*2.15,c[2]);cam.setViewUp(0,0,1)}
+    if(kind==="side"){cam.setPosition(c[0]+r*2.15,c[1],c[2]);cam.setViewUp(0,0,1)}
+    if(kind==="top"){cam.setPosition(c[0],c[1],c[2]+r*2.15);cam.setViewUp(0,-1,0)}
+    if(kind==="oblique"){cam.setPosition(c[0]+r*1.55,c[1]-r*1.35,c[2]+r*.75);cam.setViewUp(0,0,1)}
+    renderer.resetCameraClippingRange();
+    renderNow();
+  }
 
   useEffect(()=>{
     if(!hostRef.current||!volume||!meta)return;
     let cancelled=false;
     setReady(false);
-    setStatus("Gerando superfície óssea a partir do CBCT…");
+    setStatus("Carregando o volume CBCT completo na GPU…");
 
     const host=hostRef.current;
-    const scene=new THREE.Scene();
-    scene.background=new THREE.Color(0x101820);
-    scene.fog=new THREE.FogExp2(0x101820,.009);
+    const generic=vtkGenericRenderWindow.newInstance({background:[.035,.055,.075]});
+    generic.setContainer(host);
+    generic.resize();
 
-    const camera=new THREE.PerspectiveCamera(34,1,.1,1000);
-    camera.position.set(72,38,84);
+    const renderer=generic.getRenderer();
+    const renderWindow=generic.getRenderWindow();
 
-    const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:"high-performance"});
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.6));
-    renderer.setSize(Math.max(1,host.clientWidth),Math.max(1,host.clientHeight),false);
-    renderer.outputColorSpace=THREE.SRGBColorSpace;
-    renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure=1.55;
-    renderer.shadowMap.enabled=true;
-    renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-    host.innerHTML="";
-    host.appendChild(renderer.domElement);
-
-    const controls=new OrbitControls(camera,renderer.domElement);
-    controls.enableDamping=true;
-    controls.dampingFactor=.075;
-    controls.rotateSpeed=.55;
-    controls.zoomSpeed=.8;
-    controls.panSpeed=.7;
-    controls.target.set(0,0,0);
-
-    const ambient=new THREE.HemisphereLight(0xe8f5ff,0x2b1d15,2.2);
-    scene.add(ambient);
-    const key=new THREE.DirectionalLight(0xfff5e6,4.8);key.position.set(55,80,70);key.castShadow=true;scene.add(key);
-    const fill=new THREE.DirectionalLight(0x94cfff,2.2);fill.position.set(-65,24,45);scene.add(fill);
-    const rim=new THREE.DirectionalLight(0xffd0ae,1.5);rim.position.set(12,-35,-65);scene.add(rim);
-    lightRigRef.current=[ambient,key,fill,rim];
-
-    const group=new THREE.Group();
-    group.rotation.x=-Math.PI/2;
-    group.rotation.z=Math.PI;
-    scene.add(group);
-
-    const floorGeo=new THREE.CircleGeometry(62,96);
-    const floorMat=new THREE.MeshStandardMaterial({color:0x071018,roughness:.82,metalness:.02,transparent:true,opacity:.52});
-    const floor=new THREE.Mesh(floorGeo,floorMat);
-    floor.rotation.x=-Math.PI/2;floor.position.y=-49;floor.receiveShadow=true;scene.add(floor);
-
-    const boneMat=new THREE.MeshPhysicalMaterial({
-      color:0xe4c6a2,roughness:.42,metalness:0,transparent:true,opacity:boneOpacity,
-      clearcoat:.2,clearcoatRoughness:.42,side:THREE.DoubleSide,depthWrite:false
+    const imageData=vtkImageData.newInstance();
+    imageData.setDimensions(meta.w,meta.h,meta.d);
+    imageData.setSpacing(meta.spacingX,meta.spacingY,meta.spacingZ);
+    imageData.setOrigin(0,0,0);
+    const scalars=vtkDataArray.newInstance({
+      name:"CBCT",
+      numberOfComponents:1,
+      values:volume
     });
-    const denseMat=new THREE.MeshPhysicalMaterial({
-      color:0xfff4dc,roughness:.2,metalness:0,transparent:true,opacity:.98,
-      clearcoat:.62,clearcoatRoughness:.16,side:THREE.DoubleSide
-    });
+    imageData.getPointData().setScalars(scalars);
 
-    const bone=new MarchingCubes(quality,boneMat,false,false,typeof window!=="undefined"&&window.innerWidth<760?70000:180000);
-    const dense=new MarchingCubes(quality,denseMat,false,false,typeof window!=="undefined"&&window.innerWidth<760?65000:150000);
-    const scale=physicalScales(meta);
-    bone.scale.set(scale.x,scale.y,scale.z);
-    dense.scale.copy(bone.scale);
-    bone.isolation=45;
-    dense.isolation=70;
-    bone.castShadow=true;dense.castShadow=true;
-    group.add(bone);group.add(dense);
-    boneRef.current=bone;denseRef.current=dense;
+    const mapper=vtkVolumeMapper.newInstance();
+    mapper.setInputData(imageData);
+    mapper.setAutoAdjustSampleDistances(true);
+    mapper.setSampleDistance(Math.max(.18,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*1.25));
 
-    sceneRef.current=scene;cameraRef.current=camera;controlsRef.current=controls;rendererRef.current=renderer;groupRef.current=group;
+    const actor=vtkVolume.newInstance();
+    actor.setMapper(mapper);
+    renderer.addVolume(actor);
 
-    const resize=()=>{
-      if(!hostRef.current||!rendererRef.current||!cameraRef.current)return;
-      const w=Math.max(1,hostRef.current.clientWidth),h=Math.max(1,hostRef.current.clientHeight);
-      rendererRef.current.setSize(w,h,false);
-      cameraRef.current.aspect=w/h;cameraRef.current.updateProjectionMatrix();
-    };
-    const ro=new ResizeObserver(resize);ro.observe(host);resize();
+    genericRef.current=generic;
+    rendererRef.current=renderer;
+    renderWindowRef.current=renderWindow;
+    imageDataRef.current=imageData;
+    volumeActorRef.current=actor;
+    mapperRef.current=mapper;
+    statsRef.current=sampledStats(volume);
 
-    const animate=()=>{
-      if(cancelled)return;
-      controls.update();
-      renderer.render(scene,camera);
-      rafRef.current=requestAnimationFrame(animate);
-    };
-    animate();
+    const prop=actor.getProperty();
+    prop.setScalarOpacityUnitDistance(0,Math.max(.4,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*2.2));
 
-    const timer=setTimeout(()=>{
-      if(cancelled)return;
-      try{
-        const field=buildField(volume,meta,quality);
-        bone.field.set(field);dense.field.set(field);
-        bone.update();dense.update();
+    applyPreset("clinical");
+    renderer.resetCamera();
+    setView("oblique");
+    renderWindow.render();
 
-        const box=new THREE.Box3().setFromObject(group);
-        const sphere=box.getBoundingSphere(new THREE.Sphere());
-        const radius=Math.max(30,sphere.radius||45);
-        controls.target.copy(sphere.center);
-        camera.position.set(sphere.center.x+radius*1.65,sphere.center.y+radius*.85,sphere.center.z+radius*1.85);
-        camera.near=Math.max(.1,radius/100);camera.far=radius*12;camera.updateProjectionMatrix();
-        controls.update();
-        if(!cancelled){setReady(true);setStatus("Reconstrução 3D experimental • use os cortes para decisão clínica.");}
-      }catch(e){
-        if(!cancelled)setStatus("Não foi possível gerar o 3D deste volume.");
-      }
-    },40);
+    const ro=new ResizeObserver(()=>{generic.resize();renderWindow.render()});
+    ro.observe(host);
+
+    if(!cancelled){
+      setReady(true);
+      setStatus("GPU Volume Rendering • CBCT completo • interação em tempo real");
+    }
 
     return()=>{
-      cancelled=true;clearTimeout(timer);cancelAnimationFrame(rafRef.current);ro.disconnect();
-      controls.dispose();renderer.dispose();
-      scene.traverse(o=>{if(o.geometry)o.geometry.dispose?.();if(o.material){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose?.())}});
-      if(renderer.domElement.parentElement===host)host.removeChild(renderer.domElement);
-      sceneRef.current=null;cameraRef.current=null;controlsRef.current=null;rendererRef.current=null;groupRef.current=null;boneRef.current=null;denseRef.current=null;
+      cancelled=true;
+      ro.disconnect();
+      if(nerveActorRef.current?.actor)renderer.removeActor(nerveActorRef.current.actor);
+      renderer.removeVolume(actor);
+      nerveActorRef.current=null;
+      generic.delete();
+      genericRef.current=null;rendererRef.current=null;renderWindowRef.current=null;
+      imageDataRef.current=null;volumeActorRef.current=null;mapperRef.current=null;statsRef.current=null;
     };
-  },[volume,meta,quality]);
+  },[volume,meta]);
 
-  useEffect(()=>{if(boneRef.current){boneRef.current.visible=boneVisible;boneRef.current.material.opacity=boneOpacity}},[boneVisible,boneOpacity]);
-  useEffect(()=>{if(denseRef.current)denseRef.current.visible=denseVisible},[denseVisible]);
-
-  const presetConfigs={
-    clinical:{bg:0x101820,fog:.009,exposure:1.55,bone:.30,boneColor:0xe4c6a2,denseColor:0xfff4dc,boneRough:.42,denseRough:.20,clearcoat:.62,lights:[2.2,4.8,2.2,1.5]},
-    anatomic:{bg:0x0d151c,fog:.010,exposure:1.42,bone:.46,boneColor:0xd7b894,denseColor:0xf7e7cf,boneRough:.50,denseRough:.28,clearcoat:.42,lights:[1.9,4.0,1.8,1.25]},
-    patient:{bg:0x182731,fog:.007,exposure:1.82,bone:.26,boneColor:0xefcfaa,denseColor:0xfff8e9,boneRough:.34,denseRough:.15,clearcoat:.74,lights:[2.6,5.5,2.8,1.8]},
-    translucent:{bg:0x111d25,fog:.008,exposure:1.62,bone:.17,boneColor:0xd8c2a7,denseColor:0xfff3dd,boneRough:.44,denseRough:.22,clearcoat:.55,lights:[2.25,4.6,2.3,1.6]},
-    detail:{bg:0x0b1117,fog:.006,exposure:1.72,bone:.56,boneColor:0xe2c09a,denseColor:0xffffff,boneRough:.38,denseRough:.12,clearcoat:.72,lights:[2.35,5.1,2.4,1.7]}
-  };
-
-  function choosePreset(kind){
-    const cfg=presetConfigs[kind]||presetConfigs.clinical;
-    setPreset(kind);
-    setBoneOpacity(cfg.bone);
-    setRealistic(true);
-    setLighting(true);
-  }
+  useEffect(()=>{applyPreset(preset)},[preset,opacityScale,denseBoost,lighting]);
 
   useEffect(()=>{
-    const cfg=presetConfigs[preset]||presetConfigs.clinical;
-    if(sceneRef.current){
-      sceneRef.current.background=new THREE.Color(cfg.bg);
-      sceneRef.current.fog=new THREE.FogExp2(cfg.bg,cfg.fog);
-    }
-    if(rendererRef.current)rendererRef.current.toneMappingExposure=cfg.exposure;
-    if(boneRef.current&&denseRef.current){
-      if(realistic){
-        boneRef.current.material.color.setHex(cfg.boneColor);
-        boneRef.current.material.roughness=cfg.boneRough;
-        boneRef.current.material.clearcoat=.2;
-        denseRef.current.material.color.setHex(cfg.denseColor);
-        denseRef.current.material.roughness=cfg.denseRough;
-        denseRef.current.material.clearcoat=cfg.clearcoat;
-        denseRef.current.material.opacity=.98;
-      }else{
-        boneRef.current.material.color.setHex(0xd7e0e8);boneRef.current.material.roughness=.74;boneRef.current.material.clearcoat=0;
-        denseRef.current.material.color.setHex(0xffffff);denseRef.current.material.roughness=.58;denseRef.current.material.clearcoat=.05;
-      }
-    }
-    const rig=lightRigRef.current;
-    if(rig)rig.forEach((l,i)=>{l.intensity=cfg.lights[i];l.visible=lighting||i===0});
-  },[preset,realistic,lighting]);
+    if(volumeActorRef.current){volumeActorRef.current.setVisibility(volumeVisible);renderNow()}
+  },[volumeVisible]);
 
   useEffect(()=>{
-    const group=groupRef.current;if(!group||!meta)return;
-    if(nerveRef.current){group.remove(nerveRef.current);nerveRef.current.geometry?.dispose?.();nerveRef.current.material?.dispose?.();nerveRef.current=null}
-    if(!nerveVisible||nervePoints.length<2||curve.length<2)return;
-    const scale=physicalScales(meta);
-    const pts=nervePoints.map(n=>curvePointToLocal(n,curve,meta,scale)).filter(Boolean);
-    if(pts.length<2)return;
-    const path=new THREE.CatmullRomCurve3(pts,false,"centripetal",.4);
-    const radius=Math.max(.38,Math.min(scale.x,scale.y,scale.z)*.0085);
-    const geo=new THREE.TubeGeometry(path,Math.max(24,pts.length*2),radius,10,false);
-    const mat=new THREE.MeshPhysicalMaterial({color:0xff2b2b,emissive:0x6f0505,emissiveIntensity:1.35,roughness:.32,clearcoat:.35});
-    const tube=new THREE.Mesh(geo,mat);tube.renderOrder=8;group.add(tube);nerveRef.current=tube;
+    const renderer=rendererRef.current;if(!renderer||!meta)return;
+    if(nerveActorRef.current?.actor){
+      renderer.removeActor(nerveActorRef.current.actor);
+      nerveActorRef.current=null;
+    }
+    if(!nerveVisible||nervePoints.length<2||curve.length<2){renderNow();return}
+    const pts=nervePoints.map(n=>nervePointToWorld(n,curve,meta)).filter(Boolean);
+    const radius=Math.max(.45,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*3.4);
+    const bundle=createTubeActor(pts,radius,[1,.08,.08]);
+    if(bundle){
+      renderer.addActor(bundle.actor);
+      nerveActorRef.current=bundle;
+      renderNow();
+    }
   },[nervePoints,curve,meta,nerveVisible]);
 
-  function setView(kind){
-    const camera=cameraRef.current,controls=controlsRef.current,group=groupRef.current;
-    if(!camera||!controls||!group)return;
-    const box=new THREE.Box3().setFromObject(group),sphere=box.getBoundingSphere(new THREE.Sphere()),r=Math.max(35,sphere.radius||45),c=sphere.center;
-    if(kind==="front")camera.position.set(c.x,c.y+r*.25,c.z+r*2.35);
-    if(kind==="side")camera.position.set(c.x+r*2.35,c.y+r*.25,c.z);
-    if(kind==="top")camera.position.set(c.x,c.y+r*2.45,c.z+.01);
-    controls.target.copy(c);camera.lookAt(c);controls.update();
-  }
-  function resetView(){setView("side")}
-
-  return <div className="viewer3d-panel">
+  return <div className="viewer3d-panel viewer3d-v2">
     <div className="viewer3d-stage" ref={hostRef}>
-      {!ready&&<div className="viewer3d-loading"><span className="viewer3d-orbit">◌</span><strong>OdontoView 3D</strong><small>{status}</small></div>}
+      {!ready&&<div className="viewer3d-loading"><span className="viewer3d-orbit">◌</span><strong>OdontoView 3D Engine v2</strong><small>{status}</small></div>}
       {ready&&<div className="viewer3d-status">{status}</div>}
+      {ready&&<div className="viewer3d-engine-badge">VTK.js • GPU</div>}
     </div>
     <div className="viewer3d-controls">
       <div className="viewer3d-presets" role="group" aria-label="Presets 3D">
-        <button className={preset==="clinical"?"active":""} onClick={()=>choosePreset("clinical")}>Clínico</button>
-        <button className={preset==="anatomic"?"active":""} onClick={()=>choosePreset("anatomic")}>Anatômico</button>
-        <button className={preset==="patient"?"active":""} onClick={()=>choosePreset("patient")}>Paciente</button>
-        <button className={preset==="translucent"?"active":""} onClick={()=>choosePreset("translucent")}>Translúcido</button>
-        <button className={preset==="detail"?"active":""} onClick={()=>choosePreset("detail")}>Detalhe</button>
+        {Object.entries(PRESETS).map(([key,cfg])=><button key={key} className={preset===key?"active":""} onClick={()=>setPreset(key)}>{cfg.label}</button>)}
       </div>
       <div className="viewer3d-switches">
-        <button className={boneVisible?"active":""} onClick={()=>setBoneVisible(v=>!v)}>Osso</button>
-        <button className={denseVisible?"active":""} onClick={()=>setDenseVisible(v=>!v)}>Dentes/denso</button>
+        <button className={volumeVisible?"active":""} onClick={()=>setVolumeVisible(v=>!v)}>Volume</button>
+        <button className={denseBoost?"active":""} onClick={()=>setDenseBoost(v=>!v)}>Realçar denso</button>
         <button className={nerveVisible?"active nerve":""} onClick={()=>setNerveVisible(v=>!v)}>Nervo</button>
-        <button className={realistic?"active":""} onClick={()=>setRealistic(v=>!v)}>Textura</button>
-        <button className={lighting?"active":""} onClick={()=>setLighting(v=>!v)}>Luz</button>
+        <button className={lighting?"active":""} onClick={()=>setLighting(v=>!v)}>Shading</button>
       </div>
-      <label className="viewer3d-opacity"><span>Transparência do osso</span><input type="range" min=".12" max=".9" step=".02" value={boneOpacity} onChange={e=>setBoneOpacity(Number(e.target.value))}/><b>{Math.round(boneOpacity*100)}%</b></label>
+      <label className="viewer3d-opacity">
+        <span>Intensidade do volume</span>
+        <input type="range" min=".45" max="1.55" step=".05" value={opacityScale} onChange={e=>setOpacityScale(Number(e.target.value))}/>
+        <b>{Math.round(opacityScale*100)}%</b>
+      </label>
       <div className="viewer3d-views">
+        <button onClick={()=>setView("oblique")}>3/4</button>
         <button onClick={()=>setView("side")}>Lateral</button>
         <button onClick={()=>setView("front")}>Frontal</button>
         <button onClick={()=>setView("top")}>Superior</button>
-        <button onClick={resetView}>Reset</button>
       </div>
     </div>
   </div>;
