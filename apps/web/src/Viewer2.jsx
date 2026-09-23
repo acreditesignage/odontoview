@@ -80,6 +80,7 @@ export default function Viewer2(){
   const session=useMemo(()=>getViewerSession(),[]);
   const volumeRef=useRef(null);
   const metaRef=useRef(null);
+  const defaultWindowRef=useRef({wc:400,ww:2000});
   const dragRef=useRef(null);
   const curveDragRef=useRef(null);
   const [loading,setLoading]=useState(true);
@@ -141,6 +142,7 @@ export default function Viewer2(){
           :percentileWindow(volume);
         const nextMeta={w,h,d,spacingX,spacingY,spacingZ,manufacturer:session.result.series[validIndex].manufacturer,model:session.result.series[validIndex].model,seriesIndex:validIndex};
         volumeRef.current=volume;metaRef.current=nextMeta;
+        defaultWindowRef.current=computedWindow;
         setMeta(nextMeta);setWindowLevel(computedWindow);
         setCursor({x:Math.floor(w/2),y:Math.floor(h/2),z:Math.floor(d/2)});
         const arch=defaultArch(w,h);setCurvePoints(arch);
@@ -298,6 +300,9 @@ export default function Viewer2(){
   },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,transforms]);
 
   function resetPlane(plane){setTransforms(t=>({...t,[plane]:{zoom:1,panX:0,panY:0}}))}
+  function adjustBrightness(delta){setWindowLevel(v=>({...v,wc:Math.round(v.wc+delta)}))}
+  function adjustContrast(delta){setWindowLevel(v=>({...v,ww:Math.max(50,Math.round(v.ww+delta))}))}
+  function resetWindow(){setWindowLevel(defaultWindowRef.current)}
   function onWheel(plane,e){e.preventDefault();const factor=e.deltaY<0?1.12:.89;setTransforms(t=>({...t,[plane]:{...t[plane],zoom:clamp(t[plane].zoom*factor,.5,8)}}))}
   function beginPan(plane,e){if(tool!=="pan")return;dragRef.current={plane,x:e.clientX,y:e.clientY,start:transforms[plane]};e.currentTarget.setPointerCapture(e.pointerId)}
   function movePan(e){const d=dragRef.current;if(!d)return;setTransforms(t=>({...t,[d.plane]:{...t[d.plane],panX:d.start.panX+e.clientX-d.x,panY:d.start.panY+e.clientY-d.y}}))}
@@ -368,7 +373,12 @@ export default function Viewer2(){
       {[
         ["navigate","⌖","Navegar"],["pan","✋","Pan"],["measure","↔","Medir"],["curve","⌒","Curva"],["nerve","●","Nervo"],["foramen","◉","Forame"]
       ].map(([id,icon,label])=><button key={id} className={tool===id?"active":""} onClick={()=>{setTool(id);setPendingMeasure(null)}}><span>{icon}</span>{label}</button>)}
-      <div className="viewer2-wl"><label>Brilho <input type="range" min={windowLevel.wc-windowLevel.ww} max={windowLevel.wc+windowLevel.ww} step="1" value={windowLevel.wc} onChange={e=>setWindowLevel(v=>({...v,wc:Number(e.target.value)}))}/></label><label>Contraste <input type="range" min="50" max={Math.max(5000,windowLevel.ww*2)} step="10" value={windowLevel.ww} onChange={e=>setWindowLevel(v=>({...v,ww:Number(e.target.value)}))}/></label></div>
+      <div className="viewer2-wl-buttons" aria-label="Controles de brilho e contraste">
+        <div className="wl-control"><span>Brilho</span><button type="button" aria-label="Diminuir brilho" onClick={()=>adjustBrightness(-25)}>−</button><b>{Math.round(windowLevel.wc)}</b><button type="button" aria-label="Aumentar brilho" onClick={()=>adjustBrightness(25)}>+</button></div>
+        <div className="wl-control"><span>Contraste</span><button type="button" aria-label="Diminuir contraste" onClick={()=>adjustContrast(-50)}>−</button><b>{Math.round(windowLevel.ww)}</b><button type="button" aria-label="Aumentar contraste" onClick={()=>adjustContrast(50)}>+</button></div>
+        <button type="button" className="wl-reset" onClick={resetWindow}>Restaurar</button>
+      </div>
+      <div className="viewer2-wl viewer2-wl-sliders"><label>Brilho <input type="range" min={windowLevel.wc-windowLevel.ww} max={windowLevel.wc+windowLevel.ww} step="1" value={windowLevel.wc} onChange={e=>setWindowLevel(v=>({...v,wc:Number(e.target.value)}))}/></label><label>Contraste <input type="range" min="50" max={Math.max(5000,windowLevel.ww*2)} step="10" value={windowLevel.ww} onChange={e=>setWindowLevel(v=>({...v,ww:Number(e.target.value)}))}/></label></div>
       <div className="viewer2-tool-state">Ferramenta: <strong>{toolName}</strong></div>
     </section>
     <section className="viewer2-grid">
