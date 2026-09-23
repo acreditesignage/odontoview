@@ -1,10 +1,12 @@
 import React from "react";
-import {useEffect,useMemo,useState} from "react";
+import {useEffect,useMemo,useRef,useState} from "react";
 import {Navigate,Route,Routes,useNavigate,useSearchParams} from "react-router-dom";
 import {api} from "./api.js";
+import {importExam} from "./ingest.js";
 
 function routeForRole(role){return role==="UNIT_USER"?"/radiologia":"/novo-pedido"}
 function logout(){localStorage.removeItem("odontoview_token");localStorage.removeItem("odontoview_role");location.href="/"}
+function formatBytes(value){if(!value)return "0 MB";return (value/1024/1024).toFixed(value>10*1024*1024?1:2)+" MB"}
 
 function Login(){
  const nav=useNavigate(),[mode,setMode]=useState("login"),[err,setErr]=useState(""),[f,setF]=useState({name:"",email:"",password:"",cro:"",uf:"RJ"});
@@ -60,8 +62,31 @@ const STATUS={
  IMAGENS_RECEBIDAS:{label:"Imagens recebidas",tone:"green"}
 };
 
+function IngestResult({state,onClear}){
+ if(!state)return null;
+ if(state.status==="reading"){
+   const p=state.progress||{};
+   const label=p.phase==="metadata"?`Lendo metadados DICOM • ${p.current||0}/${p.total||"?"}`:"Abrindo arquivo compactado…";
+   return <div className="ingest-panel"><strong>OdontoView Ingest</strong><p className="muted">{label}</p><div className="ingest-bar"><span/></div></div>;
+ }
+ if(state.status==="error")return <div className="ingest-panel ingest-error"><strong>Não foi possível abrir este exame.</strong><p>{state.message}</p><button className="ghost compact" onClick={onClear}>Fechar</button></div>;
+ if(state.status!=="ready")return null;
+ const r=state.result;
+ return <div className="ingest-panel">
+   <div className="ingest-head"><div><strong>Exame reconhecido localmente ✓</strong><p className="muted">{r.sourceType} • {r.totalFiles} DICOM • {formatBytes(r.totalBytes)} • {r.seriesCount} série(s)</p></div><button className="ghost compact" onClick={onClear}>Descartar</button></div>
+   {r.failedFiles.length>0&&<div className="warn">{r.failedFiles.length} arquivo(s) não puderam ser lidos e foram ignorados.</div>}
+   <div className="series-list">{r.series.map(s=><div className="series-card" key={s.index}>
+     <div><strong>{s.description}</strong><small>{s.modality} • {s.files} corte(s){s.dimensions?" • "+s.dimensions:""}</small><small>{s.manufacturer}{s.model?" • "+s.model:""}</small></div>
+     <span className={"series-status "+(s.valid?"ok":"bad")}>{s.valid?"Série válida":"Revisar"}</span>
+   </div>)}</div>
+   <p className="privacy-note">Leitura local. Nesta etapa nenhum arquivo foi enviado para a nuvem e o pedido ainda permanece como “Exame realizado”.</p>
+   <button className="secondary" disabled>Associar ao pedido e enviar • próxima etapa</button>
+ </div>;
+}
+
 function Radiology(){
- const [date,setDate]=useState(localDateValue()),[data,setData]=useState(null),[err,setErr]=useState(""),[busy,setBusy]=useState("");
+ const [date,setDate]=useState(localDateValue()),[data,setData]=useState(null),[err,setErr]=useState(""),[busy,setBusy]=useState(""),[ingest,setIngest]=useState(null);
+ const fileInput=useRef(null),orderForFile=useRef(null);
  const range=useMemo(()=>dayRange(date),[date]);
  async function load(){
    setErr("");
@@ -74,8 +99,26 @@ function Radiology(){
    setBusy(order.id);setErr("");
    try{await api("/api/unit/orders/"+order.id+"/status",{method:"PATCH",body:JSON.stringify({status:next})});await load()}catch(e){setErr(e.message)}finally{setBusy("")}
  }
+ function pickExam(order){
+   orderForFile.current=order;
+   setIngest(null);
+   if(fileInput.current){fileInput.current.value="";fileInput.current.click()}
+ }
+ async function handleExamFiles(event){
+   const files=Array.from(event.target.files||[]);
+   const order=orderForFile.current;
+   if(!order||!files.length)return;
+   setIngest({orderId:order.id,status:"reading",progress:{phase:"start"}});
+   try{
+     const result=await importExam(files,{onProgress:progress=>setIngest({orderId:order.id,status:"reading",progress})});
+     setIngest({orderId:order.id,status:"ready",result});
+   }catch(e){
+     setIngest({orderId:order.id,status:"error",message:e.message||"Falha ao abrir exame."});
+   }
+ }
  const tomorrow=()=>{const x=new Date();x.setDate(x.getDate()+1);setDate(localDateValue(x))};
  return <main className="page radiology"><section className="wide">
+   <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
    <header className="topbar"><div><div className="brand">OdontoView</div><p className="eyebrow">RADIOLOGIA</p></div><button className="ghost" onClick={logout}>Sair</button></header>
    <div className="hero-row"><div><h1>Agenda da unidade.</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:"Carregando unidade…"}</p></div><div className="date-actions"><input aria-label="Data da agenda" type="date" value={date} onChange={e=>setDate(e.target.value)}/><button className="secondary compact" onClick={tomorrow}>Amanhã</button></div></div>
    {err&&<div className="error">{err}</div>}
@@ -83,15 +126,18 @@ function Radiology(){
    <div className="agenda stack">{data.orders.map(o=>{
      const st=STATUS[o.status]||{label:o.status,tone:""};
      const at=new Date(o.appointment.availability.startAt);
-     return <article className="card appointment" key={o.id}>
-       <div className="time"><strong>{at.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</strong><span className={"badge "+st.tone}>{st.label}</span></div>
-       <div className="appointment-main"><p className="eyebrow">{o.examType.name}</p><h2>{o.patient.name}</h2><p className="muted">Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</p>{o.patient.phone&&<p className="muted">Paciente: {o.patient.phone}</p>}</div>
-       <div className="appointment-actions">
-         {o.status==="AGENDADO"&&<button className="primary" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Confirmar chegada"}</button>}
-         {o.status==="PACIENTE_CHEGOU"&&<button className="primary" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Marcar exame realizado"}</button>}
-         {o.status==="EXAME_REALIZADO"&&<button className="secondary" disabled>Enviar exame • próxima etapa</button>}
-         {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Exame recebido pelo OdontoView</span>}
+     return <article className="card appointment-wrap" key={o.id}>
+       <div className="appointment">
+         <div className="time"><strong>{at.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</strong><span className={"badge "+st.tone}>{st.label}</span></div>
+         <div className="appointment-main"><p className="eyebrow">{o.examType.name}</p><h2>{o.patient.name}</h2><p className="muted">Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</p>{o.patient.phone&&<p className="muted">Telefone: {o.patient.phone}</p>}</div>
+         <div className="appointment-actions">
+           {o.status==="AGENDADO"&&<button className="primary" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Confirmar chegada"}</button>}
+           {o.status==="PACIENTE_CHEGOU"&&<button className="primary" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Marcar exame realizado"}</button>}
+           {o.status==="EXAME_REALIZADO"&&<button className="primary" onClick={()=>pickExam(o)}>Selecionar exame</button>}
+           {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Exame recebido pelo OdontoView</span>}
+         </div>
        </div>
+       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)}/>}
      </article>
    })}</div>}
  </section></main>
