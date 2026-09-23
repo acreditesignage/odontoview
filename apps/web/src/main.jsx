@@ -26,10 +26,15 @@ const rootEl=document.getElementById("root");
 const fallback=document.getElementById("startup-fallback");
 if(fallback)fallback.remove();
 window.__ODONTOVIEW_STARTED__=true;
+
+/*
+ * Viewer 2.0 owns imperative canvas state and integrates browser-side DICOM
+ * libraries. StrictMode intentionally stays off here: its development-only
+ * double mount/unmount cycle can conflict with imperative DOM/canvas consumers
+ * and browser translation extensions, producing NotFoundError/removeChild.
+ */
 ReactDOM.createRoot(rootEl).render(
-  <React.StrictMode>
-    <AppErrorBoundary>
-      <BrowserRouter><App/></BrowserRouter>
-    </AppErrorBoundary>
-  </React.StrictMode>
+  <AppErrorBoundary>
+    <BrowserRouter><App/></BrowserRouter>
+  </AppErrorBoundary>
 );
