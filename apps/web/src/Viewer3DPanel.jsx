@@ -15,6 +15,8 @@ import vtkCellArray from "@kitware/vtk.js/Common/Core/CellArray";
 import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
 import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
 import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
+import vtkSTLReader from "@kitware/vtk.js/IO/Geometry/STLReader";
+import vtkPLYReader from "@kitware/vtk.js/IO/Geometry/PLYReader";
 
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 
@@ -144,6 +146,9 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
   const mapperRef=useRef(null);
   const statsRef=useRef(null);
   const nerveActorRef=useRef(null);
+  const scanActorRef=useRef(null);
+  const scanInitialRef=useRef(null);
+  const scanInputRef=useRef(null);
 
   const [ready,setReady]=useState(false);
   const [status,setStatus]=useState("Preparando GPU Volume Rendering…");
@@ -153,8 +158,105 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
   const [denseBoost,setDenseBoost]=useState(true);
   const [lighting,setLighting]=useState(true);
   const [opacityScale,setOpacityScale]=useState(1);
+  const [scanName,setScanName]=useState("");
+  const [scanStatus,setScanStatus]=useState("Nenhum scan intraoral carregado.");
+  const [scanVisible,setScanVisible]=useState(true);
+  const [scanOpacity,setScanOpacity]=useState(.96);
+  const [scanTransform,setScanTransform]=useState({x:0,y:0,z:0,rx:0,ry:0,rz:0,scale:1});
 
   function renderNow(){renderWindowRef.current?.render?.()}
+
+  function disposeScan(){
+    const renderer=rendererRef.current,bundle=scanActorRef.current;
+    if(bundle?.actor&&renderer)renderer.removeActor(bundle.actor);
+    if(bundle){
+      bundle.actor?.delete?.();
+      bundle.mapper?.delete?.();
+      bundle.reader?.delete?.();
+    }
+    scanActorRef.current=null;
+  }
+
+  async function importIntraoralScan(file){
+    const renderer=rendererRef.current,img=imageDataRef.current;
+    if(!file||!renderer||!img)return;
+    const ext=(file.name.split(".").pop()||"").toLowerCase();
+    if(ext!=="stl"&&ext!=="ply"){
+      setScanStatus("Formato ainda não suportado. Use STL ou PLY.");
+      return;
+    }
+    setScanStatus("Lendo scan intraoral localmente…");
+    try{
+      const buffer=await file.arrayBuffer();
+      const reader=ext==="stl"?vtkSTLReader.newInstance():vtkPLYReader.newInstance();
+      reader.parseAsArrayBuffer(buffer);
+      const poly=reader.getOutputData(0);
+      if(!poly)throw new Error("Malha vazia.");
+      const bounds=poly.getBounds();
+      if(!bounds||bounds.some(v=>!Number.isFinite(v)))throw new Error("Malha inválida.");
+
+      disposeScan();
+
+      const mapper=vtkMapper.newInstance();
+      mapper.setInputData(poly);
+      const actor=vtkActor.newInstance();
+      actor.setMapper(mapper);
+      const prop=actor.getProperty();
+      prop.setColor(.97,.94,.86);
+      prop.setOpacity(scanOpacity);
+      prop.setAmbient(.34);
+      prop.setDiffuse(.76);
+      prop.setSpecular(.52);
+      prop.setSpecularPower(26);
+
+      const mc=[(bounds[0]+bounds[1])/2,(bounds[2]+bounds[3])/2,(bounds[4]+bounds[5])/2];
+      const me=Math.max(bounds[1]-bounds[0],bounds[3]-bounds[2],bounds[5]-bounds[4])||1;
+      const vb=img.getBounds();
+      const vc=[(vb[0]+vb[1])/2,(vb[2]+vb[3])/2,(vb[4]+vb[5])/2];
+      const ve=Math.max(vb[1]-vb[0],vb[3]-vb[2],vb[5]-vb[4])||100;
+      const initialScale=(me>ve*4||me<ve*.08)?(ve*.65/me):1;
+
+      actor.setOrigin(...mc);
+      actor.setPosition(...vc);
+      actor.setOrientation(0,0,0);
+      actor.setScale(initialScale,initialScale,initialScale);
+      renderer.addActor(actor);
+
+      const next={x:vc[0],y:vc[1],z:vc[2],rx:0,ry:0,rz:0,scale:initialScale};
+      scanActorRef.current={actor,mapper,reader,poly};
+      scanInitialRef.current={...next};
+      setScanTransform(next);
+      setScanName(file.name);
+      setScanVisible(true);
+      setScanStatus("Scan carregado • alinhamento inicial visual • ajuste manual obrigatório.");
+      renderer.resetCameraClippingRange();
+      renderNow();
+    }catch(e){
+      setScanStatus("Falha ao abrir o scan: "+(e?.message||"arquivo inválido"));
+    }
+  }
+
+  function updateScanTransform(patch){
+    setScanTransform(prev=>({...prev,...(typeof patch==="function"?patch(prev):patch)}));
+  }
+
+  function moveScan(axis,delta){
+    updateScanTransform(prev=>({[axis]:prev[axis]+delta}));
+  }
+
+  function rotateScan(axis,delta){
+    const key="r"+axis;
+    updateScanTransform(prev=>({[key]:prev[key]+delta}));
+  }
+
+  function scaleScan(factor){
+    updateScanTransform(prev=>({scale:Math.max(.01,prev.scale*factor)}));
+  }
+
+  function resetScanAlignment(){
+    if(scanInitialRef.current)setScanTransform({...scanInitialRef.current});
+  }
+
 
   function applyPreset(name=preset){
     const actor=volumeActorRef.current,stats=statsRef.current,renderer=rendererRef.current;
@@ -250,6 +352,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
       cancelled=true;
       ro.disconnect();
       if(nerveActorRef.current?.actor)renderer.removeActor(nerveActorRef.current.actor);
+      disposeScan();
       renderer.removeVolume(actor);
       nerveActorRef.current=null;
       generic.delete();
@@ -281,6 +384,18 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
     }
   },[nervePoints,curve,meta,nerveVisible]);
 
+  useEffect(()=>{
+    const actor=scanActorRef.current?.actor;
+    if(!actor)return;
+    actor.setVisibility(scanVisible);
+    actor.getProperty().setOpacity(scanOpacity);
+    actor.setPosition(scanTransform.x,scanTransform.y,scanTransform.z);
+    actor.setOrientation(scanTransform.rx,scanTransform.ry,scanTransform.rz);
+    actor.setScale(scanTransform.scale,scanTransform.scale,scanTransform.scale);
+    rendererRef.current?.resetCameraClippingRange?.();
+    renderNow();
+  },[scanVisible,scanOpacity,scanTransform]);
+
   return <div className="viewer3d-panel viewer3d-v2">
     <div className="viewer3d-stage" ref={hostRef}>
       {!ready&&<div className="viewer3d-loading"><span className="viewer3d-orbit">◌</span><strong>OdontoView 3D Engine v2</strong><small>{status}</small></div>}
@@ -307,6 +422,29 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
         <button onClick={()=>setView("side")}>Lateral</button>
         <button onClick={()=>setView("front")}>Frontal</button>
         <button onClick={()=>setView("top")}>Superior</button>
+      </div>
+      <div className="viewer3d-fusion">
+        <input ref={scanInputRef} type="file" accept=".stl,.ply" hidden onChange={e=>{const file=e.target.files?.[0];if(file)importIntraoralScan(file);e.target.value=""}}/>
+        <div className="viewer3d-fusion-head">
+          <strong>OdontoView Fusion</strong>
+          <button type="button" onClick={()=>scanInputRef.current?.click()}>{scanName?"Trocar scan":"Importar STL/PLY"}</button>
+          {scanName&&<button type="button" className={scanVisible?"active":""} onClick={()=>setScanVisible(v=>!v)}>{scanVisible?"Scan visível":"Mostrar scan"}</button>}
+          {scanName&&<button type="button" onClick={resetScanAlignment}>Reset alinhamento</button>}
+        </div>
+        <small>{scanName?scanName+" • "+scanStatus:scanStatus}</small>
+        {scanName&&<div className="viewer3d-fusion-tools">
+          <span>Mover mm</span>
+          <button onClick={()=>moveScan("x",-1)}>X−</button><button onClick={()=>moveScan("x",1)}>X+</button>
+          <button onClick={()=>moveScan("y",-1)}>Y−</button><button onClick={()=>moveScan("y",1)}>Y+</button>
+          <button onClick={()=>moveScan("z",-1)}>Z−</button><button onClick={()=>moveScan("z",1)}>Z+</button>
+          <span>Rotacionar 5°</span>
+          <button onClick={()=>rotateScan("x",-5)}>RX−</button><button onClick={()=>rotateScan("x",5)}>RX+</button>
+          <button onClick={()=>rotateScan("y",-5)}>RY−</button><button onClick={()=>rotateScan("y",5)}>RY+</button>
+          <button onClick={()=>rotateScan("z",-5)}>RZ−</button><button onClick={()=>rotateScan("z",5)}>RZ+</button>
+          <span>Escala</span>
+          <button onClick={()=>scaleScan(.95)}>−5%</button><button onClick={()=>scaleScan(1.05)}>+5%</button>
+          <label>Opacidade <input type="range" min=".2" max="1" step=".05" value={scanOpacity} onChange={e=>setScanOpacity(Number(e.target.value))}/></label>
+        </div>}
       </div>
     </div>
   </div>;
