@@ -1,5 +1,6 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
 import {useNavigate} from "react-router-dom";
+import {jsPDF} from "jspdf";
 import {clearViewerSession,getViewerSession} from "./viewerSession.js";
 
 let cornerstoneConfigured=false;
@@ -313,7 +314,6 @@ export default function Viewer2(){
     if(!count){setExportMessage("Não há cortes à frente deste ponto.");return}
     setExportBusy(true);setExportMessage("");
     try{
-      const {jsPDF}=await import("jspdf");
       const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4",compress:true});
       const pageW=210,pageH=297,margin=12,gap=6,headerH=24;
       const cellW=(pageW-margin*2-gap)/2,cellH=(pageH-margin*2-headerH-gap)/2;
@@ -529,7 +529,7 @@ export default function Viewer2(){
   if(loading)return <main className="viewer2-loading"><div><div className="brand">OdontoView</div><h1>Montando Viewer 2.0…</h1><p>Decodificando o volume DICOM localmente.</p></div></main>;
   if(error)return <main className="page centered"><section className="card auth"><div className="brand">OdontoView</div><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>nav("/radiologia")}>Voltar</button></section></main>;
 
-  const toolName={navigate:"Navegar",pan:"Pan",measure:"Medir",curve:"Curva da arcada",nerve:"Nervo",foramen:"Forame"}[tool];
+  const toolName={navigate:"Cruzeta",pan:"Pan",measure:"Medir",curve:"Curva da arcada",nerve:"Nervo",foramen:"Forame"}[tool];
   return <main className="viewer2">
     <header className="viewer2-top">
       <div><div className="brand light">OdontoView</div><span className="viewer2-beta">VIEWER 2.0 BETA</span></div>
@@ -538,7 +538,7 @@ export default function Viewer2(){
     </header>
     <section className="viewer2-toolbar">
       {[
-        ["navigate","⌖","Navegar"],["pan","✋","Pan"],["measure","↔","Medir"],["curve","⌒","Curva"],["nerve","●","Nervo"],["foramen","◉","Forame"]
+        ["navigate","⌖","Cruzeta"],["pan","✋","Pan"],["measure","↔","Medir"],["curve","⌒","Curva"],["nerve","●","Nervo"],["foramen","◉","Forame"]
       ].map(([id,icon,label])=><button key={id} className={tool===id?"active":""} onClick={()=>{setTool(id);setPendingMeasure(null)}}><span>{icon}</span>{label}</button>)}
       <div className="viewer2-wl-buttons" aria-label="Controles de brilho e contraste">
         <div className="wl-control"><span>Brilho</span><button type="button" aria-label="Diminuir brilho" onClick={()=>adjustBrightness(-25)}>−</button><b>{Math.round(windowLevel.wc)}</b><button type="button" aria-label="Aumentar brilho" onClick={()=>adjustBrightness(25)}>+</button></div>
@@ -555,8 +555,8 @@ export default function Viewer2(){
         ["tangential","Tangencial",canvases.tangential],["panoramic","Panorâmica reconstruída",canvases.panoramic]
       ].map(([id,label,ref])=><article className={"viewer2-pane "+id} key={id}>
         <div className="viewer2-pane-head"><strong>{label}</strong><button onClick={()=>resetPlane(id)}>1:1</button></div>
-        <div className="viewer2-canvas-wrap"><canvas ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
         {(()=>{const pc=planeControl(id);return <div className="viewer2-slice-control"><span>{pc.label}</span><input aria-label={"Navegação "+label} type="range" min={pc.min} max={pc.max} step="1" value={pc.value} onChange={e=>pc.set(e.target.value)}/></div>})()}
+        <div className="viewer2-canvas-wrap"><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
       </article>)}
       <aside className="viewer2-side">
         <section>
