@@ -14,10 +14,15 @@ const auth=(req,res,next)=>{
   catch{ res.status(401).json({error:"Sessão inválida ou expirada."}); }
 };
 const dentistFor=(userId)=>prisma.dentist.findUnique({where:{userId}});
+const unitMembershipFor=(userId)=>prisma.unitMembership.findFirst({
+  where:{userId,active:true,unit:{active:true}},
+  include:{unit:{include:{organization:true}}}
+});
 const sign=(user)=>jwt.sign({sub:user.id,role:user.role,email:user.email},process.env.JWT_SECRET,{expiresIn:"8h"});
 
 export function createApp(){
   const app=express();
+  app.set("trust proxy",1);
   app.disable("x-powered-by");
   app.use(cors({origin:process.env.CORS_ORIGIN||"http://localhost:5173"}));
   app.use(express.json({limit:"1mb"}));
@@ -32,15 +37,30 @@ export function createApp(){
         name,email:email.toLowerCase().trim(),phone:phone||null,passwordHash:await bcrypt.hash(password,12),role:"DENTIST",
         dentist:{create:{cro:String(cro).trim(),uf:String(uf).trim().toUpperCase()}}
       },include:{dentist:true}});
-      res.status(201).json({token:sign(user),user:{id:user.id,name:user.name,email:user.email},dentist:user.dentist});
+      res.status(201).json({
+        token:sign(user),
+        user:{id:user.id,name:user.name,email:user.email,role:user.role},
+        dentist:user.dentist
+      });
     }catch(e){ if(e?.code==="P2002") return res.status(409).json({error:"Email ou CRO já cadastrado."}); next(e); }
   });
 
   app.post("/api/auth/login",async(req,res,next)=>{
     try{
-      const user=await prisma.user.findUnique({where:{email:String(req.body.email||"").toLowerCase().trim()},include:{dentist:true}});
-      if(!user||user.role!=="DENTIST"||!(await bcrypt.compare(req.body.password||"",user.passwordHash))) return res.status(401).json({error:"Email ou senha inválidos."});
-      res.json({token:sign(user),user:{id:user.id,name:user.name,email:user.email},dentist:user.dentist});
+      const user=await prisma.user.findUnique({
+        where:{email:String(req.body.email||"").toLowerCase().trim()},
+        include:{dentist:true,unitMemberships:{where:{active:true},take:1,include:{unit:{include:{organization:true}}}}}
+      });
+      if(!user||!(await bcrypt.compare(req.body.password||"",user.passwordHash))) return res.status(401).json({error:"Email ou senha inválidos."});
+      if(!["DENTIST","UNIT_USER"].includes(user.role)) return res.status(403).json({error:"Perfil ainda não possui acesso a esta aplicação."});
+      const membership=user.unitMemberships?.[0]||null;
+      if(user.role==="UNIT_USER"&&!membership) return res.status(403).json({error:"Usuário da radiologia sem unidade ativa."});
+      res.json({
+        token:sign(user),
+        user:{id:user.id,name:user.name,email:user.email,role:user.role},
+        dentist:user.dentist,
+        unit:membership?.unit||null
+      });
     }catch(e){next(e);}
   });
 
@@ -50,6 +70,7 @@ export function createApp(){
 
   app.get("/api/patients",auth,async(req,res,next)=>{
     try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
       const dentist=await dentistFor(req.auth.sub); if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
       res.json(await prisma.patient.findMany({where:{createdByDentistId:dentist.id},orderBy:{name:"asc"}}));
     }catch(e){next(e);}
@@ -57,6 +78,7 @@ export function createApp(){
 
   app.post("/api/patients",auth,async(req,res,next)=>{
     try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
       const dentist=await dentistFor(req.auth.sub); if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
       if(!req.body.name) return res.status(400).json({error:"Nome do paciente é obrigatório."});
       const patient=await prisma.patient.create({data:{
@@ -68,6 +90,7 @@ export function createApp(){
 
   app.post("/api/orders",auth,async(req,res,next)=>{
     try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
       const dentist=await dentistFor(req.auth.sub); if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
       const [patient,examType]=await Promise.all([
         prisma.patient.findFirst({where:{id:req.body.patientId,createdByDentistId:dentist.id}}),
@@ -84,6 +107,87 @@ export function createApp(){
       const base=process.env.PATIENT_APP_URL||(`${req.protocol}://${req.get("host")}/paciente`);
       res.status(201).json({order,patientAccessUrl:base+"?token="+encodeURIComponent(access.rawToken),accessExpiresAt:access.expiresAt});
     }catch(e){next(e);}
+  });
+
+  app.get("/api/unit/me",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      res.json({
+        user:{id:req.auth.sub,email:req.auth.email,role:req.auth.role},
+        unit:membership.unit
+      });
+    }catch(e){next(e);}
+  });
+
+  app.get("/api/unit/agenda",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const from=new Date(String(req.query.from||""));
+      const to=new Date(String(req.query.to||""));
+      if(Number.isNaN(from.getTime())||Number.isNaN(to.getTime())||to<=from) return res.status(400).json({error:"Período da agenda inválido."});
+
+      const orders=await prisma.order.findMany({
+        where:{
+          unitId:membership.unitId,
+          status:{in:["AGENDADO","PACIENTE_CHEGOU","EXAME_REALIZADO","IMAGENS_RECEBIDAS"]},
+          appointment:{availability:{startAt:{gte:from,lt:to}}}
+        },
+        include:{
+          patient:{select:{id:true,name:true,birthDate:true,phone:true}},
+          examType:true,
+          dentist:{include:{user:{select:{name:true}}}},
+          appointment:{include:{availability:true}}
+        }
+      });
+      orders.sort((a,b)=>new Date(a.appointment.availability.startAt)-new Date(b.appointment.availability.startAt));
+      res.json({
+        unit:membership.unit,
+        orders:orders.map(o=>({
+          id:o.id,
+          status:o.status,
+          patient:o.patient,
+          examType:o.examType,
+          dentist:{name:o.dentist.user.name,cro:o.dentist.cro,uf:o.dentist.uf},
+          appointment:o.appointment
+        }))
+      });
+    }catch(e){next(e);}
+  });
+
+  app.patch("/api/unit/orders/:id/status",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const nextStatus=String(req.body.status||"");
+      const transitions={
+        AGENDADO:"PACIENTE_CHEGOU",
+        PACIENTE_CHEGOU:"EXAME_REALIZADO"
+      };
+      const result=await prisma.$transaction(async tx=>{
+        const order=await tx.order.findFirst({where:{id:req.params.id,unitId:membership.unitId}});
+        if(!order){const e=new Error("Pedido não encontrado nesta unidade.");e.status=404;throw e;}
+        if(transitions[order.status]!==nextStatus){
+          const e=new Error("Transição de status inválida.");e.status=409;throw e;
+        }
+        const updated=await tx.order.update({where:{id:order.id},data:{status:nextStatus}});
+        await tx.statusHistory.create({
+          data:{orderId:order.id,status:nextStatus,actorType:"UNIT_USER",actorId:req.auth.sub}
+        });
+        return updated;
+      });
+      res.json({order:result});
+    }catch(e){next(e);}
+  });
+
+  app.use("/api/public/orders/access",(_req,res,next)=>{
+    res.set("Cache-Control","no-store");
+    res.set("Referrer-Policy","no-referrer");
+    next();
   });
 
   app.get("/api/public/orders/access/:token",async(req,res,next)=>{
