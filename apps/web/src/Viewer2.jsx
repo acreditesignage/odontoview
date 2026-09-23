@@ -949,7 +949,7 @@ export default function Viewer2(){
       <div className="viewer2-wl viewer2-wl-sliders"><label>Brilho <input type="range" min={windowLevel.wc-windowLevel.ww} max={windowLevel.wc+windowLevel.ww} step="1" value={windowLevel.wc} onChange={e=>setWindowLevel(v=>({...v,wc:Number(e.target.value)}))}/></label><label>Contraste <input type="range" min="50" max={Math.max(5000,windowLevel.ww*2)} step="10" value={windowLevel.ww} onChange={e=>setWindowLevel(v=>({...v,ww:Number(e.target.value)}))}/></label></div>
       <div className="viewer2-tool-state">Ferramenta: <strong>{toolName}</strong></div>
     </section>
-    <section className="viewer2-grid viewer2-concept03">
+    <section className={"viewer2-grid viewer2-concept03"+(expandedPanel?" has-expanded expanded-"+expandedPanel:"")}>
       {[
         ["axial","Axial",canvases.axial],["coronal","Coronal",canvases.coronal],["sagittal","Sagital",canvases.sagittal],
         ["tangential","Tangencial • 3 cortes",canvases.tangential]
