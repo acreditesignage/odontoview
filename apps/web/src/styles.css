@@ -351,3 +351,8 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .viewer3d-fusion-tools{grid-template-columns:repeat(4,1fr)}
   .viewer3d-fusion-tools>span{grid-column:1/-1}
 }
+
+.viewer3d-quickbar{display:flex;align-items:center;gap:8px;margin-bottom:7px;padding:7px 8px;border:1px solid #23465a;border-radius:9px;background:linear-gradient(135deg,#0b1d29,#0d2633)}
+.viewer3d-quickbar span{font-size:9px;color:#8aa9be;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.viewer3d-add-scan{border:1px solid #2b8ca0!important;background:linear-gradient(135deg,#0c6f8d,#0d96b8)!important;color:#fff!important;border-radius:8px!important;min-height:32px!important;padding:5px 10px!important;font:inherit!important;font-size:9px!important;font-weight:900!important;white-space:nowrap}
+@media(max-width:760px){.viewer3d-quickbar{align-items:stretch;flex-direction:column}.viewer3d-quickbar span{white-space:normal}.viewer3d-add-scan{min-height:38px!important}}
