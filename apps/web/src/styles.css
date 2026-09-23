@@ -239,3 +239,79 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .viewer3d-presets{grid-template-columns:repeat(3,1fr)}
   .viewer3d-presets button{min-height:34px;font-size:10px}
 }
+
+
+/* Concept 03 — 3D como protagonista no Viewer profissional */
+@media(min-width:1280px){
+  .viewer2-concept03{
+    grid-template-columns:minmax(230px,.62fr) minmax(640px,2.15fr) minmax(310px,.82fr);
+    grid-template-areas:
+      "axial panoramic side"
+      "coronal panoramic side"
+      "sagittal panoramic side"
+      "tangential tangential side";
+    grid-template-rows:auto auto auto auto;
+    align-items:stretch;
+    gap:8px;
+  }
+  .viewer2-concept03 .viewer2-pane.axial,
+  .viewer2-concept03 .viewer2-pane.coronal,
+  .viewer2-concept03 .viewer2-pane.sagittal{
+    min-height:258px;
+  }
+  .viewer2-concept03 .viewer2-pane.axial .viewer2-canvas-wrap,
+  .viewer2-concept03 .viewer2-pane.coronal .viewer2-canvas-wrap,
+  .viewer2-concept03 .viewer2-pane.sagittal .viewer2-canvas-wrap{
+    height:205px;
+    min-height:205px;
+  }
+  .viewer2-concept03 .viewer2-pane.tangential{
+    min-height:330px;
+  }
+  .viewer2-concept03 .viewer2-pane.tangential .viewer2-canvas-wrap{
+    height:285px;
+    min-height:285px;
+  }
+  .viewer2-concept03 .viewer2-pane.panoramic{
+    min-height:790px;
+    border-color:#25384a;
+    box-shadow:0 18px 44px rgba(0,0,0,.28),0 0 0 1px rgba(49,215,210,.035);
+  }
+  .viewer2-concept03 .visual3d-composite>.viewer2-pane-head{
+    background:linear-gradient(90deg,#0d1823,#102331);
+    border-bottom-color:#294158;
+  }
+  .viewer2-concept03 .viewer3d-split{
+    height:calc(100% - 38px);
+    min-height:750px;
+    grid-template-columns:1fr;
+    grid-template-rows:minmax(560px,1fr) 220px;
+  }
+  .viewer2-concept03 .viewer3d-primary{
+    min-height:560px;
+    border-right:0;
+    border-bottom:1px solid #1f3344;
+  }
+  .viewer2-concept03 .viewer3d-panel{
+    min-height:560px;
+  }
+  .viewer2-concept03 .viewer3d-mini-pano{
+    min-height:220px;
+    max-height:245px;
+    border-top:0;
+  }
+  .viewer2-concept03 .viewer3d-pano-canvas{
+    min-height:165px;
+  }
+  .viewer2-concept03 .viewer2-side{
+    align-self:start;
+    grid-auto-rows:max-content;
+  }
+  .viewer2-concept03 .viewer2-side section{
+    border-radius:12px;
+    padding:13px;
+  }
+  .viewer2-concept03 .viewer2-pane-head strong{
+    letter-spacing:.025em;
+  }
+}
