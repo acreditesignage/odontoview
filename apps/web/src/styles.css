@@ -318,3 +318,19 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 
 .viewer3d-engine-badge{position:absolute;right:10px;top:10px;z-index:5;padding:6px 9px;border-radius:999px;background:rgba(7,22,32,.78);border:1px solid #285d66;color:#7ef1e7;font-size:9px;font-weight:900;letter-spacing:.08em;backdrop-filter:blur(8px)}
 .viewer3d-v2 .viewer3d-stage canvas{filter:saturate(1.04) contrast(1.02)}
+
+/* Viewer navigation ergonomics */
+.viewer2-top{position:relative;top:auto;z-index:10}
+.viewer2-toolbar{position:sticky;top:0;z-index:40;backdrop-filter:blur(16px);box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.viewer2-slice-control{grid-template-columns:auto minmax(0,1fr)}
+.viewer2-slice-nav{display:grid;grid-template-columns:34px minmax(0,1fr) 34px;gap:7px;align-items:center}
+.viewer2-slice-nav input[type=range]{width:100%;min-width:0}
+.slice-step{width:34px;height:34px;border:1px solid #34465b;background:#172232;color:#fff;border-radius:8px;font-size:20px;font-weight:800;display:grid;place-items:center;padding:0;line-height:1}
+.slice-step:hover{background:#21334a;border-color:#4a6684}
+.slice-step:active{transform:translateY(1px)}
+@media(max-width:760px){
+  .viewer2-toolbar{top:0}
+  .viewer2-slice-control{grid-template-columns:1fr;gap:5px}
+  .viewer2-slice-nav{grid-template-columns:44px minmax(0,1fr) 44px;gap:8px}
+  .slice-step{width:44px;height:44px;font-size:25px;border-radius:10px}
+}
