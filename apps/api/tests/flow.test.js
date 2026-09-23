@@ -43,6 +43,9 @@ test("dentista solicita, paciente agenda e radiologia opera atendimento",async()
   assert.equal(reg.body.user.role,"DENTIST");
   const auth={Authorization:"Bearer "+reg.body.token};
 
+  const dashboard0=await request(app).get("/api/dentist/dashboard").set(auth).expect(200);
+  assert.equal(dashboard0.body.dentist.cro,"12345");
+
   const patient=await request(app).post("/api/patients").set(auth).send({name:"Paciente Teste",phone:"22999999999"}).expect(201);
   const order=await request(app).post("/api/orders").set(auth).send({patientId:patient.body.id,examTypeId:examType.id}).expect(201);
   assert.equal(order.body.order.status,"SOLICITADO");
@@ -63,11 +66,20 @@ test("dentista solicita, paciente agenda e radiologia opera atendimento",async()
   assert.equal(login.body.unit.id,unit.id);
   const unitAuth={Authorization:"Bearer "+login.body.token};
 
+  const localPatient=await request(app).post("/api/unit/patients").set(unitAuth).send({name:"Paciente Balcão",phone:"22988887777"}).expect(201);
+  assert.equal(localPatient.body.source,"RADIOLOGIA");
+
+  const registry=await request(app).get("/api/unit/patients").set(unitAuth).expect(200);
+  assert.ok(registry.body.patients.some(p=>p.name==="Paciente Balcão"&&p.source==="RADIOLOGIA"));
+
   const from=new Date(slot.startAt.getTime()-3600000).toISOString();
   const to=new Date(slot.startAt.getTime()+3600000).toISOString();
   const agenda=await request(app).get("/api/unit/agenda?from="+encodeURIComponent(from)+"&to="+encodeURIComponent(to)).set(unitAuth).expect(200);
   assert.equal(agenda.body.orders.length,1);
   assert.equal(agenda.body.orders[0].patient.name,"Paciente Teste");
+
+  const registryAfterNetwork=await request(app).get("/api/unit/patients").set(unitAuth).expect(200);
+  assert.ok(registryAfterNetwork.body.patients.some(p=>p.name==="Paciente Teste"&&p.source==="ODONTOVIEW"));
 
   const arrived=await request(app).patch("/api/unit/orders/"+order.body.order.id+"/status").set(unitAuth).send({status:"PACIENTE_CHEGOU"}).expect(200);
   assert.equal(arrived.body.order.status,"PACIENTE_CHEGOU");
