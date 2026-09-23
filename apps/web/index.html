@@ -23,6 +23,9 @@
     window.addEventListener("error",function(e){showRuntimeError(e.message||"Erro JavaScript não identificado.");});
     window.addEventListener("unhandledrejection",function(e){showRuntimeError((e.reason&&e.reason.message)||e.reason||"Falha ao iniciar a aplicação.");});
   </script>
+  <script src="/viewer-libs/cornerstone.min.js"></script>
+  <script src="/viewer-libs/dicomParser.min.js"></script>
+  <script src="/viewer-libs/cornerstoneWADOImageLoaderNoWebWorkers.bundle.min.js"></script>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
