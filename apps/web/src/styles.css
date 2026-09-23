@@ -356,3 +356,32 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 .viewer3d-quickbar span{font-size:9px;color:#8aa9be;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .viewer3d-add-scan{border:1px solid #2b8ca0!important;background:linear-gradient(135deg,#0c6f8d,#0d96b8)!important;color:#fff!important;border-radius:8px!important;min-height:32px!important;padding:5px 10px!important;font:inherit!important;font-size:9px!important;font-weight:900!important;white-space:nowrap}
 @media(max-width:760px){.viewer3d-quickbar{align-items:stretch;flex-direction:column}.viewer3d-quickbar span{white-space:normal}.viewer3d-add-scan{min-height:38px!important}}
+
+
+/* Presets clínicos focados */
+.viewer3d-preset-note{margin:6px 0 4px;padding:6px 8px;border:1px solid #3a3140;border-radius:8px;background:#16131a;color:#c8b6cd;font-size:8px;line-height:1.35}
+.viewer3d-presets{grid-template-columns:repeat(4,minmax(0,1fr))}
+
+/* Maximização de painéis */
+.viewer2-pane-actions{display:flex;align-items:center;gap:5px;min-width:0}
+.viewer2-expand{min-width:34px!important;height:28px!important;padding:4px 7px!important;border:1px solid #34516d!important;background:#122133!important;color:#b9d8f2!important;border-radius:8px!important;font:inherit!important;font-size:10px!important;font-weight:900!important}
+.viewer2-expand:hover{background:#17324a!important;border-color:#4e789e!important;color:#fff!important}
+.viewer2-pane.is-expanded{position:fixed!important;inset:8px!important;z-index:160!important;width:auto!important;height:auto!important;max-width:none!important;min-height:0!important;margin:0!important;border:1px solid #31506b!important;border-radius:14px!important;background:#05090d!important;box-shadow:0 32px 100px rgba(0,0,0,.72)!important}
+.viewer2-pane.is-expanded .viewer2-pane-head{height:44px;position:relative;z-index:4}
+.viewer2-pane.is-expanded .viewer2-canvas-wrap{height:calc(100vh - 112px)!important;min-height:0!important}
+.viewer2-pane.is-expanded.visual3d-composite .viewer3d-split{height:calc(100vh - 60px)!important;min-height:0!important;grid-template-columns:1fr!important;grid-template-rows:minmax(0,1fr) 190px!important}
+.viewer2-pane.is-expanded.visual3d-composite .viewer3d-primary{min-height:0!important;border-right:0!important}
+.viewer2-pane.is-expanded.visual3d-composite .viewer3d-panel{min-height:0!important;height:100%!important}
+.viewer2-pane.is-expanded.visual3d-composite .viewer3d-mini-pano{min-height:190px!important;max-height:190px!important}
+.viewer2-pane.is-expanded.visual3d-composite .viewer3d-pano-canvas{min-height:120px!important;height:120px!important}
+.viewer3d-mini-pano.is-expanded{position:fixed!important;inset:8px!important;z-index:180!important;display:flex!important;max-height:none!important;min-height:0!important;border:1px solid #31506b!important;border-radius:14px!important;background:#05090d!important;box-shadow:0 32px 100px rgba(0,0,0,.72)!important}
+.viewer3d-mini-pano.is-expanded .viewer3d-mini-head{height:44px;flex:0 0 44px}
+.viewer3d-mini-pano.is-expanded .viewer2-slice-control{flex:0 0 auto}
+.viewer3d-mini-pano.is-expanded .viewer3d-pano-canvas{height:auto!important;min-height:0!important;flex:1!important}
+@media(max-width:760px){
+  .viewer2-pane.is-expanded{inset:4px!important;border-radius:10px!important}
+  .viewer2-pane.is-expanded .viewer2-canvas-wrap{height:calc(100vh - 116px)!important}
+  .viewer2-pane.is-expanded.visual3d-composite .viewer3d-split{grid-template-rows:minmax(0,1fr) 155px!important}
+  .viewer2-pane.is-expanded.visual3d-composite .viewer3d-mini-pano{min-height:155px!important;max-height:155px!important}
+  .viewer3d-mini-pano.is-expanded{inset:4px!important}
+}
