@@ -83,6 +83,7 @@ export default function Viewer2(){
   const defaultWindowRef=useRef({wc:400,ww:2000});
   const dragRef=useRef(null);
   const curveDragRef=useRef(null);
+  const navDragRef=useRef(null);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [meta,setMeta]=useState(null);
@@ -199,6 +200,24 @@ export default function Viewer2(){
     });
   }
 
+  function drawCrosshair(ctx,canvas,a,b){
+    const map=canvas?._map;if(!map)return;
+    const x=map.ox+(a/map.pixelW)*map.dw,y=map.oy+(b/map.pixelH)*map.dh;
+    const gap=7*map.dpr;
+    ctx.save();
+    ctx.strokeStyle="rgba(49,215,210,.95)";
+    ctx.fillStyle="rgba(49,215,210,.95)";
+    ctx.lineWidth=Math.max(1,1.15*map.dpr);
+    ctx.beginPath();
+    ctx.moveTo(map.ox,y);ctx.lineTo(x-gap,y);
+    ctx.moveTo(x+gap,y);ctx.lineTo(map.ox+map.dw,y);
+    ctx.moveTo(x,map.oy);ctx.lineTo(x,y-gap);
+    ctx.moveTo(x,y+gap);ctx.lineTo(x,map.oy+map.dh);
+    ctx.stroke();
+    ctx.beginPath();ctx.arc(x,y,2.2*map.dpr,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
   function drawAxial(canvas){
     const m=metaRef.current,v=volumeRef.current;if(!m||!v)return;
     const {w,h,d,spacingX,spacingY}=m,z=clamp(Math.round(cursor.z),0,d-1);
@@ -227,6 +246,7 @@ export default function Viewer2(){
       const nx=-ty,ny=tx,pt={x:c.x+nx*n.offsetMm/m.spacingX,y:c.y+ny*n.offsetMm/m.spacingY},q=screen(pt);
       ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(q.x,q.y,7*map.dpr,0,Math.PI*2);ctx.stroke();
     });
+    drawCrosshair(ctx,canvas,cursor.x,cursor.y);
     drawMeasurementOverlay(ctx,canvas,"axial",z);
   }
 
@@ -244,6 +264,8 @@ export default function Viewer2(){
     }
     const tmp=document.createElement("canvas");tmp.width=pixelW;tmp.height=pixelH;tmp.getContext("2d").putImageData(img,0,0);
     ctx.fillStyle="#05070a";ctx.fillRect(0,0,cw,ch);ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
+    if(isCoronal)drawCrosshair(ctx,canvas,cursor.x,d-1-cursor.z);
+    else drawCrosshair(ctx,canvas,cursor.y,d-1-cursor.z);
     drawMeasurementOverlay(ctx,canvas,plane,fixed);
   }
 
@@ -345,6 +367,9 @@ export default function Viewer2(){
       const x=map.ox+a/pixelW*map.dw,y=map.oy+b/pixelH*map.dh;
       ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(x,y,(n.type==="foramen"?8:4)*map.dpr,0,Math.PI*2);n.type==="foramen"?ctx.stroke():ctx.fill();
     });
+    const dx=(cursor.x-frame.c.x)*spacingX,dy=(cursor.y-frame.c.y)*spacingY;
+    const offsetMm=dx*frame.nx+dy*frame.ny;
+    drawCrosshair(ctx,canvas,pixelW/2+offsetMm/stepMm,d-1-cursor.z);
     drawMeasurementOverlay(ctx,canvas,"tangential",curveIndex);
   }
 
@@ -365,7 +390,7 @@ export default function Viewer2(){
     const sorted=[...nervePoints].sort((a,b)=>a.curveIndex-b.curveIndex);
     if(sorted.length){ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();sorted.forEach((n,i)=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();sorted.forEach(n=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.beginPath();ctx.arc(x,y,3*map.dpr,0,Math.PI*2);ctx.fill()})}
     foramina.forEach(n=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(x,y,7*map.dpr,0,Math.PI*2);ctx.stroke()});
-    const x=map.ox+curveIndex/pixelW*map.dw;ctx.strokeStyle="#31d7d2";ctx.lineWidth=1.5*map.dpr;ctx.beginPath();ctx.moveTo(x,map.oy);ctx.lineTo(x,map.oy+map.dh);ctx.stroke();
+    drawCrosshair(ctx,canvas,curveIndex,d-1-cursor.z);
   }
 
   useEffect(()=>{
@@ -400,6 +425,31 @@ export default function Viewer2(){
     }
   }
 
+  function navigateAt(plane,canvas,pt){
+    if(!pt||!metaRef.current)return;
+    const m=metaRef.current;
+    if(plane==="axial"){
+      setCursor(c=>({...c,x:clamp(Math.round(pt.a),0,m.w-1),y:clamp(Math.round(pt.b),0,m.h-1)}));
+    }else if(plane==="coronal"){
+      setCursor(c=>({...c,x:clamp(Math.round(pt.a),0,m.w-1),z:clamp(Math.round(m.d-1-pt.b),0,m.d-1)}));
+    }else if(plane==="sagittal"){
+      setCursor(c=>({...c,y:clamp(Math.round(pt.a),0,m.h-1),z:clamp(Math.round(m.d-1-pt.b),0,m.d-1)}));
+    }else if(plane==="tangential"){
+      const frame=tangentFrame(curveIndex);if(!frame)return;
+      const stepMm=.25,pixelW=canvas._map.pixelW;
+      const off=(pt.a-pixelW/2)*stepMm;
+      setCursor(c=>({
+        ...c,
+        x:clamp(Math.round(frame.c.x+frame.nx*off/m.spacingX),0,m.w-1),
+        y:clamp(Math.round(frame.c.y+frame.ny*off/m.spacingY),0,m.h-1),
+        z:clamp(Math.round(m.d-1-pt.b),0,m.d-1)
+      }));
+    }else if(plane==="panoramic"){
+      setCurveIndex(clamp(Math.round(pt.a),0,curve.length-1));
+      setCursor(c=>({...c,z:clamp(Math.round(m.d-1-pt.b),0,m.d-1)}));
+    }
+  }
+
   function onPointerDown(plane,e){
     const canvas=e.currentTarget,pt=toImagePoint(canvas,e);
     if(tool==="pan"){beginPan(plane,e);return}
@@ -418,21 +468,32 @@ export default function Viewer2(){
       return;
     }
     if(tool==="navigate"){
-      const m=metaRef.current;
-      if(plane==="axial")setCursor(c=>({...c,x:clamp(Math.round(pt.a),0,m.w-1),y:clamp(Math.round(pt.b),0,m.h-1)}));
-      if(plane==="coronal")setCursor(c=>({...c,x:clamp(Math.round(pt.a),0,m.w-1),z:clamp(Math.round(m.d-1-pt.b),0,m.d-1)}));
-      if(plane==="sagittal")setCursor(c=>({...c,y:clamp(Math.round(pt.a),0,m.h-1),z:clamp(Math.round(m.d-1-pt.b),0,m.d-1)}));
-      if(plane==="panoramic"){setCurveIndex(clamp(Math.round(pt.a),0,curve.length-1));setCursor(c=>({...c,z:clamp(Math.round(m.d-1-pt.b),0,m.d-1)}))}
+      navigateAt(plane,canvas,pt);
+      navDragRef.current={plane};
+      try{canvas.setPointerCapture(e.pointerId)}catch{}
     }
   }
   function onPointerMove(plane,e){
     if(dragRef.current){movePan(e);return}
+    if(navDragRef.current&&tool==="navigate"&&navDragRef.current.plane===plane){
+      const pt=toImagePoint(e.currentTarget,e);if(pt)navigateAt(plane,e.currentTarget,pt);
+      return;
+    }
     if(curveDragRef.current==null||tool!=="curve"||plane!=="axial")return;
     const pt=toImagePoint(e.currentTarget,e);if(!pt)return;
     const i=curveDragRef.current,m=metaRef.current;
     setCurvePoints(ps=>ps.map((p,index)=>index===i?{x:clamp(pt.a,0,m.w-1),y:clamp(pt.b,0,m.h-1)}:p));
   }
-  function onPointerUp(){dragRef.current=null;curveDragRef.current=null}
+  function onPointerUp(){dragRef.current=null;curveDragRef.current=null;navDragRef.current=null}
+
+  function planeControl(id){
+    const m=metaRef.current;if(!m)return {min:0,max:0,value:0,label:""};
+    if(id==="axial")return {min:0,max:m.d-1,value:cursor.z,label:`Z ${cursor.z+1}/${m.d}`,set:v=>setCursor(c=>({...c,z:Number(v)}))};
+    if(id==="coronal")return {min:0,max:m.h-1,value:cursor.y,label:`Y ${cursor.y+1}/${m.h}`,set:v=>setCursor(c=>({...c,y:Number(v)}))};
+    if(id==="sagittal")return {min:0,max:m.w-1,value:cursor.x,label:`X ${cursor.x+1}/${m.w}`,set:v=>setCursor(c=>({...c,x:Number(v)}))};
+    if(id==="tangential")return {min:0,max:Math.max(0,curve.length-1),value:curveIndex,label:`Tangencial ${curveIndex+1}/${curve.length}`,set:v=>setCurveIndex(Number(v))};
+    return {min:0,max:Math.max(0,curve.length-1),value:curveIndex,label:`Região ${curveIndex+1}/${curve.length}`,set:v=>setCurveIndex(Number(v))};
+  }
 
   if(loading)return <main className="viewer2-loading"><div><div className="brand">OdontoView</div><h1>Montando Viewer 2.0…</h1><p>Decodificando o volume DICOM localmente.</p></div></main>;
   if(error)return <main className="page centered"><section className="card auth"><div className="brand">OdontoView</div><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>nav("/radiologia")}>Voltar</button></section></main>;
@@ -463,6 +524,7 @@ export default function Viewer2(){
       ].map(([id,label,ref])=><article className={"viewer2-pane "+id} key={id}>
         <div className="viewer2-pane-head"><strong>{label}</strong><button onClick={()=>resetPlane(id)}>1:1</button></div>
         <div className="viewer2-canvas-wrap"><canvas ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
+        {(()=>{const pc=planeControl(id);return <div className="viewer2-slice-control"><span>{pc.label}</span><input aria-label={"Navegação "+label} type="range" min={pc.min} max={pc.max} step="1" value={pc.value} onChange={e=>pc.set(e.target.value)}/></div>})()}
       </article>)}
       <aside className="viewer2-side">
         <section>
