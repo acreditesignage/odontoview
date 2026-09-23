@@ -59,3 +59,12 @@
   .wl-control>b{font-size:12px}
   .wl-reset{height:42px!important;font-size:11px!important}
 }
+
+.viewer2-export .export-range{font-size:12px;color:#9fb0c3;margin:.55rem 0}
+.cut-counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin:12px 0}
+.cut-counts button{height:38px;border:1px solid #33445a;background:#101924;color:#dce8f5;border-radius:9px;font-weight:800}
+.cut-counts button.active{background:#0a84ff;border-color:#0a84ff;color:#fff}
+.viewer2-export-btn{width:100%;min-height:44px;border:0;border-radius:10px;background:#edf5ff;color:#0756a8;font-weight:850;font:inherit;padding:11px 14px}
+.viewer2-export-btn:disabled{opacity:.6}
+.export-message{margin-top:10px;padding:9px 10px;border-radius:9px;background:#0a1018;color:#b7c9dd;font-size:11px;line-height:1.4}
+@media(max-width:760px){.cut-counts{grid-template-columns:repeat(5,1fr);gap:5px}.cut-counts button{height:44px;padding:0;font-size:13px}}
