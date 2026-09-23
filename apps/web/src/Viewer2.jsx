@@ -81,6 +81,7 @@ export default function Viewer2(){
   const volumeRef=useRef(null);
   const metaRef=useRef(null);
   const defaultWindowRef=useRef({wc:400,ww:2000});
+  const defaultCurveRef=useRef([]);
   const dragRef=useRef(null);
   const curveDragRef=useRef(null);
   const navDragRef=useRef(null);
@@ -149,7 +150,9 @@ export default function Viewer2(){
         defaultWindowRef.current=computedWindow;
         setMeta(nextMeta);setWindowLevel(computedWindow);
         setCursor({x:Math.floor(w/2),y:Math.floor(h/2),z:Math.floor(d/2)});
-        const arch=defaultArch(w,h);setCurvePoints(arch);
+        const arch=defaultArch(w,h);
+        defaultCurveRef.current=arch.map(p=>({...p}));
+        setCurvePoints(arch);
         const sampled=catmullRom(arch,18);setCurveIndex(Math.floor(sampled.length/2));
         setLoading(false);
       }catch(e){if(!cancelled){setError(e.message||"Falha ao montar o volume.");setLoading(false)}}
@@ -402,7 +405,35 @@ export default function Viewer2(){
   function resetPlane(plane){setTransforms(t=>({...t,[plane]:{zoom:1,panX:0,panY:0}}))}
   function adjustBrightness(delta){setWindowLevel(v=>({...v,wc:Math.round(v.wc+delta)}))}
   function adjustContrast(delta){setWindowLevel(v=>({...v,ww:Math.max(50,Math.round(v.ww+delta))}))}
-  function resetWindow(){setWindowLevel(defaultWindowRef.current)}
+  function resetWindow(){setWindowLevel({...defaultWindowRef.current})}
+  function resetArch(){
+    const m=metaRef.current;if(!m)return;
+    const arch=(defaultCurveRef.current?.length?defaultCurveRef.current:defaultArch(m.w,m.h)).map(p=>({...p}));
+    setCurvePoints(arch);
+    const sampled=catmullRom(arch,18);
+    setCurveIndex(Math.floor(sampled.length/2));
+  }
+  function resetAll(){
+    const m=metaRef.current;if(!m)return;
+    const arch=(defaultCurveRef.current?.length?defaultCurveRef.current:defaultArch(m.w,m.h)).map(p=>({...p}));
+    setWindowLevel({...defaultWindowRef.current});
+    setCursor({x:Math.floor(m.w/2),y:Math.floor(m.h/2),z:Math.floor(m.d/2)});
+    setCurvePoints(arch);
+    setCurveIndex(Math.floor(catmullRom(arch,18).length/2));
+    setMeasurements([]);
+    setPendingMeasure(null);
+    setNervePoints([]);
+    setForamina([]);
+    setTransforms({
+      axial:{zoom:1,panX:0,panY:0},coronal:{zoom:1,panX:0,panY:0},
+      sagittal:{zoom:1,panX:0,panY:0},tangential:{zoom:1,panX:0,panY:0},panoramic:{zoom:1,panX:0,panY:0}
+    });
+    setTool("navigate");
+    setExportCount(15);
+    setExportMessage("");
+  }
+  function undoLastNerve(){setNervePoints(ns=>ns.slice(0,-1))}
+  function undoLastForamen(){setForamina(fs=>fs.slice(0,-1))}
   function onWheel(plane,e){e.preventDefault();const factor=e.deltaY<0?1.12:.89;setTransforms(t=>({...t,[plane]:{...t[plane],zoom:clamp(t[plane].zoom*factor,.5,8)}}))}
   function beginPan(plane,e){if(tool!=="pan")return;dragRef.current={plane,x:e.clientX,y:e.clientY,start:transforms[plane]};e.currentTarget.setPointerCapture(e.pointerId)}
   function movePan(e){const d=dragRef.current;if(!d)return;setTransforms(t=>({...t,[d.plane]:{...t[d.plane],panX:d.start.panX+e.clientX-d.x,panY:d.start.panY+e.clientY-d.y}}))}
@@ -462,7 +493,7 @@ export default function Viewer2(){
     }
     if((tool==="nerve"||tool==="foramen")&&plane==="tangential"){
       const pixelW=canvas._map.pixelW,d=metaRef.current.d,offsetMm=(pt.a-pixelW/2)*.25,z=clamp(Math.round(d-1-pt.b),0,d-1);
-      const mark={curveIndex,z,offsetMm};
+      const mark={id:(crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random())),curveIndex,z,offsetMm};
       if(tool==="nerve")setNervePoints(ns=>[...ns.filter(n=>Math.abs(n.curveIndex-curveIndex)>1),mark].sort((a,b)=>a.curveIndex-b.curveIndex));
       else setForamina(fs=>[...fs,mark]);
       return;
@@ -512,8 +543,9 @@ export default function Viewer2(){
       <div className="viewer2-wl-buttons" aria-label="Controles de brilho e contraste">
         <div className="wl-control"><span>Brilho</span><button type="button" aria-label="Diminuir brilho" onClick={()=>adjustBrightness(-25)}>−</button><b>{Math.round(windowLevel.wc)}</b><button type="button" aria-label="Aumentar brilho" onClick={()=>adjustBrightness(25)}>+</button></div>
         <div className="wl-control"><span>Contraste</span><button type="button" aria-label="Diminuir contraste" onClick={()=>adjustContrast(-50)}>−</button><b>{Math.round(windowLevel.ww)}</b><button type="button" aria-label="Aumentar contraste" onClick={()=>adjustContrast(50)}>+</button></div>
-        <button type="button" className="wl-reset" onClick={resetWindow}>Restaurar</button>
+        <button type="button" className="wl-reset" onClick={resetWindow}>Restaurar imagem</button>
       </div>
+      <button type="button" className="viewer2-reset-all" onClick={resetAll}>↺ Restaurar geral</button>
       <div className="viewer2-wl viewer2-wl-sliders"><label>Brilho <input type="range" min={windowLevel.wc-windowLevel.ww} max={windowLevel.wc+windowLevel.ww} step="1" value={windowLevel.wc} onChange={e=>setWindowLevel(v=>({...v,wc:Number(e.target.value)}))}/></label><label>Contraste <input type="range" min="50" max={Math.max(5000,windowLevel.ww*2)} step="10" value={windowLevel.ww} onChange={e=>setWindowLevel(v=>({...v,ww:Number(e.target.value)}))}/></label></div>
       <div className="viewer2-tool-state">Ferramenta: <strong>{toolName}</strong></div>
     </section>
@@ -530,7 +562,8 @@ export default function Viewer2(){
         <section>
           <p className="eyebrow">CURVA DA ARCADA</p><strong>Sempre ativa • ajuste manual</strong>
           <input type="range" min="0" max={Math.max(0,curve.length-1)} value={curveIndex} onChange={e=>setCurveIndex(Number(e.target.value))}/>
-          <small>Corte tangencial {curveIndex+1}/{curve.length}. A curva inicial é uma proposta geométrica e deve ser conferida pelo profissional.</small>
+          <small>Corte tangencial {curveIndex+1}/{curve.length}. A curva inicial ainda é uma proposta geométrica, não uma segmentação automática da arcada. Ajuste os pontos no axial antes de usar os tangenciais.</small>
+          <button className="viewer2-small" onClick={resetArch}>Restaurar curva inicial</button>
         </section>
         <section className="viewer2-export">
           <p className="eyebrow">SÉRIE DE CORTES</p>
@@ -546,8 +579,18 @@ export default function Viewer2(){
         <section>
           <p className="eyebrow red">NERVO / FORAME</p><strong>Traçado em vermelho</strong>
           <p>{nervePoints.length} ponto(s) do canal • {foramina.length} forame(s)</p>
-          <small>Use “Nervo” no corte tangencial em cortes sucessivos. Use “Forame” para marcar a saída. Não há detecção automática nesta versão.</small>
-          {(nervePoints.length>0||foramina.length>0)&&<button className="viewer2-small" onClick={()=>{setNervePoints([]);setForamina([])}}>Limpar traçado</button>}
+          <small>Use “Nervo” no corte tangencial em cortes sucessivos. Cada marcação pode ser apagada individualmente. Não há detecção automática nesta versão.</small>
+          {nervePoints.length>0&&<div className="nerve-point-list">
+            {nervePoints.map((n,i)=><div key={n.id||("n-"+i)}><span>N{i+1} • corte {n.curveIndex+1}</span><button aria-label={"Excluir ponto do nervo "+(i+1)} onClick={()=>setNervePoints(ns=>ns.filter((_,idx)=>idx!==i))}>×</button></div>)}
+          </div>}
+          {foramina.length>0&&<div className="nerve-point-list foramen-list">
+            {foramina.map((n,i)=><div key={n.id||("f-"+i)}><span>Forame {i+1} • corte {n.curveIndex+1}</span><button aria-label={"Excluir forame "+(i+1)} onClick={()=>setForamina(fs=>fs.filter((_,idx)=>idx!==i))}>×</button></div>)}
+          </div>}
+          {(nervePoints.length>0||foramina.length>0)&&<div className="nerve-actions">
+            {nervePoints.length>0&&<button className="viewer2-small" onClick={undoLastNerve}>Desfazer último nervo</button>}
+            {foramina.length>0&&<button className="viewer2-small" onClick={undoLastForamen}>Desfazer último forame</button>}
+            <button className="viewer2-small danger" onClick={()=>{setNervePoints([]);setForamina([])}}>Limpar tudo</button>
+          </div>}
         </section>
         <section>
           <p className="eyebrow">MEDIÇÕES</p><strong>{measurements.length} medida(s)</strong>
