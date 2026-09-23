@@ -18,7 +18,7 @@ function BrandLockup({role="NETWORK",light=false}){
 }
 
 function Login({initialMode="login"}){
- const nav=useNavigate(),[mode,setMode]=useState(initialMode),[err,setErr]=useState(""),[f,setF]=useState({name:"",email:"",password:"",cro:"",uf:"RJ"});
+ const nav=useNavigate(),[mode,setMode]=useState(initialMode),[err,setErr]=useState(""),[f,setF]=useState({name:"",email:"",password:"",phone:"",cro:"",uf:"RJ"});
  async function submit(e){
    e.preventDefault();setErr("");
    try{
@@ -284,7 +284,9 @@ function Schedule(){
 
 export default function App(){return <Routes>
  <Route path="/" element={<Login/>}/>
- <Route path="/novo-pedido" element={<NewOrder/>}/>
+ <Route path="/cadastro-dentista" element={<Login initialMode="register"/>}/>
+ <Route path="/dentista" element={<DentistDashboard/>}/>
+ <Route path="/novo-pedido" element={<Navigate to="/dentista"/>}/>
  <Route path="/radiologia" element={<Radiology/>}/>
  <Route path="/viewer2" element={<Viewer2/>}/>
  <Route path="/paciente" element={<Patient/>}/>
