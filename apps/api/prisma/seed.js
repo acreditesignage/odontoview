@@ -39,18 +39,21 @@ async function main() {
     });
   }
 
-  const demoEmail="radiologia@odontoview.local";
-  const demoPasswordHash=await bcrypt.hash("OdontoViewDemo123!",12);
-  const unitUser=await prisma.user.upsert({
-    where:{email:demoEmail},
-    update:{name:"Recepção Demo",role:"UNIT_USER",passwordHash:demoPasswordHash},
-    create:{name:"Recepção Demo",email:demoEmail,role:"UNIT_USER",passwordHash:demoPasswordHash}
-  });
-  await prisma.unitMembership.upsert({
-    where:{userId_unitId:{userId:unitUser.id,unitId:unit.id}},
-    update:{active:true},
-    create:{userId:unitUser.id,unitId:unit.id,active:true}
-  });
+  const demoEmail=process.env.DEMO_UNIT_EMAIL;
+  const demoPassword=process.env.DEMO_UNIT_PASSWORD;
+  if(demoEmail&&demoPassword){
+    const demoPasswordHash=await bcrypt.hash(demoPassword,12);
+    const unitUser=await prisma.user.upsert({
+      where:{email:demoEmail.toLowerCase().trim()},
+      update:{name:"Recepção Demo",role:"UNIT_USER",passwordHash:demoPasswordHash},
+      create:{name:"Recepção Demo",email:demoEmail.toLowerCase().trim(),role:"UNIT_USER",passwordHash:demoPasswordHash}
+    });
+    await prisma.unitMembership.upsert({
+      where:{userId_unitId:{userId:unitUser.id,unitId:unit.id}},
+      update:{active:true},
+      create:{userId:unitUser.id,unitId:unit.id,active:true}
+    });
+  }
 
   console.log("Seed OdontoView Network concluído.");
 }
