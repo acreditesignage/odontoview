@@ -132,3 +132,8 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 @media(max-width:760px){
   .login-page{padding:14px}.login-brand-panel{border-radius:24px;padding:24px;display:block}.login-message{margin:30px 0}.login-message h1{font-size:46px}.login-message>p:last-child{font-size:15px}.ecosystem-mini{display:none}.auth-premium{border-radius:24px;padding:25px}.auth-premium h1{font-size:36px}.brand-word{font-size:28px}.brand-sub{white-space:normal;line-height:1.4;max-width:300px}.topbar{align-items:flex-start}.topbar .ghost{margin-top:2px}.section-intro{margin-top:22px}
 }
+
+.viewer2-slice-control{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center;padding:8px 10px 10px;background:#0b1119;border-top:1px solid #1b2633}
+.viewer2-slice-control span{font-size:10px;font-weight:800;color:#9fb0c3;white-space:nowrap;font-variant-numeric:tabular-nums}
+.viewer2-slice-control input[type=range]{width:100%;padding:0;accent-color:#31d7d2}
+@media(max-width:760px){.viewer2-slice-control{grid-template-columns:1fr;padding:8px 10px 11px;gap:5px}.viewer2-slice-control span{font-size:11px}.viewer2-slice-control input[type=range]{min-height:32px}}
