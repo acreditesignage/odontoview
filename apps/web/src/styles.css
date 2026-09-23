@@ -182,3 +182,47 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 .arch-scope button{min-height:38px;border:1px solid #33445a;background:#101924;color:#dce8f5;border-radius:9px;font-weight:800;padding:7px 9px}
 .arch-scope button.active{background:#0a84ff;border-color:#0a84ff;color:#fff}
 @media(max-width:760px){.arch-scope{grid-template-columns:1fr 1fr}.arch-scope button{min-height:42px;font-size:12px}}
+
+.visual3d-composite{background:#05080c}
+.viewer3d-badge{font-size:9px;letter-spacing:.14em;color:#31d7d2;border:1px solid #285d66;background:#0b242a;border-radius:999px;padding:4px 7px;font-weight:800}
+.viewer3d-split{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(220px,.8fr);min-height:360px;background:#05080c}
+.viewer3d-primary{min-width:0;border-right:1px solid #1c2633}
+.viewer3d-mini-pano{min-width:0;background:#06090d;display:flex;flex-direction:column}
+.viewer3d-mini-head{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 9px;background:#0c121a;border-bottom:1px solid #1c2633}
+.viewer3d-mini-head strong{font-size:11px;color:#dce8f5}
+.viewer3d-mini-head button{border:1px solid #2a3747;background:#111925;color:#dce9f8;border-radius:8px;padding:5px 7px;font:inherit;font-size:9px;font-weight:800}
+.viewer3d-pano-canvas{height:100%;min-height:270px;flex:1}
+.viewer3d-panel{position:relative;height:100%;min-height:360px;background:
+  radial-gradient(circle at 50% 35%,rgba(20,76,104,.22),transparent 40%),
+  linear-gradient(180deg,#05080c,#071018 68%,#05080c);
+  overflow:hidden}
+.viewer3d-stage{position:absolute;inset:0 0 112px 0;min-height:250px}
+.viewer3d-stage canvas{width:100%!important;height:100%!important;display:block;touch-action:none}
+.viewer3d-loading{position:absolute;inset:0;z-index:4;display:grid;place-content:center;text-align:center;gap:6px;color:#e7f3ff;background:radial-gradient(circle at 50% 50%,rgba(17,61,82,.35),rgba(5,8,12,.92))}
+.viewer3d-loading strong{font-size:16px}.viewer3d-loading small{color:#87a4bc;max-width:290px;line-height:1.4}
+.viewer3d-orbit{font-size:38px;color:#31d7d2;animation:viewer3d-spin 1.4s linear infinite}
+@keyframes viewer3d-spin{to{transform:rotate(360deg)}}
+.viewer3d-status{position:absolute;left:9px;bottom:8px;z-index:3;padding:6px 8px;border-radius:8px;background:rgba(5,10,15,.72);border:1px solid rgba(61,91,117,.45);font-size:9px;color:#8ca8bd;backdrop-filter:blur(8px)}
+.viewer3d-controls{position:absolute;left:0;right:0;bottom:0;z-index:5;padding:8px 9px 9px;background:linear-gradient(180deg,rgba(7,12,18,.78),rgba(7,12,18,.97));border-top:1px solid #1c2c3b;backdrop-filter:blur(10px)}
+.viewer3d-switches,.viewer3d-views{display:flex;gap:5px;flex-wrap:wrap}
+.viewer3d-switches button,.viewer3d-views button{border:1px solid #2b3a4b;background:#111a24;color:#9fb0c3;border-radius:8px;min-height:30px;padding:5px 8px;font:inherit;font-size:9px;font-weight:800}
+.viewer3d-switches button.active{background:#0e3036;border-color:#24616a;color:#a7fff7}
+.viewer3d-switches button.active.nerve{background:#341318;border-color:#7c2a34;color:#ff9ca7}
+.viewer3d-opacity{display:grid;grid-template-columns:auto minmax(70px,1fr) auto;gap:7px;align-items:center;margin:7px 0;color:#8fa4b7;font-size:9px}
+.viewer3d-opacity input{padding:0;width:100%;accent-color:#31d7d2}.viewer3d-opacity b{font-variant-numeric:tabular-nums;color:#dce8f5}
+.viewer3d-views button:hover{border-color:#45617b;color:#fff}
+@media(max-width:1100px){
+  .viewer3d-split{grid-template-columns:1fr}
+  .viewer3d-primary{border-right:0;border-bottom:1px solid #1c2633;min-height:390px}
+  .viewer3d-mini-pano{min-height:330px}
+  .viewer3d-panel{min-height:390px}
+}
+@media(max-width:760px){
+  .viewer3d-split{grid-template-columns:1fr}
+  .viewer3d-primary{min-height:420px}
+  .viewer3d-panel{min-height:420px}
+  .viewer3d-stage{inset:0 0 132px 0}
+  .viewer3d-switches button,.viewer3d-views button{min-height:34px;font-size:10px}
+  .viewer3d-mini-pano{min-height:360px}
+  .viewer3d-pano-canvas{min-height:300px}
+}
