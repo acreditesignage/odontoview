@@ -78,6 +78,29 @@ function measurementDistance(m,meta){
   return Math.hypot(da*m.spacingA,db*m.spacingB);
 }
 
+function interpolateNervePath(points){
+  const anchors=[...points].sort((a,b)=>a.curveIndex-b.curveIndex);
+  if(anchors.length<2)return anchors;
+  const out=[];
+  for(let i=0;i<anchors.length-1;i++){
+    const a=anchors[i],b=anchors[i+1];
+    if(i===0)out.push({...a,generated:false});
+    const span=Math.max(1,b.curveIndex-a.curveIndex);
+    for(let idx=a.curveIndex+1;idx<b.curveIndex;idx++){
+      const t=(idx-a.curveIndex)/span;
+      out.push({
+        id:`generated-${a.id||i}-${b.id||i+1}-${idx}`,
+        curveIndex:idx,
+        z:a.z+(b.z-a.z)*t,
+        offsetMm:a.offsetMm+(b.offsetMm-a.offsetMm)*t,
+        generated:true
+      });
+    }
+    out.push({...b,generated:false});
+  }
+  return out;
+}
+
 export default function Viewer2(){
   const nav=useNavigate();
   const session=useMemo(()=>getViewerSession(),[]);
@@ -85,6 +108,7 @@ export default function Viewer2(){
   const metaRef=useRef(null);
   const defaultWindowRef=useRef({wc:400,ww:2000});
   const defaultCurveRef=useRef([]);
+  const curveBeforeAssistRef=useRef(null);
   const dragRef=useRef(null);
   const curveDragRef=useRef(null);
   const navDragRef=useRef(null);
@@ -101,11 +125,14 @@ export default function Viewer2(){
   const [measurements,setMeasurements]=useState([]);
   const [pendingMeasure,setPendingMeasure]=useState(null);
   const [nervePoints,setNervePoints]=useState([]);
+  const [nerveAssist,setNerveAssist]=useState(true);
+  const nerveDisplayPoints=useMemo(()=>nerveAssist?interpolateNervePath(nervePoints):[...nervePoints].sort((a,b)=>a.curveIndex-b.curveIndex),[nervePoints,nerveAssist]);
   const [foramina,setForamina]=useState([]);
   const [exportCount,setExportCount]=useState(15);
   const [exportMode,setExportMode]=useState("complete");
   const [exportBusy,setExportBusy]=useState(false);
   const [exportMessage,setExportMessage]=useState("");
+  const [curveAssistMessage,setCurveAssistMessage]=useState("");
   const [transforms,setTransforms]=useState({
     axial:{zoom:1,panX:0,panY:0},coronal:{zoom:1,panX:0,panY:0},
     sagittal:{zoom:1,panX:0,panY:0},tangential:{zoom:1,panX:0,panY:0},panoramic:{zoom:1,panX:0,panY:0}
@@ -298,7 +325,7 @@ export default function Viewer2(){
       const active=curve[curveIndex];if(active){const q=screen(active);ctx.fillStyle="#31d7d2";ctx.beginPath();ctx.arc(q.x,q.y,6*map.dpr,0,Math.PI*2);ctx.fill()}
       ctx.restore();
     }
-    nervePoints.forEach(n=>{
+    nerveDisplayPoints.forEach(n=>{
       const c=curve[n.curveIndex];if(!c)return;const prev=curve[Math.max(0,n.curveIndex-1)],next=curve[Math.min(curve.length-1,n.curveIndex+1)];
       let tx=(next.x-prev.x)*m.spacingX,ty=(next.y-prev.y)*m.spacingY,len=Math.hypot(tx,ty)||1;tx/=len;ty/=len;
       const nx=-ty,ny=tx,pt={x:c.x+nx*n.offsetMm/m.spacingX,y:c.y+ny*n.offsetMm/m.spacingY},q=screen(pt);
@@ -356,7 +383,7 @@ export default function Viewer2(){
     }
     ctx.putImageData(img,0,0);
 
-    const nerve=nervePoints.find(n=>n.curveIndex===index);
+    const nerve=nerveDisplayPoints.find(n=>n.curveIndex===index);
     if(nerve){
       const x=pixelW/2+nerve.offsetMm/stepMm,y=d-1-nerve.z;
       ctx.fillStyle="#ff2d2d";ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();
@@ -505,7 +532,7 @@ export default function Viewer2(){
       maps.push(map);
       ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
 
-      [...nervePoints.map(n=>({...n,type:"nerve"})),...foramina.map(n=>({...n,type:"foramen"}))].filter(n=>n.curveIndex===idx).forEach(n=>{
+      [...nerveDisplayPoints.map(n=>({...n,type:"nerve"})),...foramina.map(n=>({...n,type:"foramen"}))].filter(n=>n.curveIndex===idx).forEach(n=>{
         const a=pixelW/2+n.offsetMm/stepMm,b=d-1-n.z;
         const x=map.ox+a/pixelW*map.dw,y=map.oy+b/pixelH*map.dh;
         ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*dpr;
@@ -550,7 +577,7 @@ export default function Viewer2(){
     const tmp=document.createElement("canvas");tmp.width=pixelW;tmp.height=pixelH;tmp.getContext("2d").putImageData(img,0,0);
     ctx.fillStyle="#05070a";ctx.fillRect(0,0,cw,ch);ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
     const map=canvas._map;
-    const sorted=[...nervePoints].sort((a,b)=>a.curveIndex-b.curveIndex);
+    const sorted=[...nerveDisplayPoints].sort((a,b)=>a.curveIndex-b.curveIndex);
     if(sorted.length){ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();sorted.forEach((n,i)=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();sorted.forEach(n=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.beginPath();ctx.arc(x,y,3*map.dpr,0,Math.PI*2);ctx.fill()})}
     foramina.forEach(n=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(x,y,7*map.dpr,0,Math.PI*2);ctx.stroke()});
     if(crosshairVisible)drawCrosshair(ctx,canvas,curveIndex,d-1-cursor.z);
@@ -579,6 +606,63 @@ export default function Viewer2(){
     setCurvePoints(arch);
     const sampled=catmullRom(arch,18);
     setCurveIndex(Math.floor(sampled.length/2));
+    setCurveAssistMessage("");
+    curveBeforeAssistRef.current=null;
+  }
+  function localDensityScore(x,y,z){
+    const m=metaRef.current,v=volumeRef.current;if(!m||!v)return -Infinity;
+    let total=0,count=0;
+    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+      const xx=Math.round(x+dx),yy=Math.round(y+dy);
+      if(xx>=0&&yy>=0&&xx<m.w&&yy<m.h){total+=sample(v,m.w,m.h,m.d,xx,yy,z);count++}
+    }
+    return count?total/count:-Infinity;
+  }
+  function suggestArchFromAxial(){
+    const m=metaRef.current,v=volumeRef.current;if(!m||!v||curve.length<7)return;
+    const z=clamp(Math.round(cursor.z),0,m.d-1);
+    const base=curve;
+    const candidates=[];
+    const pointCount=curvePoints.length;
+    for(let j=0;j<pointCount;j++){
+      const idx=Math.round(j*(base.length-1)/Math.max(1,pointCount-1));
+      const p=base[idx],prev=base[Math.max(0,idx-2)],next=base[Math.min(base.length-1,idx+2)];
+      let tx=(next.x-prev.x)*m.spacingX,ty=(next.y-prev.y)*m.spacingY;
+      const len=Math.hypot(tx,ty)||1;tx/=len;ty/=len;
+      const nx=-ty,ny=tx;
+      const samples=[];
+      for(let off=-10;off<=10.001;off+=.5){
+        const x=p.x+nx*off/m.spacingX,y=p.y+ny*off/m.spacingY;
+        samples.push({off,score:localDensityScore(x,y,z)});
+      }
+      const finite=samples.filter(s=>Number.isFinite(s.score));
+      if(!finite.length){candidates.push({p,off:0,nx,ny});continue}
+      const min=Math.min(...finite.map(s=>s.score)),max=Math.max(...finite.map(s=>s.score));
+      let best={off:0,value:-Infinity};
+      for(const s of finite){
+        const normalized=(s.score-min)/Math.max(1,max-min);
+        const value=normalized-Math.abs(s.off)*.018;
+        if(value>best.value)best={off:s.off,value};
+      }
+      candidates.push({p,off:clamp(best.off,-7,7),nx,ny});
+    }
+    const smoothed=candidates.map((item,i)=>{
+      const a=candidates[Math.max(0,i-1)].off,b=item.off,d=candidates[Math.min(candidates.length-1,i+1)].off;
+      return {...item,off:clamp((a+2*b+d)/4,-6,6)};
+    });
+    const nextPoints=smoothed.map(item=>({
+      x:clamp(item.p.x+item.nx*item.off/m.spacingX,0,m.w-1),
+      y:clamp(item.p.y+item.ny*item.off/m.spacingY,0,m.h-1)
+    }));
+    curveBeforeAssistRef.current=curvePoints.map(p=>({...p}));
+    setCurvePoints(nextPoints);
+    setCurveAssistMessage(`Sugestão aplicada no axial Z ${z+1}. Confira os 7 pontos antes de usar para planejamento.`);
+  }
+  function undoSuggestedArch(){
+    if(!curveBeforeAssistRef.current)return;
+    setCurvePoints(curveBeforeAssistRef.current.map(p=>({...p})));
+    curveBeforeAssistRef.current=null;
+    setCurveAssistMessage("Sugestão desfeita.");
   }
   function resetAll(){
     const m=metaRef.current;if(!m)return;
@@ -590,6 +674,7 @@ export default function Viewer2(){
     setMeasurements([]);
     setPendingMeasure(null);
     setNervePoints([]);
+    setNerveAssist(true);
     setForamina([]);
     setTransforms({
       axial:{zoom:1,panX:0,panY:0},coronal:{zoom:1,panX:0,panY:0},
@@ -600,6 +685,8 @@ export default function Viewer2(){
     setExportMode("complete");
     setExportCount(15);
     setExportMessage("");
+    setCurveAssistMessage("");
+    curveBeforeAssistRef.current=null;
   }
   function undoLastNerve(){setNervePoints(ns=>ns.slice(0,-1))}
   function undoLastForamen(){setForamina(fs=>fs.slice(0,-1))}
@@ -740,7 +827,13 @@ export default function Viewer2(){
           <p className="eyebrow">CURVA DA ARCADA</p><strong>Sempre ativa • ajuste manual</strong>
           <input type="range" min="0" max={Math.max(0,curve.length-1)} value={curveIndex} onChange={e=>setCurveIndex(Number(e.target.value))}/>
           <small>Corte tangencial {curveIndex+1}/{curve.length}. A faixa azul mostra os {PANORAMIC_BAND_HALF_MM*2} mm usados na reconstrução panorâmica. A curva inicial ainda é uma proposta geométrica; ajuste os pontos no axial antes de usar os tangenciais.</small>
-          <button className="viewer2-small" onClick={resetArch}>Restaurar curva inicial</button>
+          <div className="curve-assist-actions">
+            <button className="viewer2-small assist" onClick={suggestArchFromAxial}>Sugerir curva pelo axial atual</button>
+            {curveBeforeAssistRef.current&&<button className="viewer2-small" onClick={undoSuggestedArch}>Desfazer sugestão</button>}
+            <button className="viewer2-small" onClick={resetArch}>Restaurar curva inicial</button>
+          </div>
+          {curveAssistMessage&&<div className="assist-note">{curveAssistMessage}</div>}
+          <small>A sugestão usa densidade local do corte axial atual como auxílio de posicionamento; não é segmentação anatômica automática e precisa de revisão do profissional.</small>
         </section>
         <section className="viewer2-export">
           <p className="eyebrow">SÉRIE DE CORTES</p>
@@ -759,8 +852,9 @@ export default function Viewer2(){
         </section>
         <section>
           <p className="eyebrow red">NERVO / FORAME</p><strong>Traçado em vermelho</strong>
-          <p>{nervePoints.length} ponto(s) do canal • {foramina.length} forame(s)</p>
-          <small>Use “Nervo” no corte tangencial em cortes sucessivos. Cada marcação pode ser apagada individualmente. Não há detecção automática nesta versão.</small>
+          <p>{nervePoints.length} ponto(s) âncora • {nerveAssist&&nervePoints.length>=2?nerveDisplayPoints.length+" ponto(s) no trajeto assistido":"trajeto manual"} • {foramina.length} forame(s)</p>
+          <button className={"viewer2-small assist "+(nerveAssist?"active":"")} onClick={()=>setNerveAssist(v=>!v)}>{nerveAssist?"Traçado assistido ligado":"Ativar traçado assistido"}</button>
+          <small>Marque pontos do canal em cortes tangenciais. O modo assistido apenas interpola suavemente entre os pontos que você marcou; ele não detecta o canal automaticamente. Cada ponto âncora continua editável e removível.</small>
           {nervePoints.length>0&&<div className="nerve-point-list">
             {nervePoints.map((n,i)=><div key={n.id||("n-"+i)}><span>N{i+1} • corte {n.curveIndex+1}</span><button aria-label={"Excluir ponto do nervo "+(i+1)} onClick={()=>setNervePoints(ns=>ns.filter((_,idx)=>idx!==i))}>×</button></div>)}
           </div>}
@@ -770,7 +864,7 @@ export default function Viewer2(){
           {(nervePoints.length>0||foramina.length>0)&&<div className="nerve-actions">
             {nervePoints.length>0&&<button className="viewer2-small" onClick={undoLastNerve}>Desfazer último nervo</button>}
             {foramina.length>0&&<button className="viewer2-small" onClick={undoLastForamen}>Desfazer último forame</button>}
-            <button className="viewer2-small danger" onClick={()=>{setNervePoints([]);setForamina([])}}>Limpar tudo</button>
+            <button className="viewer2-small danger" onClick={()=>{setNervePoints([]);setNerveAssist(true);setForamina([])}}>Limpar tudo</button>
           </div>}
         </section>
         <section>
