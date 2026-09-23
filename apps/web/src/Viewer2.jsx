@@ -119,6 +119,22 @@ export default function Viewer2(){
   const [curvePoints,setCurvePoints]=useState([]);
   const curve=useMemo(()=>catmullRom(curvePoints,18),[curvePoints]);
   const [curveIndex,setCurveIndex]=useState(0);
+  const [archMode,setArchMode]=useState("auto");
+  const [autoArchRange,setAutoArchRange]=useState({start:0,end:0,label:"Analisando…",confidence:0});
+  const archRange=useMemo(()=>{
+    const last=Math.max(0,curve.length-1);
+    if(!curve.length)return {start:0,end:0,label:"Sem curva",confidence:0};
+    if(archMode==="full")return {start:0,end:last,label:"Arcada completa",confidence:1};
+    if(archMode==="left"){
+      const end=Math.min(last,Math.round(last*.58));
+      return {start:0,end,label:"Semi-arcada • lado esquerdo da imagem",confidence:1};
+    }
+    if(archMode==="right"){
+      const start=Math.max(0,Math.round(last*.42));
+      return {start,end:last,label:"Semi-arcada • lado direito da imagem",confidence:1};
+    }
+    return {start:clamp(autoArchRange.start,0,last),end:clamp(autoArchRange.end,0,last),label:autoArchRange.label,confidence:autoArchRange.confidence};
+  },[curve.length,archMode,autoArchRange]);
   const [tool,setTool]=useState("navigate");
   const [crosshairVisible,setCrosshairVisible]=useState(true);
   const [windowLevel,setWindowLevel]=useState({wc:400,ww:2000});
@@ -192,6 +208,17 @@ export default function Viewer2(){
     build();
     return()=>{cancelled=true};
   },[session]);
+
+  useEffect(()=>{
+    if(loading||!meta||!curve.length||archMode!=="auto")return;
+    const detected=detectArchRange();
+    setAutoArchRange(detected);
+  },[loading,meta?.w,meta?.h,cursor.z,curvePoints,archMode]);
+
+  useEffect(()=>{
+    if(!curve.length)return;
+    setCurveIndex(v=>clamp(v,archRange.start,archRange.end));
+  },[archRange.start,archRange.end,curve.length]);
 
   function fit(canvas,pixelW,pixelH,spacingA,spacingB,plane){
     const rect=canvas.parentElement.getBoundingClientRect();
@@ -308,9 +335,10 @@ export default function Viewer2(){
     const map=canvas._map,screen=(pt)=>({x:map.ox+pt.x/w*map.dw,y:map.oy+pt.y/h*map.dh});
     if(curve.length){
       ctx.save();
-      const upper=curve.map((_,i)=>curveOffsetPoint(i,PANORAMIC_BAND_HALF_MM)).filter(Boolean);
-      const lower=curve.map((_,i)=>curveOffsetPoint(i,-PANORAMIC_BAND_HALF_MM)).filter(Boolean);
-      if(upper.length===curve.length&&lower.length===curve.length){
+      const activeIndices=Array.from({length:Math.max(1,archRange.end-archRange.start+1)},(_,i)=>archRange.start+i);
+      const upper=activeIndices.map(i=>curveOffsetPoint(i,PANORAMIC_BAND_HALF_MM)).filter(Boolean);
+      const lower=activeIndices.map(i=>curveOffsetPoint(i,-PANORAMIC_BAND_HALF_MM)).filter(Boolean);
+      if(upper.length===activeIndices.length&&lower.length===activeIndices.length){
         ctx.fillStyle="rgba(49,215,210,.10)";
         ctx.strokeStyle="rgba(49,215,210,.48)";
         ctx.lineWidth=1*map.dpr;
@@ -320,8 +348,12 @@ export default function Viewer2(){
         ctx.closePath();ctx.fill();ctx.stroke();
       }
       ctx.strokeStyle="#31d7d2";ctx.lineWidth=2*map.dpr;ctx.beginPath();
-      curve.forEach((pt,i)=>{const q=screen(pt);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)});ctx.stroke();
-      curvePoints.forEach(pt=>{const q=screen(pt);ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(q.x,q.y,4*map.dpr,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#31d7d2";ctx.stroke()});
+      activeIndices.forEach((idx,i)=>{const q=screen(curve[idx]);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)});ctx.stroke();
+      curvePoints.forEach((pt,j)=>{
+        const idx=Math.round(j*(curve.length-1)/Math.max(1,curvePoints.length-1));
+        if(idx<archRange.start||idx>archRange.end)return;
+        const q=screen(pt);ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(q.x,q.y,4*map.dpr,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#31d7d2";ctx.stroke()
+      });
       const active=curve[curveIndex];if(active){const q=screen(active);ctx.fillStyle="#31d7d2";ctx.beginPath();ctx.arc(q.x,q.y,6*map.dpr,0,Math.PI*2);ctx.fill()}
       ctx.restore();
     }
@@ -401,6 +433,12 @@ export default function Viewer2(){
     start=clamp(start,0,Math.max(0,maxExclusive-total));
     return Array.from({length:total},(_,i)=>start+i);
   }
+  function rangeAroundBounds(center,start,end,count){
+    const available=Math.max(1,end-start+1),total=Math.min(count,available);
+    let first=Math.round(center)-Math.floor(total/2);
+    first=clamp(first,start,Math.max(start,end-total+1));
+    return Array.from({length:total},(_,i)=>first+i);
+  }
 
   function makeOrthogonalExportCanvas(plane,index){
     const m=metaRef.current,v=volumeRef.current;
@@ -427,10 +465,10 @@ export default function Viewer2(){
   function exportSeriesDefinition(){
     const m=metaRef.current;
     if(exportMode==="tangential"){
-      return [{key:"tangential",label:"Tangencial",indices:rangeAround(curveIndex,curve.length,exportCount)}];
+      return [{key:"tangential",label:"Tangencial",indices:rangeAroundBounds(curveIndex,archRange.start,archRange.end,exportCount)}];
     }
     return [
-      {key:"tangential",label:"Tangencial",indices:rangeAround(curveIndex,curve.length,exportCount)},
+      {key:"tangential",label:"Tangencial",indices:rangeAroundBounds(curveIndex,archRange.start,archRange.end,exportCount)},
       {key:"axial",label:"Axial",indices:rangeAround(cursor.z,m.d,exportCount)},
       {key:"coronal",label:"Coronal",indices:rangeAround(cursor.y,m.h,exportCount)},
       {key:"sagittal",label:"Sagital",indices:rangeAround(cursor.x,m.w,exportCount)}
@@ -509,7 +547,7 @@ export default function Viewer2(){
     indices.forEach((idx,slot)=>{
       const panelX=slot*(panelW+gap);
       ctx.fillStyle="#070a0f";ctx.fillRect(panelX,0,panelW,ch);
-      if(idx<0||idx>=curve.length){
+      if(idx<archRange.start||idx>archRange.end){
         ctx.fillStyle="rgba(180,195,210,.55)";
         ctx.font=`${11*dpr}px -apple-system,sans-serif`;
         ctx.textAlign="center";ctx.fillText("fim da série",panelX+panelW/2,ch/2);
@@ -565,29 +603,26 @@ export default function Viewer2(){
 
   function drawPanoramic(canvas){
     const m=metaRef.current,v=volumeRef.current;if(!m||!v||!curve.length)return;
-    const {w,h,d,spacingX,spacingY,spacingZ}=m,pixelW=curve.length,pixelH=d;
-    const approxStepMm=Math.max(.2,Math.hypot((curve[1]?.x-curve[0]?.x||1)*spacingX,(curve[1]?.y-curve[0]?.y||1)*spacingY));
+    const {w,h,d,spacingX,spacingY,spacingZ}=m;
+    const start=archRange.start,end=archRange.end,pixelW=Math.max(1,end-start+1),pixelH=d;
+    const a0=curve[start],a1=curve[Math.min(end,start+1)];
+    const approxStepMm=Math.max(.2,Math.hypot((a1?.x-a0?.x||1)*spacingX,(a1?.y-a0?.y||1)*spacingY));
     const {cw,ch,ox,oy,dw,dh}=fit(canvas,pixelW,pixelH,approxStepMm,spacingZ,"panoramic");
     const ctx=canvas.getContext("2d",{alpha:false}),img=ctx.createImageData(pixelW,pixelH);let p=0;
-    for(let z=d-1;z>=0;z--)for(let ci=0;ci<pixelW;ci++){
-      const frame=tangentFrame(ci);let total=0,count=0;
+    for(let z=d-1;z>=0;z--)for(let local=0;local<pixelW;local++){
+      const ci=start+local,frame=tangentFrame(ci);let total=0,count=0;
       for(const off of [-2,-1,0,1,2]){const x=frame.c.x+frame.nx*off/spacingX,y=frame.c.y+frame.ny*off/spacingY;total+=bilinear(v,w,h,d,x,y,z);count++}
       const g=wl(total/count,windowLevel.wc,windowLevel.ww);img.data[p++]=g;img.data[p++]=g;img.data[p++]=g;img.data[p++]=255;
     }
     const tmp=document.createElement("canvas");tmp.width=pixelW;tmp.height=pixelH;tmp.getContext("2d").putImageData(img,0,0);
     ctx.fillStyle="#05070a";ctx.fillRect(0,0,cw,ch);ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
     const map=canvas._map;
-    const sorted=[...nerveDisplayPoints].sort((a,b)=>a.curveIndex-b.curveIndex);
-    if(sorted.length){ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();sorted.forEach((n,i)=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();sorted.forEach(n=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.beginPath();ctx.arc(x,y,3*map.dpr,0,Math.PI*2);ctx.fill()})}
-    foramina.forEach(n=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(x,y,7*map.dpr,0,Math.PI*2);ctx.stroke()});
-    if(crosshairVisible)drawCrosshair(ctx,canvas,curveIndex,d-1-cursor.z);
+    const sorted=[...nerveDisplayPoints].filter(n=>n.curveIndex>=start&&n.curveIndex<=end).sort((a,b)=>a.curveIndex-b.curveIndex);
+    if(sorted.length){ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();sorted.forEach((n,i)=>{const local=n.curveIndex-start,x=map.ox+local/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();sorted.forEach(n=>{const local=n.curveIndex-start,x=map.ox+local/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.beginPath();ctx.arc(x,y,3*map.dpr,0,Math.PI*2);ctx.fill()})}
+    foramina.filter(n=>n.curveIndex>=start&&n.curveIndex<=end).forEach(n=>{const local=n.curveIndex-start,x=map.ox+local/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(x,y,7*map.dpr,0,Math.PI*2);ctx.stroke()});
+    if(crosshairVisible)drawCrosshair(ctx,canvas,curveIndex-start,d-1-cursor.z);
     drawMmScale(ctx,canvas);
-    ctx.save();
-    ctx.fillStyle="rgba(49,215,210,.88)";
-    ctx.font=`${10*map.dpr}px -apple-system,sans-serif`;
-    ctx.textAlign="right";ctx.textBaseline="top";
-    ctx.fillText(`Faixa panorâmica ${PANORAMIC_BAND_HALF_MM*2} mm`,map.ox+map.dw-6*map.dpr,map.oy+6*map.dpr);
-    ctx.restore();
+    ctx.save();ctx.fillStyle="rgba(49,215,210,.88)";ctx.font=`${10*map.dpr}px -apple-system,sans-serif`;ctx.textAlign="right";ctx.textBaseline="top";ctx.fillText(`Faixa panorâmica ${PANORAMIC_BAND_HALF_MM*2} mm • ${archRange.label}`,map.ox+map.dw-6*map.dpr,map.oy+6*map.dpr);ctx.restore();
   }
 
   useEffect(()=>{
@@ -600,6 +635,75 @@ export default function Viewer2(){
   function adjustBrightness(delta){setWindowLevel(v=>({...v,wc:Math.round(v.wc+delta)}))}
   function adjustContrast(delta){setWindowLevel(v=>({...v,ww:Math.max(50,Math.round(v.ww+delta))}))}
   function resetWindow(){setWindowLevel({...defaultWindowRef.current})}
+  function detectArchRange(){
+    const m=metaRef.current,v=volumeRef.current;
+    const last=Math.max(0,curve.length-1);
+    if(!m||!v||curve.length<10)return {start:0,end:last,label:"Arcada completa",confidence:.25};
+    const z=clamp(Math.round(cursor.z),0,m.d-1);
+    const samples=[];
+    const sampleCount=25;
+    for(let s=0;s<sampleCount;s++){
+      const idx=Math.round(s*last/(sampleCount-1));
+      const frame=tangentFrame(idx);
+      if(!frame){samples.push({idx,score:-Infinity});continue}
+      let best=-Infinity;
+      for(let off=-7;off<=7.001;off+=1.4){
+        const x=frame.c.x+frame.nx*off/m.spacingX;
+        const y=frame.c.y+frame.ny*off/m.spacingY;
+        const score=localDensityScore(x,y,z);
+        if(score>best)best=score;
+      }
+      samples.push({idx,score:best});
+    }
+    const finite=samples.filter(s=>Number.isFinite(s.score)).map(s=>s.score).sort((a,b)=>a-b);
+    if(finite.length<8)return {start:0,end:last,label:"Arcada completa",confidence:.2};
+    const q=p=>finite[Math.floor((finite.length-1)*p)];
+    const lo=q(.12),hi=q(.88),span=Math.max(1,hi-lo);
+    const normalized=samples.map(s=>({...s,n:Number.isFinite(s.score)?clamp((s.score-lo)/span,0,1):0}));
+    const smooth=normalized.map((s,i)=>{
+      let total=0,weight=0;
+      for(let k=-2;k<=2;k++){
+        const qv=normalized[clamp(i+k,0,normalized.length-1)].n,w=k===0?3:(Math.abs(k)===1?2:1);
+        total+=qv*w;weight+=w;
+      }
+      return {...s,n:total/weight};
+    });
+    const third=Math.max(3,Math.floor(smooth.length*.32));
+    const mean=arr=>arr.reduce((a,b)=>a+b.n,0)/Math.max(1,arr.length);
+    const leftMean=mean(smooth.slice(0,third));
+    const rightMean=mean(smooth.slice(-third));
+    const centerMean=mean(smooth.slice(third,-third));
+    const lowRatio=Math.min(leftMean,rightMean)/Math.max(.08,Math.max(leftMean,rightMean));
+    const edgeWeak=Math.min(leftMean,rightMean)<Math.max(.24,centerMean*.62);
+    if(lowRatio>.62||!edgeWeak){
+      return {start:0,end:last,label:"Arcada completa detectada",confidence:clamp(.55+(lowRatio-.62)*.4,.55,.9)};
+    }
+    const supportedRight=rightMean>leftMean;
+    const threshold=Math.max(.26,centerMean*.48);
+    if(supportedRight){
+      let startSample=0;
+      for(let i=0;i<smooth.length-2;i++){
+        if(smooth[i].n>threshold&&smooth[i+1].n>threshold&&smooth[i+2].n>threshold){startSample=Math.max(0,i-1);break}
+      }
+      const start=clamp(Math.round(smooth[startSample].idx-last*.05),0,last);
+      return {start,end:last,label:"Semi-arcada detectada • lado direito da imagem",confidence:clamp(1-lowRatio,.55,.96)};
+    }else{
+      let endSample=smooth.length-1;
+      for(let i=smooth.length-1;i>=2;i--){
+        if(smooth[i].n>threshold&&smooth[i-1].n>threshold&&smooth[i-2].n>threshold){endSample=Math.min(smooth.length-1,i+1);break}
+      }
+      const end=clamp(Math.round(smooth[endSample].idx+last*.05),0,last);
+      return {start:0,end,label:"Semi-arcada detectada • lado esquerdo da imagem",confidence:clamp(1-lowRatio,.55,.96)};
+    }
+  }
+
+  function analyzeArchScope(){
+    const detected=detectArchRange();
+    setAutoArchRange(detected);
+    setCurveAssistMessage(`${detected.label}. Confiança heurística: ${Math.round(detected.confidence*100)}%. Confira visualmente antes do planejamento.`);
+    return detected;
+  }
+
   function resetArch(){
     const m=metaRef.current;if(!m)return;
     const arch=(defaultCurveRef.current?.length?defaultCurveRef.current:defaultArch(m.w,m.h)).map(p=>({...p}));
@@ -620,6 +724,7 @@ export default function Viewer2(){
   }
   function suggestArchFromAxial(){
     const m=metaRef.current,v=volumeRef.current;if(!m||!v||curve.length<7)return;
+    if(archMode==="auto")analyzeArchScope();
     const z=clamp(Math.round(cursor.z),0,m.d-1);
     const base=curve;
     const candidates=[];
@@ -670,6 +775,8 @@ export default function Viewer2(){
     setWindowLevel({...defaultWindowRef.current});
     setCursor({x:Math.floor(m.w/2),y:Math.floor(m.h/2),z:Math.floor(m.d/2)});
     setCurvePoints(arch);
+    setArchMode("auto");
+    setAutoArchRange({start:0,end:Math.max(0,catmullRom(arch,18).length-1),label:"Arcada completa",confidence:0});
     setCurveIndex(Math.floor(catmullRom(arch,18).length/2));
     setMeasurements([]);
     setPendingMeasure(null);
@@ -735,7 +842,7 @@ export default function Viewer2(){
         z:clamp(Math.round(m.d-1-pt.b),0,m.d-1)
       }));
     }else if(plane==="panoramic"){
-      setCurveIndex(clamp(Math.round(pt.a),0,curve.length-1));
+      setCurveIndex(clamp(archRange.start+Math.round(pt.a),archRange.start,archRange.end));
       setCursor(c=>({...c,z:clamp(Math.round(m.d-1-pt.b),0,m.d-1)}));
     }
   }
@@ -783,8 +890,8 @@ export default function Viewer2(){
     if(id==="axial")return {min:0,max:m.d-1,value:cursor.z,label:`Z ${cursor.z+1}/${m.d}`,set:v=>setCursor(c=>({...c,z:Number(v)}))};
     if(id==="coronal")return {min:0,max:m.h-1,value:cursor.y,label:`Y ${cursor.y+1}/${m.h}`,set:v=>setCursor(c=>({...c,y:Number(v)}))};
     if(id==="sagittal")return {min:0,max:m.w-1,value:cursor.x,label:`X ${cursor.x+1}/${m.w}`,set:v=>setCursor(c=>({...c,x:Number(v)}))};
-    if(id==="tangential")return {min:0,max:Math.max(0,curve.length-1),value:curveIndex,label:`Tangencial ${curveIndex+1}/${curve.length}`,set:v=>setCurveIndex(Number(v))};
-    return {min:0,max:Math.max(0,curve.length-1),value:curveIndex,label:`Região ${curveIndex+1}/${curve.length}`,set:v=>setCurveIndex(Number(v))};
+    if(id==="tangential")return {min:archRange.start,max:archRange.end,value:curveIndex,label:`Tangencial ${curveIndex-archRange.start+1}/${archRange.end-archRange.start+1}`,set:v=>setCurveIndex(Number(v))};
+    return {min:archRange.start,max:archRange.end,value:curveIndex,label:`Região ${curveIndex-archRange.start+1}/${archRange.end-archRange.start+1}`,set:v=>setCurveIndex(Number(v))};
   }
 
   if(loading)return <main className="viewer2-loading"><div><div className="brand">OdontoView</div><h1>Montando Viewer 2.0…</h1><p>Decodificando o volume DICOM localmente.</p></div></main>;
@@ -824,9 +931,16 @@ export default function Viewer2(){
       </article>)}
       <aside className="viewer2-side">
         <section>
-          <p className="eyebrow">CURVA DA ARCADA</p><strong>Sempre ativa • ajuste manual</strong>
-          <input type="range" min="0" max={Math.max(0,curve.length-1)} value={curveIndex} onChange={e=>setCurveIndex(Number(e.target.value))}/>
-          <small>Corte tangencial {curveIndex+1}/{curve.length}. A faixa azul mostra os {PANORAMIC_BAND_HALF_MM*2} mm usados na reconstrução panorâmica. A curva inicial ainda é uma proposta geométrica; ajuste os pontos no axial antes de usar os tangenciais.</small>
+          <p className="eyebrow">CURVA DA ARCADA</p><strong>{archRange.label}</strong>
+          <div className="arch-scope" role="group" aria-label="Tipo de arcada">
+            <button className={archMode==="auto"?"active":""} onClick={()=>setArchMode("auto")}>Auto</button>
+            <button className={archMode==="full"?"active":""} onClick={()=>setArchMode("full")}>Completa</button>
+            <button className={archMode==="left"?"active":""} onClick={()=>setArchMode("left")}>Semi ← imagem</button>
+            <button className={archMode==="right"?"active":""} onClick={()=>setArchMode("right")}>Semi → imagem</button>
+          </div>
+          <button className="viewer2-small assist" onClick={analyzeArchScope}>Reanalisar tipo de arcada</button>
+          <input type="range" min={archRange.start} max={archRange.end} value={curveIndex} onChange={e=>setCurveIndex(Number(e.target.value))}/>
+          <small>Corte tangencial {curveIndex-archRange.start+1}/{archRange.end-archRange.start+1}. A faixa azul mostra os {PANORAMIC_BAND_HALF_MM*2} mm usados na reconstrução. Em Auto, o OdontoView tenta distinguir arcada completa de semi-arcada pelo axial atual; o profissional pode sobrescrever a escolha.</small>
           <div className="curve-assist-actions">
             <button className="viewer2-small assist" onClick={suggestArchFromAxial}>Sugerir curva pelo axial atual</button>
             {curveBeforeAssistRef.current&&<button className="viewer2-small" onClick={undoSuggestedArch}>Desfazer sugestão</button>}
