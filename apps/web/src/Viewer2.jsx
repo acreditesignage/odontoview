@@ -94,12 +94,14 @@ export default function Viewer2(){
   const curve=useMemo(()=>catmullRom(curvePoints,18),[curvePoints]);
   const [curveIndex,setCurveIndex]=useState(0);
   const [tool,setTool]=useState("navigate");
+  const [crosshairVisible,setCrosshairVisible]=useState(true);
   const [windowLevel,setWindowLevel]=useState({wc:400,ww:2000});
   const [measurements,setMeasurements]=useState([]);
   const [pendingMeasure,setPendingMeasure]=useState(null);
   const [nervePoints,setNervePoints]=useState([]);
   const [foramina,setForamina]=useState([]);
   const [exportCount,setExportCount]=useState(15);
+  const [exportMode,setExportMode]=useState("complete");
   const [exportBusy,setExportBusy]=useState(false);
   const [exportMessage,setExportMessage]=useState("");
   const [transforms,setTransforms]=useState({
@@ -250,7 +252,7 @@ export default function Viewer2(){
       const nx=-ty,ny=tx,pt={x:c.x+nx*n.offsetMm/m.spacingX,y:c.y+ny*n.offsetMm/m.spacingY},q=screen(pt);
       ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(q.x,q.y,7*map.dpr,0,Math.PI*2);ctx.stroke();
     });
-    drawCrosshair(ctx,canvas,cursor.x,cursor.y);
+    if(crosshairVisible)drawCrosshair(ctx,canvas,cursor.x,cursor.y);
     drawMeasurementOverlay(ctx,canvas,"axial",z);
   }
 
@@ -268,8 +270,7 @@ export default function Viewer2(){
     }
     const tmp=document.createElement("canvas");tmp.width=pixelW;tmp.height=pixelH;tmp.getContext("2d").putImageData(img,0,0);
     ctx.fillStyle="#05070a";ctx.fillRect(0,0,cw,ch);ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
-    if(isCoronal)drawCrosshair(ctx,canvas,cursor.x,d-1-cursor.z);
-    else drawCrosshair(ctx,canvas,cursor.y,d-1-cursor.z);
+    if(crosshairVisible){if(isCoronal)drawCrosshair(ctx,canvas,cursor.x,d-1-cursor.z);else drawCrosshair(ctx,canvas,cursor.y,d-1-cursor.z)}
     drawMeasurementOverlay(ctx,canvas,plane,fixed);
   }
 
@@ -307,11 +308,52 @@ export default function Viewer2(){
     return canvas;
   }
 
+  function rangeAround(center,maxExclusive,count){
+    const total=Math.min(count,maxExclusive);
+    let start=Math.round(center)-Math.floor(total/2);
+    start=clamp(start,0,Math.max(0,maxExclusive-total));
+    return Array.from({length:total},(_,i)=>start+i);
+  }
+
+  function makeOrthogonalExportCanvas(plane,index){
+    const m=metaRef.current,v=volumeRef.current;
+    if(!m||!v)throw new Error("Volume ainda não está pronto.");
+    const {w,h,d}=m;
+    let pixelW,pixelH,read;
+    if(plane==="axial"){
+      pixelW=w;pixelH=h;read=(a,b)=>sample(v,w,h,d,a,b,index);
+    }else if(plane==="coronal"){
+      pixelW=w;pixelH=d;read=(a,b)=>sample(v,w,h,d,a,index,d-1-b);
+    }else{
+      pixelW=h;pixelH=d;read=(a,b)=>sample(v,w,h,d,index,a,d-1-b);
+    }
+    const canvas=document.createElement("canvas");canvas.width=pixelW;canvas.height=pixelH;
+    const ctx=canvas.getContext("2d",{alpha:false}),img=ctx.createImageData(pixelW,pixelH);let p=0;
+    for(let b=0;b<pixelH;b++)for(let a=0;a<pixelW;a++){
+      const g=wl(read(a,b),windowLevel.wc,windowLevel.ww);
+      img.data[p++]=g;img.data[p++]=g;img.data[p++]=g;img.data[p++]=255;
+    }
+    ctx.putImageData(img,0,0);
+    return canvas;
+  }
+
+  function exportSeriesDefinition(){
+    const m=metaRef.current;
+    if(exportMode==="tangential"){
+      return [{key:"tangential",label:"Tangencial",indices:rangeAround(curveIndex,curve.length,exportCount)}];
+    }
+    return [
+      {key:"tangential",label:"Tangencial",indices:rangeAround(curveIndex,curve.length,exportCount)},
+      {key:"axial",label:"Axial",indices:rangeAround(cursor.z,m.d,exportCount)},
+      {key:"coronal",label:"Coronal",indices:rangeAround(cursor.y,m.h,exportCount)},
+      {key:"sagittal",label:"Sagital",indices:rangeAround(cursor.x,m.w,exportCount)}
+    ];
+  }
+
   async function exportTangentialPdf(){
     if(exportBusy||!metaRef.current||!curve.length)return;
-    const remaining=Math.max(0,curve.length-curveIndex);
-    const count=Math.min(exportCount,remaining,40);
-    if(!count){setExportMessage("Não há cortes à frente deste ponto.");return}
+    const groups=exportSeriesDefinition().filter(g=>g.indices.length);
+    if(!groups.length){setExportMessage("Não há cortes disponíveis nesta região.");return}
     setExportBusy(true);setExportMessage("");
     try{
       const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4",compress:true});
@@ -319,33 +361,42 @@ export default function Viewer2(){
       const cellW=(pageW-margin*2-gap)/2,cellH=(pageH-margin*2-headerH-gap)/2;
       const patient=session?.order?.patient?.name||"Paciente";
       const exam=session?.order?.examType?.name||session?.result?.series?.[meta.seriesIndex]?.description||"CBCT";
-      const totalPages=Math.ceil(count/4);
+      let firstPage=true,pageGlobal=0;
 
-      for(let i=0;i<count;i++){
-        if(i>0&&i%4===0)pdf.addPage();
-        const pageIndex=Math.floor(i/4)+1;
-        const slot=i%4,col=slot%2,row=Math.floor(slot/2);
-        if(slot===0){
-          pdf.setFont("helvetica","bold");pdf.setFontSize(14);pdf.text("OdontoView — Série de cortes tangenciais",margin,12);
+      for(const group of groups){
+        const pagesForGroup=Math.ceil(group.indices.length/4);
+        for(let page=0;page<pagesForGroup;page++){
+          if(!firstPage)pdf.addPage(); firstPage=false; pageGlobal++;
+          pdf.setFont("helvetica","bold");pdf.setFontSize(14);
+          pdf.text(`OdontoView — ${group.label}`,margin,12);
           pdf.setFont("helvetica","normal");pdf.setFontSize(9);
           pdf.text(`${patient} • ${exam}`,margin,18);
-          pdf.text(`Página ${pageIndex}/${totalPages} • início no corte ${curveIndex+1}`,pageW-margin,18,{align:"right"});
+          pdf.text(`${group.label} • página ${page+1}/${pagesForGroup}`,pageW-margin,18,{align:"right"});
+
+          const pageIndices=group.indices.slice(page*4,page*4+4);
+          pageIndices.forEach((idx,slot)=>{
+            const col=slot%2,row=Math.floor(slot/2);
+            const canvas=group.key==="tangential"?makeTangentialCanvas(idx):makeOrthogonalExportCanvas(group.key,idx);
+            const img=canvas.toDataURL("image/jpeg",.9);
+            const x=margin+col*(cellW+gap),y=margin+headerH+row*(cellH+gap);
+            const ratio=canvas.height/canvas.width;
+            let drawW=cellW-4,drawH=drawW*ratio;
+            if(drawH>cellH-15){drawH=cellH-15;drawW=drawH/ratio}
+            const dx=x+(cellW-drawW)/2,dy=y+4;
+            pdf.setDrawColor(220);pdf.rect(x,y,cellW,cellH);
+            pdf.addImage(img,"JPEG",dx,dy,drawW,drawH,undefined,"FAST");
+            pdf.setFontSize(9);pdf.setTextColor(40);
+            pdf.text(`${group.label} • corte ${idx+1}`,x+cellW/2,y+cellH-4,{align:"center"});
+          });
         }
-        const idx=curveIndex+i,canvas=makeTangentialCanvas(idx);
-        const img=canvas.toDataURL("image/jpeg",.88);
-        const x=margin+col*(cellW+gap),y=margin+headerH+row*(cellH+gap);
-        const physicalRatio=(meta.spacingZ*meta.d)/(40);
-        let drawW=cellW,drawH=drawW*physicalRatio;
-        if(drawH>cellH-12){drawH=cellH-12;drawW=drawH/physicalRatio}
-        const dx=x+(cellW-drawW)/2,dy=y+4;
-        pdf.setDrawColor(220);pdf.rect(x,y,cellW,cellH);
-        pdf.addImage(img,"JPEG",dx,dy,drawW,drawH,undefined,"FAST");
-        pdf.setFontSize(9);pdf.setTextColor(40);pdf.text(`Corte ${idx+1} • ${i+1}/${count}`,x+cellW/2,y+cellH-4,{align:"center"});
       }
-      pdf.setProperties({title:`OdontoView - ${patient} - cortes tangenciais`,subject:exam,creator:"OdontoView"});
+      const totalCuts=groups.reduce((sum,g)=>sum+g.indices.length,0);
+      pdf.setProperties({title:`OdontoView - ${patient} - cortes ${exportMode==="complete"?"4 eixos":"tangenciais"}`,subject:exam,creator:"OdontoView"});
       const safe=patient.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_|_$/g,"");
-      pdf.save(`OdontoView_${safe||"Paciente"}_${count}_cortes.pdf`);
-      setExportMessage(`PDF gerado com ${count} cortes a partir do corte ${curveIndex+1}.`);
+      pdf.save(`OdontoView_${safe||"Paciente"}_${exportMode==="complete"?"4_eixos":"tangencial"}_${exportCount}.pdf`);
+      setExportMessage(exportMode==="complete"
+        ?`PDF completo gerado: ${groups.map(g=>g.indices.length+" "+g.label.toLowerCase()).join(" • ")} (${totalCuts} cortes).`
+        :`PDF tangencial gerado com ${totalCuts} cortes.`);
     }catch(e){
       setExportMessage(e?.message||"Não foi possível gerar o PDF.");
     }finally{setExportBusy(false)}
@@ -372,7 +423,7 @@ export default function Viewer2(){
     });
     const dx=(cursor.x-frame.c.x)*spacingX,dy=(cursor.y-frame.c.y)*spacingY;
     const offsetMm=dx*frame.nx+dy*frame.ny;
-    drawCrosshair(ctx,canvas,pixelW/2+offsetMm/stepMm,d-1-cursor.z);
+    if(crosshairVisible)drawCrosshair(ctx,canvas,pixelW/2+offsetMm/stepMm,d-1-cursor.z);
     drawMeasurementOverlay(ctx,canvas,"tangential",curveIndex);
   }
 
@@ -393,14 +444,14 @@ export default function Viewer2(){
     const sorted=[...nervePoints].sort((a,b)=>a.curveIndex-b.curveIndex);
     if(sorted.length){ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();sorted.forEach((n,i)=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();sorted.forEach(n=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.beginPath();ctx.arc(x,y,3*map.dpr,0,Math.PI*2);ctx.fill()})}
     foramina.forEach(n=>{const x=map.ox+n.curveIndex/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(x,y,7*map.dpr,0,Math.PI*2);ctx.stroke()});
-    drawCrosshair(ctx,canvas,curveIndex,d-1-cursor.z);
+    if(crosshairVisible)drawCrosshair(ctx,canvas,curveIndex,d-1-cursor.z);
   }
 
   useEffect(()=>{
     if(loading||error||!meta)return;
     const draw=()=>{drawAxial(canvases.axial.current);drawOrthogonal(canvases.coronal.current,"coronal");drawOrthogonal(canvases.sagittal.current,"sagittal");drawTangential(canvases.tangential.current);drawPanoramic(canvases.panoramic.current)};
     draw();window.addEventListener("resize",draw);return()=>window.removeEventListener("resize",draw);
-  },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,transforms]);
+  },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,transforms,crosshairVisible]);
 
   function resetPlane(plane){setTransforms(t=>({...t,[plane]:{zoom:1,panX:0,panY:0}}))}
   function adjustBrightness(delta){setWindowLevel(v=>({...v,wc:Math.round(v.wc+delta)}))}
@@ -429,6 +480,8 @@ export default function Viewer2(){
       sagittal:{zoom:1,panX:0,panY:0},tangential:{zoom:1,panX:0,panY:0},panoramic:{zoom:1,panX:0,panY:0}
     });
     setTool("navigate");
+    setCrosshairVisible(true);
+    setExportMode("complete");
     setExportCount(15);
     setExportMessage("");
   }
@@ -540,6 +593,9 @@ export default function Viewer2(){
       {[
         ["navigate","⌖","Cruzeta"],["pan","✋","Pan"],["measure","↔","Medir"],["curve","⌒","Curva"],["nerve","●","Nervo"],["foramen","◉","Forame"]
       ].map(([id,icon,label])=><button key={id} className={tool===id?"active":""} onClick={()=>{setTool(id);setPendingMeasure(null)}}><span>{icon}</span>{label}</button>)}
+      <button type="button" className={"viewer2-cursor-toggle "+(crosshairVisible?"is-on":"is-off")} onClick={()=>setCrosshairVisible(v=>!v)} aria-pressed={crosshairVisible}>
+        {crosshairVisible?"⌖ Cursor visível":"○ Cursor oculto"}
+      </button>
       <div className="viewer2-wl-buttons" aria-label="Controles de brilho e contraste">
         <div className="wl-control"><span>Brilho</span><button type="button" aria-label="Diminuir brilho" onClick={()=>adjustBrightness(-25)}>−</button><b>{Math.round(windowLevel.wc)}</b><button type="button" aria-label="Aumentar brilho" onClick={()=>adjustBrightness(25)}>+</button></div>
         <div className="wl-control"><span>Contraste</span><button type="button" aria-label="Diminuir contraste" onClick={()=>adjustContrast(-50)}>−</button><b>{Math.round(windowLevel.ww)}</b><button type="button" aria-label="Aumentar contraste" onClick={()=>adjustContrast(50)}>+</button></div>
@@ -567,13 +623,17 @@ export default function Viewer2(){
         </section>
         <section className="viewer2-export">
           <p className="eyebrow">SÉRIE DE CORTES</p>
-          <strong>Do ponto selecionado para frente</strong>
-          <p className="export-range">Início: corte {curveIndex+1} • até {Math.min(exportCount,Math.max(0,curve.length-curveIndex))} corte(s)</p>
-          <div className="cut-counts" role="group" aria-label="Quantidade de cortes">
+          <strong>PDF clínico a partir da região atual</strong>
+          <div className="export-modes" role="group" aria-label="Modo do PDF">
+            <button type="button" className={exportMode==="complete"?"active":""} onClick={()=>setExportMode("complete")}>Completo • 4 eixos</button>
+            <button type="button" className={exportMode==="tangential"?"active":""} onClick={()=>setExportMode("tangential")}>Só tangencial</button>
+          </div>
+          <p className="export-range">{exportMode==="complete"?`${exportCount} cortes de cada eixo • até ${exportCount*4} imagens`:`${exportCount} cortes tangenciais`}</p>
+          <div className="cut-counts" role="group" aria-label="Quantidade de cortes por eixo">
             {[10,15,20,30,40].map(n=><button type="button" key={n} className={exportCount===n?"active":""} onClick={()=>setExportCount(n)}>{n}</button>)}
           </div>
-          <button type="button" className="viewer2-export-btn" disabled={exportBusy} onClick={exportTangentialPdf}>{exportBusy?"Gerando PDF…":"Gerar PDF"}</button>
-          <small>O PDF é montado com 4 cortes por página para leitura digital e impressão mais econômica. Máximo de 40 cortes, sem voltar ao início da arcada.</small>
+          <button type="button" className="viewer2-export-btn" disabled={exportBusy} onClick={exportTangentialPdf}>{exportBusy?"Gerando PDF…":exportMode==="complete"?"Gerar PDF completo":"Gerar PDF tangencial"}</button>
+          <small>No modo completo o OdontoView gera Tangencial + Axial + Coronal + Sagital, organizados por eixo, com 4 imagens por página. Os cortes são distribuídos ao redor da posição atualmente selecionada.</small>
           {exportMessage&&<div className="export-message">{exportMessage}</div>}
         </section>
         <section>
