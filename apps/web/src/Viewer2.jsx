@@ -137,6 +137,7 @@ export default function Viewer2(){
     return {start:clamp(autoArchRange.start,0,last),end:clamp(autoArchRange.end,0,last),label:autoArchRange.label,confidence:autoArchRange.confidence};
   },[curve.length,archMode,autoArchRange]);
   const [tool,setTool]=useState("navigate");
+  const [expandedPanel,setExpandedPanel]=useState(null);
   const [crosshairVisible,setCrosshairVisible]=useState(true);
   const [windowLevel,setWindowLevel]=useState({wc:400,ww:2000});
   const [measurements,setMeasurements]=useState([]);
@@ -220,6 +221,13 @@ export default function Viewer2(){
     if(!curve.length)return;
     setCurveIndex(v=>clamp(v,archRange.start,archRange.end));
   },[archRange.start,archRange.end,curve.length]);
+
+  useEffect(()=>{
+    if(!expandedPanel)return;
+    const close=e=>{if(e.key==="Escape")setExpandedPanel(null)};
+    window.addEventListener("keydown",close);
+    return()=>window.removeEventListener("keydown",close);
+  },[expandedPanel]);
 
   function fit(canvas,pixelW,pixelH,spacingA,spacingB,plane){
     const rect=canvas.parentElement.getBoundingClientRect();
@@ -630,7 +638,7 @@ export default function Viewer2(){
     if(loading||error||!meta)return;
     const draw=()=>{drawAxial(canvases.axial.current);drawOrthogonal(canvases.coronal.current,"coronal");drawOrthogonal(canvases.sagittal.current,"sagittal");drawTangential(canvases.tangential.current);drawPanoramic(canvases.panoramic.current)};
     draw();window.addEventListener("resize",draw);return()=>window.removeEventListener("resize",draw);
-  },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,transforms,crosshairVisible]);
+  },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,transforms,crosshairVisible,expandedPanel]);
 
   function resetPlane(plane){setTransforms(t=>({...t,[plane]:{zoom:1,panX:0,panY:0}}))}
   function adjustBrightness(delta){setWindowLevel(v=>({...v,wc:Math.round(v.wc+delta)}))}
@@ -908,6 +916,13 @@ export default function Viewer2(){
     </div>;
   }
 
+  function expandButton(id,label){
+    const active=expandedPanel===id;
+    return <button type="button" className="viewer2-expand" aria-label={(active?"Restaurar ":"Maximizar ")+label} title={(active?"Voltar ao mosaico":"Maximizar")+" • Esc para sair"} onClick={()=>setExpandedPanel(active?null:id)}>
+      {active?"↙ Mosaico":"⛶"}
+    </button>;
+  }
+
   if(loading)return <main className="viewer2-loading"><div><div className="brand">OdontoView</div><h1>Montando Viewer 2.0…</h1><p>Decodificando o volume DICOM localmente.</p></div></main>;
   if(error)return <main className="page centered"><section className="card auth"><div className="brand">OdontoView</div><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>nav("/radiologia")}>Voltar</button></section></main>;
 
@@ -938,19 +953,19 @@ export default function Viewer2(){
       {[
         ["axial","Axial",canvases.axial],["coronal","Coronal",canvases.coronal],["sagittal","Sagital",canvases.sagittal],
         ["tangential","Tangencial • 3 cortes",canvases.tangential]
-      ].map(([id,label,ref])=><article className={"viewer2-pane "+id} key={id}>
-        <div className="viewer2-pane-head"><strong>{label}</strong><button onClick={()=>resetPlane(id)}>1:1</button></div>
+      ].map(([id,label,ref])=><article className={"viewer2-pane "+id+(expandedPanel===id?" is-expanded":"")} key={id}>
+        <div className="viewer2-pane-head"><strong>{label}</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane(id)}>1:1</button>{expandButton(id,label)}</div></div>
         {renderSliceControl(id,label)}
         <div className="viewer2-canvas-wrap"><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
       </article>)}
-      <article className="viewer2-pane panoramic visual3d-composite">
-        <div className="viewer2-pane-head"><strong>Modelo 3D • Planejamento</strong><span className="viewer3d-badge">3D PROFISSIONAL</span></div>
+      <article className={"viewer2-pane panoramic visual3d-composite"+(expandedPanel==="3d"?" is-expanded":"")}>
+        <div className="viewer2-pane-head"><strong>Modelo 3D • Planejamento</strong><div className="viewer2-pane-actions"><span className="viewer3d-badge">3D PROFISSIONAL</span>{expandButton("3d","3D")}</div></div>
         <div className="viewer3d-split">
           <div className="viewer3d-primary">
             <Viewer3DPanel volume={volumeRef.current} meta={meta} nervePoints={nerveDisplayPoints} curve={curve}/>
           </div>
-          <div className="viewer3d-mini-pano">
-            <div className="viewer3d-mini-head"><strong>Panorâmica reconstruída</strong><button onClick={()=>resetPlane("panoramic")}>1:1</button></div>
+          <div className={"viewer3d-mini-pano"+(expandedPanel==="panoramic"?" is-expanded":"")}>
+            <div className="viewer3d-mini-head"><strong>Panorâmica reconstruída</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane("panoramic")}>1:1</button>{expandButton("panoramic","Panorâmica")}</div></div>
             {renderSliceControl("panoramic","Panorâmica reconstruída")}
             <div className="viewer2-canvas-wrap viewer3d-pano-canvas"><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.panoramic} onWheel={e=>onWheel("panoramic",e)} onPointerDown={e=>onPointerDown("panoramic",e)} onPointerMove={e=>onPointerMove("panoramic",e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
           </div>
