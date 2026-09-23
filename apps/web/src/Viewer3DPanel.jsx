@@ -77,7 +77,8 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
   const [boneVisible,setBoneVisible]=useState(true);
   const [denseVisible,setDenseVisible]=useState(true);
   const [nerveVisible,setNerveVisible]=useState(true);
-  const [boneOpacity,setBoneOpacity]=useState(.42);
+  const [preset,setPreset]=useState("clinical");
+  const [boneOpacity,setBoneOpacity]=useState(.30);
   const [realistic,setRealistic]=useState(true);
   const [lighting,setLighting]=useState(true);
 
@@ -96,8 +97,8 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
 
     const host=hostRef.current;
     const scene=new THREE.Scene();
-    scene.background=new THREE.Color(0x05080c);
-    scene.fog=new THREE.FogExp2(0x05080c,.012);
+    scene.background=new THREE.Color(0x101820);
+    scene.fog=new THREE.FogExp2(0x101820,.009);
 
     const camera=new THREE.PerspectiveCamera(34,1,.1,1000);
     camera.position.set(72,38,84);
@@ -107,7 +108,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
     renderer.setSize(Math.max(1,host.clientWidth),Math.max(1,host.clientHeight),false);
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure=1.18;
+    renderer.toneMappingExposure=1.55;
     renderer.shadowMap.enabled=true;
     renderer.shadowMap.type=THREE.PCFSoftShadowMap;
     host.innerHTML="";
@@ -121,11 +122,11 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
     controls.panSpeed=.7;
     controls.target.set(0,0,0);
 
-    const ambient=new THREE.HemisphereLight(0xd9eeff,0x1d130e,1.45);
+    const ambient=new THREE.HemisphereLight(0xe8f5ff,0x2b1d15,2.2);
     scene.add(ambient);
-    const key=new THREE.DirectionalLight(0xfff4df,3.4);key.position.set(55,80,70);key.castShadow=true;scene.add(key);
-    const fill=new THREE.DirectionalLight(0x7bbcff,1.5);fill.position.set(-65,24,45);scene.add(fill);
-    const rim=new THREE.DirectionalLight(0xffc7a5,1.1);rim.position.set(12,-35,-65);scene.add(rim);
+    const key=new THREE.DirectionalLight(0xfff5e6,4.8);key.position.set(55,80,70);key.castShadow=true;scene.add(key);
+    const fill=new THREE.DirectionalLight(0x94cfff,2.2);fill.position.set(-65,24,45);scene.add(fill);
+    const rim=new THREE.DirectionalLight(0xffd0ae,1.5);rim.position.set(12,-35,-65);scene.add(rim);
     lightRigRef.current=[ambient,key,fill,rim];
 
     const group=new THREE.Group();
@@ -139,12 +140,12 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
     floor.rotation.x=-Math.PI/2;floor.position.y=-49;floor.receiveShadow=true;scene.add(floor);
 
     const boneMat=new THREE.MeshPhysicalMaterial({
-      color:0xd6bea2,roughness:.5,metalness:0,transparent:true,opacity:boneOpacity,
-      clearcoat:.12,clearcoatRoughness:.52,side:THREE.DoubleSide,depthWrite:false
+      color:0xe4c6a2,roughness:.42,metalness:0,transparent:true,opacity:boneOpacity,
+      clearcoat:.2,clearcoatRoughness:.42,side:THREE.DoubleSide,depthWrite:false
     });
     const denseMat=new THREE.MeshPhysicalMaterial({
-      color:0xf4ead8,roughness:.26,metalness:0,transparent:true,opacity:.92,
-      clearcoat:.48,clearcoatRoughness:.2,side:THREE.DoubleSide
+      color:0xfff4dc,roughness:.2,metalness:0,transparent:true,opacity:.98,
+      clearcoat:.62,clearcoatRoughness:.16,side:THREE.DoubleSide
     });
 
     const bone=new MarchingCubes(quality,boneMat,false,false,typeof window!=="undefined"&&window.innerWidth<760?70000:180000);
@@ -207,17 +208,47 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
 
   useEffect(()=>{if(boneRef.current){boneRef.current.visible=boneVisible;boneRef.current.material.opacity=boneOpacity}},[boneVisible,boneOpacity]);
   useEffect(()=>{if(denseRef.current)denseRef.current.visible=denseVisible},[denseVisible]);
+
+  const presetConfigs={
+    clinical:{bg:0x101820,fog:.009,exposure:1.55,bone:.30,boneColor:0xe4c6a2,denseColor:0xfff4dc,boneRough:.42,denseRough:.20,clearcoat:.62,lights:[2.2,4.8,2.2,1.5]},
+    anatomic:{bg:0x0d151c,fog:.010,exposure:1.42,bone:.46,boneColor:0xd7b894,denseColor:0xf7e7cf,boneRough:.50,denseRough:.28,clearcoat:.42,lights:[1.9,4.0,1.8,1.25]},
+    patient:{bg:0x182731,fog:.007,exposure:1.82,bone:.26,boneColor:0xefcfaa,denseColor:0xfff8e9,boneRough:.34,denseRough:.15,clearcoat:.74,lights:[2.6,5.5,2.8,1.8]},
+    translucent:{bg:0x111d25,fog:.008,exposure:1.62,bone:.17,boneColor:0xd8c2a7,denseColor:0xfff3dd,boneRough:.44,denseRough:.22,clearcoat:.55,lights:[2.25,4.6,2.3,1.6]},
+    detail:{bg:0x0b1117,fog:.006,exposure:1.72,bone:.56,boneColor:0xe2c09a,denseColor:0xffffff,boneRough:.38,denseRough:.12,clearcoat:.72,lights:[2.35,5.1,2.4,1.7]}
+  };
+
+  function choosePreset(kind){
+    const cfg=presetConfigs[kind]||presetConfigs.clinical;
+    setPreset(kind);
+    setBoneOpacity(cfg.bone);
+    setRealistic(true);
+    setLighting(true);
+  }
+
   useEffect(()=>{
-    if(!boneRef.current||!denseRef.current)return;
-    if(realistic){
-      boneRef.current.material.color.setHex(0xd6bea2);boneRef.current.material.roughness=.5;boneRef.current.material.clearcoat=.12;
-      denseRef.current.material.color.setHex(0xf4ead8);denseRef.current.material.roughness=.26;denseRef.current.material.clearcoat=.48;
-    }else{
-      boneRef.current.material.color.setHex(0xc6d2dc);boneRef.current.material.roughness=.78;boneRef.current.material.clearcoat=0;
-      denseRef.current.material.color.setHex(0xf1f5f8);denseRef.current.material.roughness=.62;denseRef.current.material.clearcoat=.05;
+    const cfg=presetConfigs[preset]||presetConfigs.clinical;
+    if(sceneRef.current){
+      sceneRef.current.background=new THREE.Color(cfg.bg);
+      sceneRef.current.fog=new THREE.FogExp2(cfg.bg,cfg.fog);
     }
-  },[realistic]);
-  useEffect(()=>{lightRigRef.current?.forEach((l,i)=>{l.visible=lighting||i===0})},[lighting]);
+    if(rendererRef.current)rendererRef.current.toneMappingExposure=cfg.exposure;
+    if(boneRef.current&&denseRef.current){
+      if(realistic){
+        boneRef.current.material.color.setHex(cfg.boneColor);
+        boneRef.current.material.roughness=cfg.boneRough;
+        boneRef.current.material.clearcoat=.2;
+        denseRef.current.material.color.setHex(cfg.denseColor);
+        denseRef.current.material.roughness=cfg.denseRough;
+        denseRef.current.material.clearcoat=cfg.clearcoat;
+        denseRef.current.material.opacity=.98;
+      }else{
+        boneRef.current.material.color.setHex(0xd7e0e8);boneRef.current.material.roughness=.74;boneRef.current.material.clearcoat=0;
+        denseRef.current.material.color.setHex(0xffffff);denseRef.current.material.roughness=.58;denseRef.current.material.clearcoat=.05;
+      }
+    }
+    const rig=lightRigRef.current;
+    if(rig)rig.forEach((l,i)=>{l.intensity=cfg.lights[i];l.visible=lighting||i===0});
+  },[preset,realistic,lighting]);
 
   useEffect(()=>{
     const group=groupRef.current;if(!group||!meta)return;
@@ -250,6 +281,13 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
       {ready&&<div className="viewer3d-status">{status}</div>}
     </div>
     <div className="viewer3d-controls">
+      <div className="viewer3d-presets" role="group" aria-label="Presets 3D">
+        <button className={preset==="clinical"?"active":""} onClick={()=>choosePreset("clinical")}>Clínico</button>
+        <button className={preset==="anatomic"?"active":""} onClick={()=>choosePreset("anatomic")}>Anatômico</button>
+        <button className={preset==="patient"?"active":""} onClick={()=>choosePreset("patient")}>Paciente</button>
+        <button className={preset==="translucent"?"active":""} onClick={()=>choosePreset("translucent")}>Translúcido</button>
+        <button className={preset==="detail"?"active":""} onClick={()=>choosePreset("detail")}>Detalhe</button>
+      </div>
       <div className="viewer3d-switches">
         <button className={boneVisible?"active":""} onClick={()=>setBoneVisible(v=>!v)}>Osso</button>
         <button className={denseVisible?"active":""} onClick={()=>setDenseVisible(v=>!v)}>Dentes/denso</button>
