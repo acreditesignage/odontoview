@@ -148,3 +148,14 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 .nerve-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
 .viewer2-small.danger{border-color:#5b2931!important;background:#2d151a!important;color:#ff9aa5!important}
 @media(max-width:760px){.viewer2-reset-all{height:42px!important;padding:0 12px!important}.nerve-point-list>div{grid-template-columns:1fr 36px}.nerve-point-list button{width:36px;height:36px}}
+
+.viewer2-pane{align-self:start}
+.viewer2-slice-control{border-top:0;border-bottom:1px solid #1b2633;background:#0d151f;padding:8px 10px}
+.viewer2-slice-control span{min-width:88px}
+.viewer2-slice-control input[type=range]{height:24px}
+.crosshair-cursor{cursor:crosshair}
+@media(max-width:760px){
+  .viewer2-slice-control{grid-template-columns:auto minmax(0,1fr);gap:8px;padding:7px 9px}
+  .viewer2-slice-control span{min-width:86px;font-size:10px}
+  .viewer2-slice-control input[type=range]{min-height:28px}
+}
