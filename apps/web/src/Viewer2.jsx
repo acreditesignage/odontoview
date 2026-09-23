@@ -921,7 +921,7 @@ export default function Viewer2(){
       <div className="viewer2-wl viewer2-wl-sliders"><label>Brilho <input type="range" min={windowLevel.wc-windowLevel.ww} max={windowLevel.wc+windowLevel.ww} step="1" value={windowLevel.wc} onChange={e=>setWindowLevel(v=>({...v,wc:Number(e.target.value)}))}/></label><label>Contraste <input type="range" min="50" max={Math.max(5000,windowLevel.ww*2)} step="10" value={windowLevel.ww} onChange={e=>setWindowLevel(v=>({...v,ww:Number(e.target.value)}))}/></label></div>
       <div className="viewer2-tool-state">Ferramenta: <strong>{toolName}</strong></div>
     </section>
-    <section className="viewer2-grid">
+    <section className="viewer2-grid viewer2-concept03">
       {[
         ["axial","Axial",canvases.axial],["coronal","Coronal",canvases.coronal],["sagittal","Sagital",canvases.sagittal],
         ["tangential","Tangencial • 3 cortes",canvases.tangential]
@@ -931,7 +931,7 @@ export default function Viewer2(){
         <div className="viewer2-canvas-wrap"><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
       </article>)}
       <article className="viewer2-pane panoramic visual3d-composite">
-        <div className="viewer2-pane-head"><strong>Modelo 3D + Panorâmica</strong><span className="viewer3d-badge">3D EXPERIMENTAL</span></div>
+        <div className="viewer2-pane-head"><strong>Modelo 3D • Planejamento</strong><span className="viewer3d-badge">3D PROFISSIONAL</span></div>
         <div className="viewer3d-split">
           <div className="viewer3d-primary">
             <Viewer3DPanel volume={volumeRef.current} meta={meta} nervePoints={nerveDisplayPoints} curve={curve}/>
