@@ -14,14 +14,17 @@
   </style>
 </head>
 <body>
-  <div id="root"><div class="boot"><div><strong>OdontoView</strong><span>Carregando Network…</span></div></div></div>
+  <div id="root"></div>
+  <div id="startup-fallback" class="boot"><div><strong>OdontoView</strong><span>Carregando Network…</span></div></div>
   <script>
-    function showRuntimeError(message){
-      var root=document.getElementById("root");
-      if(root) root.innerHTML='<div class="runtime-error"><strong>OdontoView — erro de inicialização</strong><br><br>'+String(message).replace(/[&<>"]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"})[c]})+'</div>';
+    window.__ODONTOVIEW_STARTED__=false;
+    function showStartupError(message){
+      if(window.__ODONTOVIEW_STARTED__)return;
+      var el=document.getElementById("startup-fallback");
+      if(el) el.innerHTML='<div class="runtime-error"><strong>OdontoView — erro de inicialização</strong><br><br>'+String(message).replace(/[&<>"]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"})[c]})+'</div>';
     }
-    window.addEventListener("error",function(e){showRuntimeError(e.message||"Erro JavaScript não identificado.");});
-    window.addEventListener("unhandledrejection",function(e){showRuntimeError((e.reason&&e.reason.message)||e.reason||"Falha ao iniciar a aplicação.");});
+    window.addEventListener("error",function(e){showStartupError(e.message||"Erro JavaScript não identificado.");});
+    window.addEventListener("unhandledrejection",function(e){showStartupError((e.reason&&e.reason.message)||e.reason||"Falha ao iniciar a aplicação.");});
   </script>
   <script src="/viewer-libs/cornerstone.min.js"></script>
   <script src="/viewer-libs/dicomParser.min.js"></script>
