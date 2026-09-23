@@ -1,161 +1,201 @@
-generator client { provider = "prisma-client-js" }
-datasource db { provider = "postgresql" url = env("DATABASE_URL") }
+generator client {
+  provider = "prisma-client-js"
+}
 
-enum UserRole { DENTIST ADMIN UNIT_USER }
-enum OrderStatus { SOLICITADO AGENDADO CANCELADO }
-enum AvailabilityStatus { AVAILABLE RESERVED BLOCKED }
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  DENTIST
+  ADMIN
+  UNIT_USER
+}
+
+enum OrderStatus {
+  SOLICITADO
+  AGENDADO
+  CANCELADO
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  RESERVED
+  BLOCKED
+}
 
 model User {
-  id String @id @default(cuid())
-  email String @unique
+  id           String   @id @default(cuid())
+  email        String   @unique
   passwordHash String
-  role UserRole
-  name String
-  phone String?
-  createdAt DateTime @default(now())
+  role         UserRole
+  name         String
+  phone        String?
+  createdAt    DateTime @default(now())
+
   dentist Dentist?
 }
 
 model Dentist {
-  id String @id @default(cuid())
+  id     String @id @default(cuid())
   userId String @unique
-  cro String
-  uf String
-  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  cro    String
+  uf     String
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   patients Patient[]
-  orders Order[]
-  @@unique([cro,uf])
+  orders   Order[]
+
+  @@unique([cro, uf])
 }
 
 model Patient {
-  id String @id @default(cuid())
-  name String
-  birthDate DateTime?
-  phone String?
-  email String?
+  id                 String    @id @default(cuid())
+  name               String
+  birthDate          DateTime?
+  phone              String?
+  email              String?
   createdByDentistId String
-  createdAt DateTime @default(now())
-  createdByDentist Dentist @relation(fields:[createdByDentistId], references:[id], onDelete:Restrict)
-  orders Order[]
+  createdAt          DateTime  @default(now())
+
+  createdByDentist Dentist @relation(fields: [createdByDentistId], references: [id], onDelete: Restrict)
+  orders           Order[]
+
   @@index([createdByDentistId])
 }
 
 model RadiologyOrganization {
-  id String @id @default(cuid())
-  name String
-  cnpj String? @unique
+  id    String  @id @default(cuid())
+  name  String
+  cnpj  String? @unique
   phone String?
+
   units Unit[]
 }
 
 model Unit {
-  id String @id @default(cuid())
+  id             String  @id @default(cuid())
   organizationId String
-  name String
-  addressLine String
-  city String
-  state String
-  phone String?
-  active Boolean @default(true)
-  organization RadiologyOrganization @relation(fields:[organizationId], references:[id], onDelete:Cascade)
-  offers UnitOffer[]
+  name           String
+  addressLine    String
+  city           String
+  state          String
+  phone          String?
+  active         Boolean @default(true)
+
+  organization RadiologyOrganization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  offers       UnitOffer[]
   availability UnitAvailability[]
-  orders Order[]
-  @@index([city,state])
+  orders       Order[]
+
+  @@index([city, state])
 }
 
 model ExamType {
-  id String @id @default(cuid())
-  name String @unique
+  id     String  @id @default(cuid())
+  name   String  @unique
   active Boolean @default(true)
+
   offers UnitOffer[]
   orders Order[]
 }
 
 model UnitOffer {
-  id String @id @default(cuid())
-  unitId String
-  examTypeId String
-  priceClient Decimal @db.Decimal(10,2)
-  unitPayout Decimal @db.Decimal(10,2)
-  reportPrice Decimal @default(0) @db.Decimal(10,2)
-  platformRevenue Decimal @db.Decimal(10,2)
-  reportIncluded Boolean @default(false)
-  active Boolean @default(true)
-  unit Unit @relation(fields:[unitId], references:[id], onDelete:Cascade)
-  examType ExamType @relation(fields:[examTypeId], references:[id], onDelete:Cascade)
-  orders Order[]
-  @@unique([unitId,examTypeId])
-  @@index([examTypeId,active])
+  id              String   @id @default(cuid())
+  unitId          String
+  examTypeId      String
+  priceClient     Decimal  @db.Decimal(10, 2)
+  unitPayout      Decimal  @db.Decimal(10, 2)
+  reportPrice     Decimal  @default(0) @db.Decimal(10, 2)
+  platformRevenue Decimal  @db.Decimal(10, 2)
+  reportIncluded  Boolean  @default(false)
+  active          Boolean  @default(true)
+
+  unit     Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  examType ExamType @relation(fields: [examTypeId], references: [id], onDelete: Cascade)
+  orders   Order[]
+
+  @@unique([unitId, examTypeId])
+  @@index([examTypeId, active])
 }
 
 model UnitAvailability {
-  id String @id @default(cuid())
-  unitId String
+  id      String             @id @default(cuid())
+  unitId  String
   startAt DateTime
-  endAt DateTime
-  status AvailabilityStatus @default(AVAILABLE)
-  unit Unit @relation(fields:[unitId], references:[id], onDelete:Cascade)
+  endAt   DateTime
+  status  AvailabilityStatus @default(AVAILABLE)
+
+  unit        Unit         @relation(fields: [unitId], references: [id], onDelete: Cascade)
   appointment Appointment?
-  @@unique([unitId,startAt,endAt])
-  @@index([unitId,status,startAt])
+
+  @@unique([unitId, startAt, endAt])
+  @@index([unitId, status, startAt])
 }
 
 model Order {
-  id String @id @default(cuid())
-  dentistId String
-  patientId String
-  examTypeId String
-  unitId String?
-  offerId String?
-  status OrderStatus @default(SOLICITADO)
-  valueClient Decimal? @db.Decimal(10,2)
-  unitPayout Decimal? @db.Decimal(10,2)
-  reportPrice Decimal? @db.Decimal(10,2)
-  platformRevenue Decimal? @db.Decimal(10,2)
-  reportIncluded Boolean @default(false)
-  requestedAt DateTime @default(now())
-  dentist Dentist @relation(fields:[dentistId], references:[id], onDelete:Restrict)
-  patient Patient @relation(fields:[patientId], references:[id], onDelete:Restrict)
-  examType ExamType @relation(fields:[examTypeId], references:[id], onDelete:Restrict)
-  unit Unit? @relation(fields:[unitId], references:[id], onDelete:Restrict)
-  offer UnitOffer? @relation(fields:[offerId], references:[id], onDelete:Restrict)
-  appointment Appointment?
+  id              String      @id @default(cuid())
+  dentistId       String
+  patientId       String
+  examTypeId      String
+  unitId          String?
+  offerId         String?
+  status          OrderStatus @default(SOLICITADO)
+  valueClient     Decimal?    @db.Decimal(10, 2)
+  unitPayout      Decimal?    @db.Decimal(10, 2)
+  reportPrice     Decimal?    @db.Decimal(10, 2)
+  platformRevenue Decimal?    @db.Decimal(10, 2)
+  reportIncluded  Boolean     @default(false)
+  requestedAt     DateTime    @default(now())
+
+  dentist      Dentist             @relation(fields: [dentistId], references: [id], onDelete: Restrict)
+  patient      Patient             @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  examType     ExamType            @relation(fields: [examTypeId], references: [id], onDelete: Restrict)
+  unit         Unit?               @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  offer        UnitOffer?          @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  appointment  Appointment?
   accessTokens PatientAccessToken[]
-  history StatusHistory[]
-  @@index([dentistId,status])
-  @@index([status,requestedAt])
+  history      StatusHistory[]
+
+  @@index([dentistId, status])
+  @@index([status, requestedAt])
 }
 
 model Appointment {
-  id String @id @default(cuid())
-  orderId String @unique
-  availabilityId String @unique
-  createdAt DateTime @default(now())
-  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
-  availability UnitAvailability @relation(fields:[availabilityId], references:[id], onDelete:Restrict)
+  id             String   @id @default(cuid())
+  orderId        String   @unique
+  availabilityId String   @unique
+  createdAt      DateTime @default(now())
+
+  order        Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  availability UnitAvailability @relation(fields: [availabilityId], references: [id], onDelete: Restrict)
 }
 
 model PatientAccessToken {
-  id String @id @default(cuid())
-  orderId String
-  tokenHash String @unique
-  expiresAt DateTime
-  revokedAt DateTime?
+  id         String    @id @default(cuid())
+  orderId    String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
   lastUsedAt DateTime?
-  createdAt DateTime @default(now())
-  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
-  @@index([orderId,expiresAt])
+  createdAt  DateTime  @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, expiresAt])
 }
 
 model StatusHistory {
-  id String @id @default(cuid())
-  orderId String
-  status OrderStatus
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
   actorType String
-  actorId String?
-  note String?
-  createdAt DateTime @default(now())
-  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
-  @@index([orderId,createdAt])
+  actorId   String?
+  note      String?
+  createdAt DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
 }
