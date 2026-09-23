@@ -1,20 +1,17 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
 import {useNavigate} from "react-router-dom";
-import * as cornerstoneNS from "cornerstone-core";
-import * as wadoNS from "cornerstone-wado-image-loader";
-import * as dicomParserNS from "dicom-parser";
 import {clearViewerSession,getViewerSession} from "./viewerSession.js";
-
-const cornerstone=cornerstoneNS.default||cornerstoneNS;
-const cornerstoneWADOImageLoader=wadoNS.default||wadoNS;
-const dicomParser=dicomParserNS.default||dicomParserNS;
 
 let cornerstoneConfigured=false;
 function configureCornerstone(){
   if(cornerstoneConfigured)return;
-  cornerstoneWADOImageLoader.external.cornerstone=cornerstone;
-  cornerstoneWADOImageLoader.external.dicomParser=dicomParser;
-  cornerstoneWADOImageLoader.configure({useWebWorkers:false});
+  const cornerstone=window.cornerstone;
+  const loader=window.cornerstoneWADOImageLoader;
+  const parser=window.dicomParser;
+  if(!cornerstone||!loader||!parser) throw new Error("Bibliotecas locais do Viewer DICOM não foram carregadas.");
+  loader.external.cornerstone=cornerstone;
+  loader.external.dicomParser=parser;
+  loader.configure({useWebWorkers:false});
   cornerstoneConfigured=true;
 }
 
@@ -118,6 +115,8 @@ export default function Viewer2(){
         const sorted=report.sortedItems?.length?report.sortedItems:report.items;
         const files=sorted.map(item=>session.result.files[item.fileIndex]).filter(Boolean);
         if(!files.length)throw new Error("Não foi possível relacionar a série validada aos arquivos DICOM.");
+        const cornerstone=window.cornerstone;
+        const cornerstoneWADOImageLoader=window.cornerstoneWADOImageLoader;
         cornerstoneWADOImageLoader.wadouri.fileManager.purge();
         const ids=files.map(file=>cornerstoneWADOImageLoader.wadouri.fileManager.add(file));
         const first=await cornerstone.loadAndCacheImage(ids[0]);
