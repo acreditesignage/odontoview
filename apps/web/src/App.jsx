@@ -6,7 +6,7 @@ import {importExam} from "./ingest.js";
 import Viewer2 from "./Viewer2.jsx";
 import {setViewerSession} from "./viewerSession.js";
 
-function routeForRole(role){return role==="UNIT_USER"?"/radiologia":"/novo-pedido"}
+function routeForRole(role){return role==="UNIT_USER"?"/radiologia":"/dentista"}
 function logout(){localStorage.removeItem("odontoview_token");localStorage.removeItem("odontoview_role");location.href="/"}
 function formatBytes(value){if(!value)return "0 MB";return (value/1024/1024).toFixed(value>10*1024*1024?1:2)+" MB"}
 function BrandLockup({role="NETWORK",light=false}){
@@ -17,8 +17,8 @@ function BrandLockup({role="NETWORK",light=false}){
  </div>
 }
 
-function Login(){
- const nav=useNavigate(),[mode,setMode]=useState("login"),[err,setErr]=useState(""),[f,setF]=useState({name:"",email:"",password:"",cro:"",uf:"RJ"});
+function Login({initialMode="login"}){
+ const nav=useNavigate(),[mode,setMode]=useState(initialMode),[err,setErr]=useState(""),[f,setF]=useState({name:"",email:"",password:"",cro:"",uf:"RJ"});
  async function submit(e){
    e.preventDefault();setErr("");
    try{
@@ -47,24 +47,84 @@ function Login(){
      {mode==="register"&&<input placeholder="Nome" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/>}
      <input type="email" placeholder="Email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/>
      <input type="password" placeholder="Senha" value={f.password} onChange={e=>setF({...f,password:e.target.value})}/>
-     {mode==="register"&&<div className="two"><input placeholder="CRO" value={f.cro} onChange={e=>setF({...f,cro:e.target.value})}/><input placeholder="UF" value={f.uf} onChange={e=>setF({...f,uf:e.target.value.toUpperCase()})}/></div>}
+     {mode==="register"&&<input placeholder="Telefone / WhatsApp" value={f.phone} onChange={e=>setF({...f,phone:e.target.value})}/>}\n     {mode==="register"&&<div className="two"><input placeholder="CRO" value={f.cro} onChange={e=>setF({...f,cro:e.target.value})}/><input placeholder="UF" value={f.uf} onChange={e=>setF({...f,uf:e.target.value.toUpperCase()})}/></div>}
      {err&&<div className="error">{err}</div>}<button className="primary">{mode==="login"?"Entrar":"Criar conta"}</button>
    </form>
    <button className="link" onClick={()=>setMode(mode==="login"?"register":"login")}>{mode==="login"?"Sou dentista e quero criar conta":"Já tenho conta"}</button>
    </section></section></main>
 }
 
-function NewOrder(){
- const [types,setTypes]=useState([]),[type,setType]=useState(""),[p,setP]=useState({name:"",birthDate:"",phone:"",email:""}),[out,setOut]=useState(null),[err,setErr]=useState("");
- useEffect(()=>{api("/api/catalog/exam-types").then(x=>{setTypes(x);if(x[0])setType(x[0].id)}).catch(e=>setErr(e.message))},[]);
- async function submit(e){e.preventDefault();setErr("");try{const patient=await api("/api/patients",{method:"POST",body:JSON.stringify(p)});const order=await api("/api/orders",{method:"POST",body:JSON.stringify({patientId:patient.id,examTypeId:type})});setOut(order)}catch(x){setErr(x.message)}}
- return <main className="page"><section className="content">
-   <header className="topbar"><BrandLockup role="DENTISTA"/><button className="ghost" onClick={logout}>Sair</button></header>
-   <div className="section-intro"><p className="eyebrow">MARKETPLACE DE EXAMES</p><h1>Um pedido simples.</h1><p className="muted">Solicite o exame e deixe o OdontoView organizar o restante da jornada.</p></div>
-   <form className="card stack" onSubmit={submit}><input placeholder="Paciente" value={p.name} onChange={e=>setP({...p,name:e.target.value})}/><div className="two"><input type="date" value={p.birthDate} onChange={e=>setP({...p,birthDate:e.target.value})}/><input placeholder="Telefone" value={p.phone} onChange={e=>setP({...p,phone:e.target.value})}/></div><select value={type} onChange={e=>setType(e.target.value)}>{types.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>{err&&<div className="error">{err}</div>}<button className="primary">Criar pedido</button></form>
-   {out&&<section className="card success"><strong>Pedido criado.</strong><p>Envie este link ao paciente:</p><code>{out.patientAccessUrl}</code><button className="secondary" onClick={()=>navigator.clipboard.writeText(out.patientAccessUrl)}>Copiar link</button></section>}
+function DentistDashboard(){
+ const [data,setData]=useState(null),[types,setTypes]=useState([]),[tab,setTab]=useState("home"),[err,setErr]=useState(""),[busy,setBusy]=useState(false);
+ const [patientMode,setPatientMode]=useState("existing"),[selectedPatient,setSelectedPatient]=useState(""),[type,setType]=useState("");
+ const [p,setP]=useState({name:"",birthDate:"",phone:"",email:""}),[out,setOut]=useState(null);
+
+ async function load(){
+   setErr("");
+   try{
+     const [dashboard,examTypes]=await Promise.all([api("/api/dentist/dashboard"),api("/api/catalog/exam-types")]);
+     setData(dashboard);setTypes(examTypes);
+     if(!type&&examTypes[0])setType(examTypes[0].id);
+     if(!selectedPatient&&dashboard.patients[0])setSelectedPatient(dashboard.patients[0].id);
+   }catch(e){setErr(e.message)}
+ }
+ useEffect(()=>{load()},[]);
+ async function submitOrder(e){
+   e.preventDefault();setBusy(true);setErr("");setOut(null);
+   try{
+     let patientId=selectedPatient;
+     if(patientMode==="new"){
+       const patient=await api("/api/patients",{method:"POST",body:JSON.stringify(p)});
+       patientId=patient.id;
+     }
+     if(!patientId)throw new Error("Selecione ou cadastre um paciente.");
+     const order=await api("/api/orders",{method:"POST",body:JSON.stringify({patientId,examTypeId:type})});
+     setOut(order);setP({name:"",birthDate:"",phone:"",email:""});setPatientMode("existing");
+     await load();
+   }catch(e){setErr(e.message)}finally{setBusy(false)}
+ }
+ const statusLabel=s=>STATUS[s]?.label||s;
+ return <main className="page dentist-dashboard"><section className="wide">
+   <header className="topbar"><BrandLockup role="DENTISTA"/><div className="topbar-actions"><a className="ghost compact" href="/cadastro-dentista" target="_blank" rel="noreferrer">Link de cadastro</a><button className="ghost" onClick={logout}>Sair</button></div></header>
+   <div className="hero-row dentist-hero"><div><p className="eyebrow">ODONTOVIEW NETWORK</p><h1>{data?.dentist?.user?.name||"Seu painel clínico"}</h1><p className="muted">{data?.dentist?("CRO "+data.dentist.cro+"/"+data.dentist.uf+" • pacientes, pedidos e exames em um só lugar."):"Carregando perfil…"}</p></div><button className="primary" onClick={()=>setTab("new")}>+ Novo pedido</button></div>
+   <nav className="workspace-tabs">
+     <button className={tab==="home"?"active":""} onClick={()=>setTab("home")}>Visão geral</button>
+     <button className={tab==="new"?"active":""} onClick={()=>setTab("new")}>Novo pedido</button>
+     <button className={tab==="patients"?"active":""} onClick={()=>setTab("patients")}>Pacientes</button>
+   </nav>
+   {err&&<div className="error">{err}</div>}
+   {!data?<section className="card">Carregando painel…</section>:<>
+     {tab==="home"&&<div className="dashboard-grid">
+       <section className="metric-card"><span>Pacientes</span><strong>{data.patients.length}</strong><small>cadastrados por você</small></section>
+       <section className="metric-card"><span>Pedidos</span><strong>{data.orders.length}</strong><small>últimos registros</small></section>
+       <section className="card dashboard-main">
+         <div className="section-title"><div><p className="eyebrow">PEDIDOS RECENTES</p><h2>Acompanhe a jornada.</h2></div><button className="secondary compact" onClick={()=>setTab("new")}>Novo pedido</button></div>
+         {data.orders.length===0?<div className="empty"><strong>Nenhum pedido ainda.</strong><p>Crie o primeiro pedido para testar o fluxo completo.</p></div>:
+         <div className="dentist-order-list">{data.orders.slice(0,12).map(o=><div className="dentist-order-row" key={o.id}>
+           <div><strong>{o.patient.name}</strong><small>{o.examType.name}{o.unit?" • "+o.unit.name:""}</small></div>
+           <span className={"badge "+(STATUS[o.status]?.tone||"")}>{statusLabel(o.status)}</span>
+         </div>)}</div>}
+       </section>
+     </div>}
+     {tab==="new"&&<section className="card dentist-order-card">
+       <div className="section-title"><div><p className="eyebrow">NOVO PEDIDO</p><h2>Solicite o exame em poucos passos.</h2></div></div>
+       <form className="stack" onSubmit={submitOrder}>
+         <div className="choice-tabs"><button type="button" className={patientMode==="existing"?"active":""} onClick={()=>setPatientMode("existing")}>Paciente cadastrado</button><button type="button" className={patientMode==="new"?"active":""} onClick={()=>setPatientMode("new")}>Novo paciente</button></div>
+         {patientMode==="existing"?<select value={selectedPatient} onChange={e=>setSelectedPatient(e.target.value)}><option value="">Selecione o paciente</option>{data.patients.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>:
+         <div className="stack"><input required placeholder="Nome do paciente" value={p.name} onChange={e=>setP({...p,name:e.target.value})}/><div className="two"><input type="date" value={p.birthDate} onChange={e=>setP({...p,birthDate:e.target.value})}/><input placeholder="Telefone / WhatsApp" value={p.phone} onChange={e=>setP({...p,phone:e.target.value})}/></div><input type="email" placeholder="Email (opcional)" value={p.email} onChange={e=>setP({...p,email:e.target.value})}/></div>}
+         <select value={type} onChange={e=>setType(e.target.value)}>{types.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>
+         <button className="primary" disabled={busy}>{busy?"Criando…":"Criar pedido e gerar link"}</button>
+       </form>
+       {out&&<section className="success order-link-box"><strong>Pedido criado ✓</strong><p>Envie este link seguro ao paciente para escolher a radiologia e o horário:</p><code>{out.patientAccessUrl}</code><button className="secondary" onClick={()=>navigator.clipboard.writeText(out.patientAccessUrl)}>Copiar link</button></section>}
+     </section>}
+     {tab==="patients"&&<section className="card">
+       <div className="section-title"><div><p className="eyebrow">PACIENTES</p><h2>Sua base de pacientes.</h2></div><button className="primary compact" onClick={()=>{setPatientMode("new");setTab("new")}}>+ Cadastrar</button></div>
+       {data.patients.length===0?<div className="empty">Nenhum paciente cadastrado.</div>:<div className="patient-registry">{data.patients.map(x=><div className="patient-registry-row" key={x.id}><div><strong>{x.name}</strong><small>{x.phone||"Sem telefone"}{x.birthDate?" • "+new Date(x.birthDate).toLocaleDateString("pt-BR"):""}</small></div><button className="secondary compact" onClick={()=>{setSelectedPatient(x.id);setPatientMode("existing");setTab("new")}}>Criar pedido</button></div>)}</div>}
+     </section>}
+   </>}
  </section></main>
 }
+
 
 function localDateValue(date=new Date()){
  const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,"0"),d=String(date.getDate()).padStart(2,"0");
