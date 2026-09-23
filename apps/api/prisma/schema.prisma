@@ -16,6 +16,9 @@ enum UserRole {
 enum OrderStatus {
   SOLICITADO
   AGENDADO
+  PACIENTE_CHEGOU
+  EXAME_REALIZADO
+  IMAGENS_RECEBIDAS
   CANCELADO
 }
 
@@ -34,7 +37,8 @@ model User {
   phone        String?
   createdAt    DateTime @default(now())
 
-  dentist Dentist?
+  dentist          Dentist?
+  unitMemberships  UnitMembership[]
 }
 
 model Dentist {
@@ -88,8 +92,22 @@ model Unit {
   offers       UnitOffer[]
   availability UnitAvailability[]
   orders       Order[]
+  members      UnitMembership[]
 
   @@index([city, state])
+}
+
+model UnitMembership {
+  id     String  @id @default(cuid())
+  userId String
+  unitId String
+  active Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  unit Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, unitId])
+  @@index([unitId, active])
 }
 
 model ExamType {
@@ -159,6 +177,7 @@ model Order {
   history      StatusHistory[]
 
   @@index([dentistId, status])
+  @@index([unitId, status])
   @@index([status, requestedAt])
 }
 
