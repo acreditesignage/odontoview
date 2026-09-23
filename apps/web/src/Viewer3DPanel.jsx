@@ -35,6 +35,15 @@ function sampledStats(volume){
 }
 
 const PRESETS={
+  planning:{
+    label:"Planejamento",bg:[.022,.04,.058],
+    colors:[
+      ["air",0,0,0],["soft",.07,.055,.05],["trab",.34,.25,.18],
+      ["bone",.72,.58,.42],["cortical",.90,.78,.61],["dense",1,.97,.88],["max",1,1,.98]
+    ],
+    opacity:[["air",0],["soft",0],["trab",.002],["bone",.012],["cortical",.045],["dense",.58],["max",.84]],
+    ambient:.40,diffuse:.72,specular:.36,specularPower:22
+  },
   clinical:{
     label:"Clínico",bg:[.035,.055,.075],
     colors:[
@@ -82,14 +91,15 @@ const PRESETS={
   }
 };
 
-function buildTransferFunctions(stats,presetName,opacityScale,denseBoost){
+function buildTransferFunctions(stats,presetName,boneOpacityScale,denseBoost){
   const cfg=PRESETS[presetName]||PRESETS.clinical;
   const ctf=vtkColorTransferFunction.newInstance();
   cfg.colors.forEach(([key,r,g,b])=>ctf.addRGBPoint(stats[key],r,g,b));
   const ofun=vtkPiecewiseFunction.newInstance();
   cfg.opacity.forEach(([key,value])=>{
     const boost=denseBoost&&(key==="dense"||key==="max")?1.28:1;
-    ofun.addPoint(stats[key],clamp(value*opacityScale*boost,0,1));
+    const boneScale=(key==="trab"||key==="bone"||key==="cortical")?boneOpacityScale:1;
+    ofun.addPoint(stats[key],clamp(value*boneScale*boost,0,1));
   });
   return {cfg,ctf,ofun};
 }
@@ -129,10 +139,11 @@ function createTubeActor(worldPoints,radius,color){
   const actor=vtkActor.newInstance();
   actor.setMapper(mapper);
   actor.getProperty().setColor(...color);
-  actor.getProperty().setAmbient(.35);
-  actor.getProperty().setDiffuse(.75);
-  actor.getProperty().setSpecular(.45);
-  actor.getProperty().setSpecularPower(24);
+  actor.getProperty().setOpacity(1);
+  actor.getProperty().setAmbient(1);
+  actor.getProperty().setDiffuse(.22);
+  actor.getProperty().setSpecular(.18);
+  actor.getProperty().setSpecularPower(10);
   return {actor,tube,mapper,poly,pts,lines};
 }
 
@@ -152,12 +163,12 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
 
   const [ready,setReady]=useState(false);
   const [status,setStatus]=useState("Preparando GPU Volume Rendering…");
-  const [preset,setPreset]=useState("clinical");
+  const [preset,setPreset]=useState("planning");
   const [volumeVisible,setVolumeVisible]=useState(true);
   const [nerveVisible,setNerveVisible]=useState(true);
   const [denseBoost,setDenseBoost]=useState(true);
   const [lighting,setLighting]=useState(true);
-  const [opacityScale,setOpacityScale]=useState(1);
+  const [boneOpacityScale,setBoneOpacityScale]=useState(.68);
   const [scanName,setScanName]=useState("");
   const [scanStatus,setScanStatus]=useState("Nenhum scan intraoral carregado.");
   const [scanVisible,setScanVisible]=useState(true);
@@ -228,7 +239,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
       setScanTransform(next);
       setScanName(file.name);
       setScanVisible(true);
-      setScanStatus("Scan carregado • alinhamento inicial visual • ajuste manual obrigatório.");
+      setScanStatus("Scan carregado • pré-alinhamento por centro/escala concluído • refine manualmente antes de uso clínico.");
       renderer.resetCameraClippingRange();
       renderNow();
     }catch(e){
@@ -261,7 +272,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
   function applyPreset(name=preset){
     const actor=volumeActorRef.current,stats=statsRef.current,renderer=rendererRef.current;
     if(!actor||!stats||!renderer)return;
-    const {cfg,ctf,ofun}=buildTransferFunctions(stats,name,opacityScale,denseBoost);
+    const {cfg,ctf,ofun}=buildTransferFunctions(stats,name,boneOpacityScale,denseBoost);
     const prop=actor.getProperty();
     prop.setRGBTransferFunction(0,ctf);
     prop.setScalarOpacity(0,ofun);
@@ -335,7 +346,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
     const prop=actor.getProperty();
     prop.setScalarOpacityUnitDistance(0,Math.max(.4,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*2.2));
 
-    applyPreset("clinical");
+    applyPreset("planning");
     renderer.resetCamera();
     setView("oblique");
     renderWindow.render();
@@ -361,7 +372,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
     };
   },[volume,meta]);
 
-  useEffect(()=>{applyPreset(preset)},[preset,opacityScale,denseBoost,lighting]);
+  useEffect(()=>{applyPreset(preset)},[preset,boneOpacityScale,denseBoost,lighting]);
 
   useEffect(()=>{
     if(volumeActorRef.current){volumeActorRef.current.setVisibility(volumeVisible);renderNow()}
@@ -375,7 +386,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
     }
     if(!nerveVisible||nervePoints.length<2||curve.length<2){renderNow();return}
     const pts=nervePoints.map(n=>nervePointToWorld(n,curve,meta)).filter(Boolean);
-    const radius=Math.max(.45,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*3.4);
+    const radius=Math.max(.82,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*4.8);
     const bundle=createTubeActor(pts,radius,[1,.08,.08]);
     if(bundle){
       renderer.addActor(bundle.actor);
@@ -403,19 +414,23 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
       {ready&&<div className="viewer3d-engine-badge">VTK.js • GPU</div>}
     </div>
     <div className="viewer3d-controls">
+      <div className="viewer3d-quickbar">
+        <button type="button" className="viewer3d-add-scan" onClick={()=>scanInputRef.current?.click()}>＋ Adicionar scan intraoral</button>
+        <span>{scanName?"Fusion ativo • "+scanName:"CBCT aberto • adicione STL/PLY para fusionar"}</span>
+      </div>
       <div className="viewer3d-presets" role="group" aria-label="Presets 3D">
         {Object.entries(PRESETS).map(([key,cfg])=><button key={key} className={preset===key?"active":""} onClick={()=>setPreset(key)}>{cfg.label}</button>)}
       </div>
       <div className="viewer3d-switches">
         <button className={volumeVisible?"active":""} onClick={()=>setVolumeVisible(v=>!v)}>Volume</button>
         <button className={denseBoost?"active":""} onClick={()=>setDenseBoost(v=>!v)}>Realçar denso</button>
-        <button className={nerveVisible?"active nerve":""} onClick={()=>setNerveVisible(v=>!v)}>Nervo</button>
+        <button className={nerveVisible?"active nerve":""} onClick={()=>setNerveVisible(v=>!v)}>Nervo 3D {nervePoints.length?`• ${nervePoints.length}`:""}</button>
         <button className={lighting?"active":""} onClick={()=>setLighting(v=>!v)}>Shading</button>
       </div>
       <label className="viewer3d-opacity">
-        <span>Intensidade do volume</span>
-        <input type="range" min=".45" max="1.55" step=".05" value={opacityScale} onChange={e=>setOpacityScale(Number(e.target.value))}/>
-        <b>{Math.round(opacityScale*100)}%</b>
+        <span>Opacidade óssea</span>
+        <input type="range" min=".2" max="1.15" step=".05" value={boneOpacityScale} onChange={e=>setBoneOpacityScale(Number(e.target.value))}/>
+        <b>{Math.round(boneOpacityScale*100)}%</b>
       </label>
       <div className="viewer3d-views">
         <button onClick={()=>setView("oblique")}>3/4</button>
@@ -426,10 +441,10 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
       <div className="viewer3d-fusion">
         <input ref={scanInputRef} type="file" accept=".stl,.ply" hidden onChange={e=>{const file=e.target.files?.[0];if(file)importIntraoralScan(file);e.target.value=""}}/>
         <div className="viewer3d-fusion-head">
-          <strong>OdontoView Fusion</strong>
-          <button type="button" onClick={()=>scanInputRef.current?.click()}>{scanName?"Trocar scan":"Importar STL/PLY"}</button>
+          <strong>OdontoView Fusion • CBCT + Scan</strong>
+          <button type="button" onClick={()=>scanInputRef.current?.click()}>{scanName?"Trocar scan":"Importar scan STL/PLY"}</button>
           {scanName&&<button type="button" className={scanVisible?"active":""} onClick={()=>setScanVisible(v=>!v)}>{scanVisible?"Scan visível":"Mostrar scan"}</button>}
-          {scanName&&<button type="button" onClick={resetScanAlignment}>Reset alinhamento</button>}
+          {scanName&&<button type="button" onClick={resetScanAlignment}>Reaplicar pré-alinhamento</button>}
         </div>
         <small>{scanName?scanName+" • "+scanStatus:scanStatus}</small>
         {scanName&&<div className="viewer3d-fusion-tools">
