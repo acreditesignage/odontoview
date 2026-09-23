@@ -5,6 +5,11 @@ RUN npm install
 COPY apps/web ./
 RUN npm run build
 
+# Reuse the already validated OdontoView Mobile ingest engine.
+RUN mkdir -p /web/dist/legacy-ingest/js /web/dist/legacy-ingest/vendor/libarchive
+COPY js/archive-import.js js/archive-worker.js js/archive-core.js js/dicom-metadata.js /web/dist/legacy-ingest/js/
+COPY vendor/libarchive/ /web/dist/legacy-ingest/vendor/libarchive/
+
 FROM node:20-bookworm-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
