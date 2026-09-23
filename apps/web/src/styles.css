@@ -315,3 +315,6 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
     letter-spacing:.025em;
   }
 }
+
+.viewer3d-engine-badge{position:absolute;right:10px;top:10px;z-index:5;padding:6px 9px;border-radius:999px;background:rgba(7,22,32,.78);border:1px solid #285d66;color:#7ef1e7;font-size:9px;font-weight:900;letter-spacing:.08em;backdrop-filter:blur(8px)}
+.viewer3d-v2 .viewer3d-stage canvas{filter:saturate(1.04) contrast(1.02)}
