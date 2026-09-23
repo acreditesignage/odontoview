@@ -22,6 +22,27 @@ class AppErrorBoundary extends React.Component{
   }
 }
 
+// Defensive compatibility layer for browser translators/extensions that can
+// move React-owned text nodes. Scope the workaround to the React root only.
+const nativeRemoveChild=Node.prototype.removeChild;
+const nativeInsertBefore=Node.prototype.insertBefore;
+Node.prototype.removeChild=function(child){
+  const root=document.getElementById("root");
+  if(root&&root.contains(this)&&child&&child.parentNode!==this){
+    console.warn("OdontoView DOM recovery: ignored stale removeChild", {parent:this,child});
+    return child;
+  }
+  return nativeRemoveChild.call(this,child);
+};
+Node.prototype.insertBefore=function(newNode,referenceNode){
+  const root=document.getElementById("root");
+  if(root&&root.contains(this)&&referenceNode&&referenceNode.parentNode!==this){
+    console.warn("OdontoView DOM recovery: repaired stale insertBefore", {parent:this,referenceNode});
+    return this.appendChild(newNode);
+  }
+  return nativeInsertBefore.call(this,newNode,referenceNode);
+};
+
 const rootEl=document.getElementById("root");
 const fallback=document.getElementById("startup-fallback");
 if(fallback)fallback.remove();
