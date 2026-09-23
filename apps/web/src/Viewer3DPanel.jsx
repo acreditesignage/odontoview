@@ -35,6 +35,24 @@ function sampledStats(volume){
 }
 
 const PRESETS={
+  teethNerve:{
+    label:"Dentes + nervo",bg:[.012,.020,.030],
+    colors:[
+      ["air",0,0,0],["soft",0,0,0],["trab",.10,.10,.10],
+      ["bone",.18,.18,.18],["cortical",.82,.79,.72],["dense",1,.98,.90],["max",1,1,1]
+    ],
+    opacity:[["air",0],["soft",0],["trab",0],["bone",0],["cortical",.012],["dense",.74],["max",.96]],
+    ambient:.48,diffuse:.68,specular:.58,specularPower:30
+  },
+  impacted:{
+    label:"Incluso",bg:[.016,.026,.038],
+    colors:[
+      ["air",0,0,0],["soft",0,0,0],["trab",.20,.16,.12],
+      ["bone",.45,.36,.27],["cortical",.92,.82,.68],["dense",1,.98,.88],["max",1,1,.98]
+    ],
+    opacity:[["air",0],["soft",0],["trab",.001],["bone",.004],["cortical",.035],["dense",.82],["max",1]],
+    ambient:.44,diffuse:.72,specular:.55,specularPower:28
+  },
   planning:{
     label:"Planejamento",bg:[.022,.04,.058],
     colors:[
@@ -269,6 +287,19 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
   }
 
 
+  function choosePreset(name){
+    setPreset(name);
+    if(name==="teethNerve"){
+      setBoneOpacityScale(.2);
+      setDenseBoost(true);
+      setNerveVisible(true);
+    }else if(name==="impacted"){
+      setBoneOpacityScale(.25);
+      setDenseBoost(true);
+      setNerveVisible(true);
+    }
+  }
+
   function applyPreset(name=preset){
     const actor=volumeActorRef.current,stats=statsRef.current,renderer=rendererRef.current;
     if(!actor||!stats||!renderer)return;
@@ -386,7 +417,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
     }
     if(!nerveVisible||nervePoints.length<2||curve.length<2){renderNow();return}
     const pts=nervePoints.map(n=>nervePointToWorld(n,curve,meta)).filter(Boolean);
-    const radius=Math.max(.82,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*4.8);
+    const radius=Math.max(1.05,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*5.8);
     const bundle=createTubeActor(pts,radius,[1,.08,.08]);
     if(bundle){
       renderer.addActor(bundle.actor);
@@ -419,7 +450,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
         <span>{scanName?"Fusion ativo • "+scanName:"CBCT aberto • adicione STL/PLY para fusionar"}</span>
       </div>
       <div className="viewer3d-presets" role="group" aria-label="Presets 3D">
-        {Object.entries(PRESETS).map(([key,cfg])=><button key={key} className={preset===key?"active":""} onClick={()=>setPreset(key)}>{cfg.label}</button>)}
+        {Object.entries(PRESETS).map(([key,cfg])=><button key={key} className={preset===key?"active":""} onClick={()=>choosePreset(key)}>{cfg.label}</button>)}
       </div>
       <div className="viewer3d-switches">
         <button className={volumeVisible?"active":""} onClick={()=>setVolumeVisible(v=>!v)}>Volume</button>
@@ -427,6 +458,11 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
         <button className={nerveVisible?"active nerve":""} onClick={()=>setNerveVisible(v=>!v)}>Nervo 3D {nervePoints.length?`• ${nervePoints.length}`:""}</button>
         <button className={lighting?"active":""} onClick={()=>setLighting(v=>!v)}>Shading</button>
       </div>
+      {(preset==="teethNerve"||preset==="impacted")&&<div className="viewer3d-preset-note">
+        {preset==="teethNerve"
+          ?"Isolamento por densidade: prioriza dentes/estruturas densas + nervo. Não é segmentação dental automática."
+          :"Modo incluso: reduz fortemente o osso e prioriza estruturas dentárias densas + nervo para localizar dentes retidos."}
+      </div>}
       <label className="viewer3d-opacity">
         <span>Opacidade óssea</span>
         <input type="range" min=".2" max="1.15" step=".05" value={boneOpacityScale} onChange={e=>setBoneOpacityScale(Number(e.target.value))}/>
