@@ -895,6 +895,19 @@ export default function Viewer2(){
     return {min:archRange.start,max:archRange.end,value:curveIndex,label:`Região ${curveIndex-archRange.start+1}/${archRange.end-archRange.start+1}`,set:v=>setCurveIndex(Number(v))};
   }
 
+  function renderSliceControl(id,label){
+    const pc=planeControl(id);
+    const stepBy=delta=>pc.set(clamp(Number(pc.value)+delta,Number(pc.min),Number(pc.max)));
+    return <div className="viewer2-slice-control">
+      <span>{pc.label}</span>
+      <div className="viewer2-slice-nav">
+        <button type="button" className="slice-step" aria-label={"Voltar um corte em "+label} onClick={()=>stepBy(-1)}>−</button>
+        <input aria-label={"Navegação "+label} type="range" min={pc.min} max={pc.max} step="1" value={pc.value} onChange={e=>pc.set(e.target.value)}/>
+        <button type="button" className="slice-step" aria-label={"Avançar um corte em "+label} onClick={()=>stepBy(1)}>+</button>
+      </div>
+    </div>;
+  }
+
   if(loading)return <main className="viewer2-loading"><div><div className="brand">OdontoView</div><h1>Montando Viewer 2.0…</h1><p>Decodificando o volume DICOM localmente.</p></div></main>;
   if(error)return <main className="page centered"><section className="card auth"><div className="brand">OdontoView</div><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>nav("/radiologia")}>Voltar</button></section></main>;
 
@@ -927,7 +940,7 @@ export default function Viewer2(){
         ["tangential","Tangencial • 3 cortes",canvases.tangential]
       ].map(([id,label,ref])=><article className={"viewer2-pane "+id} key={id}>
         <div className="viewer2-pane-head"><strong>{label}</strong><button onClick={()=>resetPlane(id)}>1:1</button></div>
-        {(()=>{const pc=planeControl(id);return <div className="viewer2-slice-control"><span>{pc.label}</span><input aria-label={"Navegação "+label} type="range" min={pc.min} max={pc.max} step="1" value={pc.value} onChange={e=>pc.set(e.target.value)}/></div>})()}
+        {renderSliceControl(id,label)}
         <div className="viewer2-canvas-wrap"><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
       </article>)}
       <article className="viewer2-pane panoramic visual3d-composite">
@@ -938,7 +951,7 @@ export default function Viewer2(){
           </div>
           <div className="viewer3d-mini-pano">
             <div className="viewer3d-mini-head"><strong>Panorâmica reconstruída</strong><button onClick={()=>resetPlane("panoramic")}>1:1</button></div>
-            {(()=>{const pc=planeControl("panoramic");return <div className="viewer2-slice-control"><span>{pc.label}</span><input aria-label="Navegação Panorâmica reconstruída" type="range" min={pc.min} max={pc.max} step="1" value={pc.value} onChange={e=>pc.set(e.target.value)}/></div>})()}
+            {renderSliceControl("panoramic","Panorâmica reconstruída")}
             <div className="viewer2-canvas-wrap viewer3d-pano-canvas"><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.panoramic} onWheel={e=>onWheel("panoramic",e)} onPointerDown={e=>onPointerDown("panoramic",e)} onPointerMove={e=>onPointerMove("panoramic",e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
           </div>
         </div>
