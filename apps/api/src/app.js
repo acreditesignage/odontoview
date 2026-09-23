@@ -88,6 +88,40 @@ export function createApp(){
     }catch(e){next(e);}
   });
 
+  app.get("/api/dentist/dashboard",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      const dentist=await prisma.dentist.findUnique({
+        where:{userId:req.auth.sub},
+        include:{user:{select:{id:true,name:true,email:true,phone:true}}}
+      });
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
+      const [patients,orders]=await Promise.all([
+        prisma.patient.findMany({
+          where:{createdByDentistId:dentist.id},
+          orderBy:{createdAt:"desc"},
+          take:100
+        }),
+        prisma.order.findMany({
+          where:{dentistId:dentist.id},
+          include:{
+            patient:{select:{id:true,name:true,phone:true,birthDate:true}},
+            examType:true,
+            unit:{include:{organization:true}},
+            appointment:{include:{availability:true}}
+          },
+          orderBy:{requestedAt:"desc"},
+          take:100
+        })
+      ]);
+      res.json({
+        dentist:{id:dentist.id,cro:dentist.cro,uf:dentist.uf,user:dentist.user},
+        patients,
+        orders
+      });
+    }catch(e){next(e);}
+  });
+
   app.post("/api/orders",auth,async(req,res,next)=>{
     try{
       if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
@@ -118,6 +152,74 @@ export function createApp(){
         user:{id:req.auth.sub,email:req.auth.email,role:req.auth.role},
         unit:membership.unit
       });
+    }catch(e){next(e);}
+  });
+
+  app.get("/api/unit/patients",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const q=String(req.query.q||"").trim();
+      const nameFilter=q?{contains:q,mode:"insensitive"}:undefined;
+
+      const [localPatients,networkOrders]=await Promise.all([
+        prisma.patient.findMany({
+          where:{createdByUnitId:membership.unitId,...(nameFilter?{name:nameFilter}:{})},
+          orderBy:{createdAt:"desc"},
+          take:100
+        }),
+        prisma.order.findMany({
+          where:{unitId:membership.unitId,...(nameFilter?{patient:{name:nameFilter}}:{})},
+          select:{
+            patient:true,
+            requestedAt:true,
+            dentist:{include:{user:{select:{name:true}}}}
+          },
+          orderBy:{requestedAt:"desc"},
+          take:150
+        })
+      ]);
+
+      const byId=new Map();
+      for(const p of localPatients){
+        byId.set(p.id,{...p,source:"RADIOLOGIA",sourceLabel:"Radiologia",dentist:null,lastNetworkAt:null});
+      }
+      for(const o of networkOrders){
+        const current=byId.get(o.patient.id);
+        const entry={
+          ...o.patient,
+          source:"ODONTOVIEW",
+          sourceLabel:"OdontoView",
+          dentist:{name:o.dentist.user.name,cro:o.dentist.cro,uf:o.dentist.uf},
+          lastNetworkAt:o.requestedAt
+        };
+        if(!current||current.source!=="ODONTOVIEW") byId.set(o.patient.id,entry);
+      }
+
+      const patients=[...byId.values()].sort((a,b)=>{
+        if(a.source!==b.source)return a.source==="ODONTOVIEW"?-1:1;
+        return a.name.localeCompare(b.name,"pt-BR");
+      });
+      res.json({unit:membership.unit,patients});
+    }catch(e){next(e);}
+  });
+
+  app.post("/api/unit/patients",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const name=String(req.body.name||"").trim();
+      if(!name) return res.status(400).json({error:"Nome do paciente é obrigatório."});
+      const patient=await prisma.patient.create({data:{
+        name,
+        birthDate:req.body.birthDate?new Date(req.body.birthDate):null,
+        phone:req.body.phone||null,
+        email:req.body.email||null,
+        createdByUnitId:membership.unitId
+      }});
+      res.status(201).json({...patient,source:"RADIOLOGIA",sourceLabel:"Radiologia"});
     }catch(e){next(e);}
   });
 
