@@ -96,6 +96,9 @@ export default function Viewer2(){
   const [pendingMeasure,setPendingMeasure]=useState(null);
   const [nervePoints,setNervePoints]=useState([]);
   const [foramina,setForamina]=useState([]);
+  const [exportCount,setExportCount]=useState(15);
+  const [exportBusy,setExportBusy]=useState(false);
+  const [exportMessage,setExportMessage]=useState("");
   const [transforms,setTransforms]=useState({
     axial:{zoom:1,panX:0,panY:0},coronal:{zoom:1,panX:0,panY:0},
     sagittal:{zoom:1,panX:0,panY:0},tangential:{zoom:1,panX:0,panY:0},panoramic:{zoom:1,panX:0,panY:0}
@@ -251,6 +254,78 @@ export default function Viewer2(){
     return {c,nx:-ty,ny:tx};
   }
 
+  function makeTangentialCanvas(index){
+    const m=metaRef.current,v=volumeRef.current;
+    if(!m||!v||!curve.length)throw new Error("Volume ainda não está pronto.");
+    const {w,h,d,spacingX,spacingY}=m,frame=tangentFrame(index);
+    if(!frame)throw new Error("Corte tangencial indisponível.");
+    const widthMm=40,stepMm=.20,pixelW=Math.round(widthMm/stepMm),pixelH=d;
+    const canvas=document.createElement("canvas");canvas.width=pixelW;canvas.height=pixelH;
+    const ctx=canvas.getContext("2d",{alpha:false}),img=ctx.createImageData(pixelW,pixelH);let p=0;
+    for(let z=d-1;z>=0;z--)for(let a=0;a<pixelW;a++){
+      const off=(a-pixelW/2)*stepMm,x=frame.c.x+frame.nx*off/spacingX,y=frame.c.y+frame.ny*off/spacingY;
+      const g=wl(bilinear(v,w,h,d,x,y,z),windowLevel.wc,windowLevel.ww);
+      img.data[p++]=g;img.data[p++]=g;img.data[p++]=g;img.data[p++]=255;
+    }
+    ctx.putImageData(img,0,0);
+
+    const nerve=nervePoints.find(n=>n.curveIndex===index);
+    if(nerve){
+      const x=pixelW/2+nerve.offsetMm/stepMm,y=d-1-nerve.z;
+      ctx.fillStyle="#ff2d2d";ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();
+    }
+    foramina.filter(n=>n.curveIndex===index).forEach(n=>{
+      const x=pixelW/2+n.offsetMm/stepMm,y=d-1-n.z;
+      ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);ctx.stroke();
+    });
+    return canvas;
+  }
+
+  async function exportTangentialPdf(){
+    if(exportBusy||!metaRef.current||!curve.length)return;
+    const remaining=Math.max(0,curve.length-curveIndex);
+    const count=Math.min(exportCount,remaining,40);
+    if(!count){setExportMessage("Não há cortes à frente deste ponto.");return}
+    setExportBusy(true);setExportMessage("");
+    try{
+      const {jsPDF}=await import("jspdf");
+      const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4",compress:true});
+      const pageW=210,pageH=297,margin=12,gap=6,headerH=24;
+      const cellW=(pageW-margin*2-gap)/2,cellH=(pageH-margin*2-headerH-gap)/2;
+      const patient=session?.order?.patient?.name||"Paciente";
+      const exam=session?.order?.examType?.name||session?.result?.series?.[meta.seriesIndex]?.description||"CBCT";
+      const totalPages=Math.ceil(count/4);
+
+      for(let i=0;i<count;i++){
+        if(i>0&&i%4===0)pdf.addPage();
+        const pageIndex=Math.floor(i/4)+1;
+        const slot=i%4,col=slot%2,row=Math.floor(slot/2);
+        if(slot===0){
+          pdf.setFont("helvetica","bold");pdf.setFontSize(14);pdf.text("OdontoView — Série de cortes tangenciais",margin,12);
+          pdf.setFont("helvetica","normal");pdf.setFontSize(9);
+          pdf.text(`${patient} • ${exam}`,margin,18);
+          pdf.text(`Página ${pageIndex}/${totalPages} • início no corte ${curveIndex+1}`,pageW-margin,18,{align:"right"});
+        }
+        const idx=curveIndex+i,canvas=makeTangentialCanvas(idx);
+        const img=canvas.toDataURL("image/jpeg",.88);
+        const x=margin+col*(cellW+gap),y=margin+headerH+row*(cellH+gap);
+        const physicalRatio=(meta.spacingZ*meta.d)/(40);
+        let drawW=cellW,drawH=drawW*physicalRatio;
+        if(drawH>cellH-12){drawH=cellH-12;drawW=drawH/physicalRatio}
+        const dx=x+(cellW-drawW)/2,dy=y+4;
+        pdf.setDrawColor(220);pdf.rect(x,y,cellW,cellH);
+        pdf.addImage(img,"JPEG",dx,dy,drawW,drawH,undefined,"FAST");
+        pdf.setFontSize(9);pdf.setTextColor(40);pdf.text(`Corte ${idx+1} • ${i+1}/${count}`,x+cellW/2,y+cellH-4,{align:"center"});
+      }
+      pdf.setProperties({title:`OdontoView - ${patient} - cortes tangenciais`,subject:exam,creator:"OdontoView"});
+      const safe=patient.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_|_$/g,"");
+      pdf.save(`OdontoView_${safe||"Paciente"}_${count}_cortes.pdf`);
+      setExportMessage(`PDF gerado com ${count} cortes a partir do corte ${curveIndex+1}.`);
+    }catch(e){
+      setExportMessage(e?.message||"Não foi possível gerar o PDF.");
+    }finally{setExportBusy(false)}
+  }
+
   function drawTangential(canvas){
     const m=metaRef.current,v=volumeRef.current;if(!m||!v||!curve.length)return;
     const {w,h,d,spacingX,spacingY,spacingZ}=m,frame=tangentFrame(curveIndex);if(!frame)return;
@@ -394,6 +469,17 @@ export default function Viewer2(){
           <p className="eyebrow">CURVA DA ARCADA</p><strong>Sempre ativa • ajuste manual</strong>
           <input type="range" min="0" max={Math.max(0,curve.length-1)} value={curveIndex} onChange={e=>setCurveIndex(Number(e.target.value))}/>
           <small>Corte tangencial {curveIndex+1}/{curve.length}. A curva inicial é uma proposta geométrica e deve ser conferida pelo profissional.</small>
+        </section>
+        <section className="viewer2-export">
+          <p className="eyebrow">SÉRIE DE CORTES</p>
+          <strong>Do ponto selecionado para frente</strong>
+          <p className="export-range">Início: corte {curveIndex+1} • até {Math.min(exportCount,Math.max(0,curve.length-curveIndex))} corte(s)</p>
+          <div className="cut-counts" role="group" aria-label="Quantidade de cortes">
+            {[10,15,20,30,40].map(n=><button type="button" key={n} className={exportCount===n?"active":""} onClick={()=>setExportCount(n)}>{n}</button>)}
+          </div>
+          <button type="button" className="viewer2-export-btn" disabled={exportBusy} onClick={exportTangentialPdf}>{exportBusy?"Gerando PDF…":"Gerar PDF"}</button>
+          <small>O PDF é montado com 4 cortes por página para leitura digital e impressão mais econômica. Máximo de 40 cortes, sem voltar ao início da arcada.</small>
+          {exportMessage&&<div className="export-message">{exportMessage}</div>}
         </section>
         <section>
           <p className="eyebrow red">NERVO / FORAME</p><strong>Traçado em vermelho</strong>
