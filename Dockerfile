@@ -6,9 +6,13 @@ COPY apps/web ./
 RUN npm run build
 
 # Reuse the already validated OdontoView Mobile ingest engine.
-RUN mkdir -p /web/dist/legacy-ingest/js /web/dist/legacy-ingest/vendor/libarchive
+RUN mkdir -p /web/dist/legacy-ingest/js /web/dist/legacy-ingest/vendor/libarchive /web/dist/viewer-libs
 COPY js/archive-import.js js/archive-worker.js js/archive-core.js js/dicom-metadata.js /web/dist/legacy-ingest/js/
 COPY vendor/libarchive/ /web/dist/legacy-ingest/vendor/libarchive/
+
+# Serve the browser bundles directly. Importing the WADO loader through Vite/Webpack
+# triggers automatic publicPath detection failures on Safari.
+RUN cp /web/node_modules/cornerstone-core/dist/cornerstone.min.js /web/dist/viewer-libs/cornerstone.min.js  && cp /web/node_modules/dicom-parser/dist/dicomParser.min.js /web/dist/viewer-libs/dicomParser.min.js  && cp /web/node_modules/cornerstone-wado-image-loader/dist/cornerstoneWADOImageLoaderNoWebWorkers.bundle.min.js /web/dist/viewer-libs/cornerstoneWADOImageLoaderNoWebWorkers.bundle.min.js
 
 FROM node:20-bookworm-slim
 WORKDIR /app
