@@ -226,3 +226,16 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .viewer3d-mini-pano{min-height:360px}
   .viewer3d-pano-canvas{min-height:300px}
 }
+
+.viewer3d-stage{inset:0 0 150px 0}
+.viewer3d-presets{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;margin-bottom:7px}
+.viewer3d-presets button{border:1px solid #314559;background:#111a24;color:#a7b8c9;border-radius:8px;min-height:30px;padding:5px 6px;font:inherit;font-size:9px;font-weight:850}
+.viewer3d-presets button.active{background:linear-gradient(135deg,#0b6fae,#0c8fc5);border-color:#26b8e8;color:#fff;box-shadow:0 0 0 1px rgba(49,215,210,.12),0 6px 18px rgba(0,127,196,.15)}
+.viewer3d-panel{background:
+  radial-gradient(circle at 50% 28%,rgba(78,152,190,.20),transparent 44%),
+  linear-gradient(180deg,#111b24,#0b1218 68%,#080d12)}
+@media(max-width:760px){
+  .viewer3d-stage{inset:0 0 180px 0}
+  .viewer3d-presets{grid-template-columns:repeat(3,1fr)}
+  .viewer3d-presets button{min-height:34px;font-size:10px}
+}
