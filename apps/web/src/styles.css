@@ -385,3 +385,190 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .viewer2-pane.is-expanded.visual3d-composite .viewer3d-mini-pano{min-height:155px!important;max-height:155px!important}
   .viewer3d-mini-pano.is-expanded{inset:4px!important}
 }
+
+
+/* Revisão do modo maximizado — painel principal + cortes auxiliares */
+.viewer2-grid.has-expanded{
+  position:fixed!important;
+  inset:6px!important;
+  z-index:170!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) 286px!important;
+  grid-template-rows:repeat(4,minmax(0,1fr))!important;
+  gap:6px!important;
+  padding:0!important;
+  background:#05090d!important;
+  overflow:hidden!important;
+}
+.viewer2-grid.has-expanded .viewer2-side{display:none!important}
+.viewer2-grid.has-expanded .viewer2-pane{
+  position:relative!important;
+  inset:auto!important;
+  width:auto!important;
+  height:auto!important;
+  min-height:0!important;
+  max-height:none!important;
+  margin:0!important;
+  box-shadow:none!important;
+  border-radius:10px!important;
+}
+.viewer2-grid.has-expanded .viewer2-pane.is-expanded{
+  grid-column:1!important;
+  grid-row:1 / -1!important;
+  z-index:2!important;
+  border-color:#31506b!important;
+  box-shadow:0 20px 70px rgba(0,0,0,.5)!important;
+}
+.viewer2-grid.has-expanded .viewer2-pane:not(.is-expanded){
+  grid-column:2!important;
+  min-width:0!important;
+  min-height:0!important;
+}
+.viewer2-grid.has-expanded .viewer2-pane.axial:not(.is-expanded){grid-row:1!important}
+.viewer2-grid.has-expanded .viewer2-pane.coronal:not(.is-expanded){grid-row:2!important}
+.viewer2-grid.has-expanded .viewer2-pane.sagittal:not(.is-expanded){grid-row:3!important}
+.viewer2-grid.has-expanded .viewer2-pane.tangential:not(.is-expanded){grid-row:4!important}
+
+/* quando um corte 2D é o principal, o 3D ocupa a vaga daquele corte no trilho */
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded){
+  grid-column:2!important;
+  min-width:0!important;
+  min-height:0!important;
+}
+.viewer2-grid.expanded-axial .viewer2-pane.panoramic:not(.is-expanded){grid-row:1!important}
+.viewer2-grid.expanded-coronal .viewer2-pane.panoramic:not(.is-expanded){grid-row:2!important}
+.viewer2-grid.expanded-sagittal .viewer2-pane.panoramic:not(.is-expanded){grid-row:3!important}
+.viewer2-grid.expanded-tangential .viewer2-pane.panoramic:not(.is-expanded){grid-row:4!important}
+
+.viewer2-grid.has-expanded .viewer2-pane:not(.is-expanded) .viewer2-slice-control{
+  display:none!important;
+}
+.viewer2-grid.has-expanded .viewer2-pane:not(.is-expanded) .viewer2-pane-head{
+  height:30px!important;
+  padding:0 7px!important;
+}
+.viewer2-grid.has-expanded .viewer2-pane:not(.is-expanded) .viewer2-pane-head strong{
+  font-size:10px!important;
+}
+.viewer2-grid.has-expanded .viewer2-pane:not(.is-expanded) .viewer2-pane-actions button:not(.viewer2-expand){
+  display:none!important;
+}
+.viewer2-grid.has-expanded .viewer2-pane:not(.is-expanded) .viewer2-expand{
+  min-width:28px!important;
+  height:24px!important;
+  font-size:9px!important;
+}
+.viewer2-grid.has-expanded .viewer2-pane:not(.is-expanded) .viewer2-canvas-wrap{
+  height:calc(100% - 30px)!important;
+  min-height:0!important;
+}
+
+/* thumbnail do 3D quando um corte 2D está maximizado */
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-mini-pano,
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-controls,
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-status,
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-engine-badge{
+  display:none!important;
+}
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-split,
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-primary,
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-panel{
+  height:100%!important;
+  min-height:0!important;
+  display:block!important;
+}
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-stage{
+  inset:0!important;
+  min-height:0!important;
+}
+
+/* 3D maximizado: grande de verdade; controles viram dock lateral interno */
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-split{
+  height:calc(100% - 44px)!important;
+  min-height:0!important;
+  display:block!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-primary{
+  height:100%!important;
+  min-height:0!important;
+  border:0!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-panel{
+  height:100%!important;
+  min-height:0!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-stage{
+  inset:0 286px 0 0!important;
+  min-height:0!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-controls{
+  top:0!important;
+  right:0!important;
+  bottom:0!important;
+  left:auto!important;
+  width:278px!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  border-top:0!important;
+  border-left:1px solid #1c2c3b!important;
+  background:linear-gradient(180deg,rgba(7,12,18,.96),rgba(7,12,18,.99))!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-mini-pano{
+  display:none!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-presets{
+  grid-template-columns:1fr 1fr!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-fusion-tools{
+  grid-template-columns:repeat(2,1fr)!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-fusion-tools>span,
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-fusion-tools label{
+  grid-column:1/-1!important;
+}
+
+/* corte 2D principal usa toda a área útil */
+.viewer2-grid.has-expanded .viewer2-pane.is-expanded:not(.visual3d-composite) .viewer2-pane-head{
+  height:42px!important;
+}
+.viewer2-grid.has-expanded .viewer2-pane.is-expanded:not(.visual3d-composite) .viewer2-slice-control{
+  min-height:50px!important;
+}
+.viewer2-grid.has-expanded .viewer2-pane.is-expanded:not(.visual3d-composite) .viewer2-canvas-wrap{
+  height:calc(100% - 92px)!important;
+  min-height:0!important;
+}
+
+@media(max-width:980px){
+  .viewer2-grid.has-expanded{
+    grid-template-columns:minmax(0,1fr) 220px!important;
+  }
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-stage{
+    inset:0 232px 0 0!important;
+  }
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-controls{
+    width:224px!important;
+  }
+}
+@media(max-width:760px){
+  .viewer2-grid.has-expanded{
+    inset:3px!important;
+    grid-template-columns:1fr!important;
+    grid-template-rows:1fr!important;
+  }
+  .viewer2-grid.has-expanded .viewer2-pane:not(.is-expanded){display:none!important}
+  .viewer2-grid.has-expanded .viewer2-pane.is-expanded{grid-column:1!important;grid-row:1!important}
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-stage{
+    inset:0 0 190px 0!important;
+  }
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-controls{
+    top:auto!important;
+    left:0!important;
+    right:0!important;
+    bottom:0!important;
+    width:auto!important;
+    height:185px!important;
+    border-left:0!important;
+    border-top:1px solid #1c2c3b!important;
+  }
+}
