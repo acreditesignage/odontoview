@@ -166,14 +166,28 @@ function IngestResult({state,onClear,onOpenViewer}){
 
 function Radiology(){
  const nav=useNavigate();
- const [date,setDate]=useState(localDateValue()),[data,setData]=useState(null),[err,setErr]=useState(""),[busy,setBusy]=useState(""),[ingest,setIngest]=useState(null);
+ const [tab,setTab]=useState("agenda"),[date,setDate]=useState(localDateValue()),[data,setData]=useState(null),[patients,setPatients]=useState(null),[patientSearch,setPatientSearch]=useState(""),[err,setErr]=useState(""),[busy,setBusy]=useState(""),[ingest,setIngest]=useState(null);
+ const [patientForm,setPatientForm]=useState({name:"",birthDate:"",phone:"",email:""}),[patientSaving,setPatientSaving]=useState(false);
  const fileInput=useRef(null),orderForFile=useRef(null);
  const range=useMemo(()=>dayRange(date),[date]);
  async function load(){
    setErr("");
    try{setData(await api("/api/unit/agenda?from="+encodeURIComponent(range.from)+"&to="+encodeURIComponent(range.to)))}catch(e){setErr(e.message)}
  }
+ async function loadPatients(q=patientSearch){
+   setErr("");
+   try{setPatients(await api("/api/unit/patients"+(q?"?q="+encodeURIComponent(q):"")))}catch(e){setErr(e.message)}
+ }
  useEffect(()=>{load()},[date]);
+ useEffect(()=>{if(tab==="patients")loadPatients()},[tab]);
+ async function savePatient(e){
+   e.preventDefault();setPatientSaving(true);setErr("");
+   try{
+     await api("/api/unit/patients",{method:"POST",body:JSON.stringify(patientForm)});
+     setPatientForm({name:"",birthDate:"",phone:"",email:""});
+     await loadPatients("");
+   }catch(e){setErr(e.message)}finally{setPatientSaving(false)}
+ }
  async function advance(order){
    const next=order.status==="AGENDADO"?"PACIENTE_CHEGOU":order.status==="PACIENTE_CHEGOU"?"EXAME_REALIZADO":null;
    if(!next)return;
@@ -201,15 +215,19 @@ function Radiology(){
  return <main className="page radiology"><section className="wide">
    <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
    <header className="topbar"><BrandLockup role="RADIOLOGIA"/><button className="ghost" onClick={logout}>Sair</button></header>
-   <div className="hero-row"><div><p className="eyebrow">AQUISIÇÃO + ENVIO</p><h1>Agenda da unidade.</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:"Carregando unidade…"}</p></div><div className="date-actions"><input aria-label="Data da agenda" type="date" value={date} onChange={e=>setDate(e.target.value)}/><button className="secondary compact" onClick={tomorrow}>Amanhã</button></div></div>
+   <div className="hero-row"><div><p className="eyebrow">AQUISIÇÃO + ENVIO</p><h1>{tab==="agenda"?"Agenda da unidade.":"Pacientes da unidade."}</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:patients?.unit?patients.unit.organization.name+" • "+patients.unit.name:"Carregando unidade…"}</p></div>{tab==="agenda"?<div className="date-actions"><input aria-label="Data da agenda" type="date" value={date} onChange={e=>setDate(e.target.value)}/><button className="secondary compact" onClick={tomorrow}>Amanhã</button></div>:<button className="primary compact" onClick={()=>document.getElementById("radio-patient-name")?.focus()}>+ Novo paciente</button>}</div>
+   <nav className="workspace-tabs radiology-tabs">
+     <button className={tab==="agenda"?"active":""} onClick={()=>setTab("agenda")}>Agenda</button>
+     <button className={tab==="patients"?"active":""} onClick={()=>setTab("patients")}>Pacientes</button>
+   </nav>
    {err&&<div className="error">{err}</div>}
-   {!data?<section className="card">Carregando agenda…</section>:data.orders.length===0?<section className="card empty"><strong>Nenhum exame nesta data.</strong><p>Escolha outra data para visualizar os agendamentos da unidade.</p></section>:
+   {tab==="agenda"&&(!data?<section className="card">Carregando agenda…</section>:data.orders.length===0?<section className="card empty"><strong>Nenhum exame nesta data.</strong><p>Escolha outra data para visualizar os agendamentos da unidade.</p></section>:
    <div className="agenda stack">{data.orders.map(o=>{
      const st=STATUS[o.status]||{label:o.status,tone:""};
      const at=new Date(o.appointment.availability.startAt);
-     return <article className="card appointment-wrap" key={o.id}>
+     return <article className="card appointment-wrap network-patient" key={o.id}>
        <div className="appointment">
-         <div className="time"><strong>{at.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</strong><span className={"badge "+st.tone}>{st.label}</span></div>
+         <div className="time"><strong>{at.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</strong><span className={"badge "+st.tone}>{st.label}</span><span className="source-badge odontoview">OdontoView</span></div>
          <div className="appointment-main"><p className="eyebrow">{o.examType.name}</p><h2>{o.patient.name}</h2><p className="muted">Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</p>{o.patient.phone&&<p className="muted">Telefone: {o.patient.phone}</p>}</div>
          <div className="appointment-actions">
            {o.status==="AGENDADO"&&<button className="primary" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Confirmar chegada"}</button>}
@@ -220,10 +238,27 @@ function Radiology(){
        </div>
        {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{setViewerSession({result:ingest.result,order:o});nav("/viewer2")}}/>}
      </article>
-   })}</div>}
+   })}</div>)}
+   {tab==="patients"&&<div className="radiology-patient-layout">
+     <section className="card patient-create-card">
+       <p className="eyebrow">CADASTRO LOCAL</p><h2>Novo paciente</h2><p className="muted">Cadastre pacientes atendidos diretamente pela radiologia. Eles ficam identificados como “Radiologia”.</p>
+       <form className="stack" onSubmit={savePatient}>
+         <input id="radio-patient-name" required placeholder="Nome completo" value={patientForm.name} onChange={e=>setPatientForm({...patientForm,name:e.target.value})}/>
+         <div className="two"><input type="date" value={patientForm.birthDate} onChange={e=>setPatientForm({...patientForm,birthDate:e.target.value})}/><input placeholder="Telefone / WhatsApp" value={patientForm.phone} onChange={e=>setPatientForm({...patientForm,phone:e.target.value})}/></div>
+         <input type="email" placeholder="Email (opcional)" value={patientForm.email} onChange={e=>setPatientForm({...patientForm,email:e.target.value})}/>
+         <button className="primary" disabled={patientSaving}>{patientSaving?"Salvando…":"Cadastrar paciente"}</button>
+       </form>
+     </section>
+     <section className="card patient-list-card">
+       <div className="section-title"><div><p className="eyebrow">BASE DA UNIDADE</p><h2>Pacientes</h2></div><form className="patient-search" onSubmit={e=>{e.preventDefault();loadPatients(patientSearch)}}><input placeholder="Buscar por nome" value={patientSearch} onChange={e=>setPatientSearch(e.target.value)}/><button className="secondary compact">Buscar</button></form></div>
+       {!patients?<div className="empty">Carregando pacientes…</div>:patients.patients.length===0?<div className="empty"><strong>Nenhum paciente encontrado.</strong></div>:
+       <div className="patient-registry">{patients.patients.map(p=><div className={"patient-registry-row "+(p.source==="ODONTOVIEW"?"is-network":"is-local")} key={p.id}>
+         <div className="patient-registry-main"><div className="patient-name-line"><strong>{p.name}</strong><span className={"source-badge "+(p.source==="ODONTOVIEW"?"odontoview":"radiology")}>{p.sourceLabel}</span></div><small>{p.phone||"Sem telefone"}{p.birthDate?" • "+new Date(p.birthDate).toLocaleDateString("pt-BR"):""}</small>{p.dentist&&<small>Solicitante: {p.dentist.name} • CRO {p.dentist.cro}/{p.dentist.uf}</small>}</div>
+       </div>)}</div>}
+     </section>
+   </div>}
  </section></main>
 }
-
 function Patient(){
  const [q]=useSearchParams(),nav=useNavigate(),token=q.get("token"),[d,setD]=useState(null),[err,setErr]=useState("");
  useEffect(()=>{if(token)api("/api/public/orders/access/"+token).then(setD).catch(e=>setErr(e.message));else setErr("Link incompleto.")},[token]);
