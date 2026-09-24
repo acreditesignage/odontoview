@@ -1426,3 +1426,38 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 @keyframes viewerBootReducedCenter{from{opacity:0}to{opacity:1}}
 @keyframes viewerBootReducedFade{from{opacity:0}to{opacity:1}}
 @keyframes viewerLoadingReduced{0%,100%{opacity:.25;transform:scaleX(.55)}50%{opacity:1;transform:scaleX(1)}}
+
+
+/* Radiology — confirm exam context before opening native file picker */
+.exam-upload-backdrop{
+  position:fixed;inset:0;z-index:5000;
+  display:grid;place-items:center;padding:22px;
+  background:rgba(5,20,38,.48);
+  backdrop-filter:blur(8px);
+}
+.exam-upload-dialog{
+  width:min(100%,620px);
+  background:#fff;border:1px solid #dce7f1;border-radius:24px;
+  padding:24px;box-shadow:0 30px 90px rgba(5,30,58,.24);
+}
+.exam-upload-dialog-head{
+  display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+  padding-bottom:18px;border-bottom:1px solid #e6edf4;
+}
+.exam-upload-dialog-head h2{font-size:24px;margin:.15em 0 0}
+.exam-upload-summary{display:grid;gap:12px;padding:18px 0}
+.exam-upload-summary label{
+  display:grid;gap:5px;padding:14px 15px;border:1px solid #e0e8f0;border-radius:14px;background:#f8fbfe;
+}
+.exam-upload-summary label>span{font-size:10px;font-weight:850;letter-spacing:.12em;text-transform:uppercase;color:#718396}
+.exam-upload-summary strong{font-size:16px;color:#102a43;overflow-wrap:anywhere}
+.exam-upload-summary small{font-size:11px;color:#6e8195;line-height:1.45}
+.exam-upload-dialog-actions{display:flex;justify-content:flex-end;gap:10px;padding-top:4px}
+@media(max-width:620px){
+  .exam-upload-backdrop{padding:12px;align-items:end}
+  .exam-upload-dialog{border-radius:22px 22px 14px 14px;padding:18px}
+  .exam-upload-dialog-head{display:grid}
+  .exam-upload-dialog-head>button{position:absolute;right:28px}
+  .exam-upload-dialog-actions{display:grid;grid-template-columns:1fr}
+  .exam-upload-dialog-actions button{width:100%}
+}

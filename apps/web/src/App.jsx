@@ -397,7 +397,7 @@ function Radiology(){
  const [radiologyExamTypes,setRadiologyExamTypes]=useState([]),[importPatientId,setImportPatientId]=useState(""),[importExamType,setImportExamType]=useState("");
  const [patientForm,setPatientForm]=useState({name:"",birthDate:"",phone:"",email:""}),[patientSaving,setPatientSaving]=useState(false);
  const [selectedPatient,setSelectedPatient]=useState(null),[patientDetail,setPatientDetail]=useState(null),[patientDetailBusy,setPatientDetailBusy]=useState(false);
- const [patientIngest,setPatientIngest]=useState(null),[patientTarget,setPatientTarget]=useState(null),[patientExamType,setPatientExamType]=useState("");
+ const [patientIngest,setPatientIngest]=useState(null),[patientTarget,setPatientTarget]=useState(null),[patientExamType,setPatientExamType]=useState(""),[examUploadConfirm,setExamUploadConfirm]=useState(null);
  const [openingUnitStudy,setOpeningUnitStudy]=useState(""),[shareInvite,setShareInvite]=useState(null);
  const fileInput=useRef(null),orderForFile=useRef(null),patientFileInput=useRef(null);
  const range=useMemo(()=>dayRange(date),[date]);
@@ -411,7 +411,7 @@ function Radiology(){
    try{setPatients(await api("/api/unit/patients"+(q?"?q="+encodeURIComponent(q):"")))}catch(e){setErr(e.message)}
  }
  async function openPatient(p){
-   setSelectedPatient(p);setPatientDetail(null);setPatientIngest(null);setShareInvite(null);setPatientDetailBusy(true);setErr("");
+   setSelectedPatient(p);setPatientDetail(null);setPatientIngest(null);setExamUploadConfirm(null);setShareInvite(null);setPatientDetailBusy(true);setErr("");
    try{
      const detail=await api("/api/unit/patients/"+p.id);
      setPatientDetail(detail);
@@ -502,9 +502,25 @@ function Radiology(){
    }
  }
 
- function choosePatientExam(target){
-   setPatientTarget(target);setPatientIngest(null);
+ function beginPatientExamFileSelection(target){
+   setPatientTarget(target);setPatientIngest(null);setExamUploadConfirm(null);
    if(patientFileInput.current){patientFileInput.current.value="";patientFileInput.current.click()}
+ }
+ function confirmOrderExamUpload(order){
+   setExamUploadConfirm({
+     target:{kind:"order",id:order.id,examTypeId:order.examType.id},
+     patientName:patientDetail?.patient?.name||selectedPatient?.name||"Paciente",
+     examTypeName:order.examType.name,
+     locked:true
+   });
+ }
+ function choosePatientExam(target){
+   setExamUploadConfirm({
+     target,
+     patientName:patientDetail?.patient?.name||selectedPatient?.name||"Paciente",
+     examTypeName:patientDetail?.examTypes?.find(t=>t.id===(target.examTypeId||patientExamType))?.name||"Exame DICOM",
+     locked:target.kind==="order"
+   });
  }
  async function handlePatientExamFiles(event){
    const files=Array.from(event.target.files||[]);
@@ -591,6 +607,19 @@ function Radiology(){
  return <main className="page radiology"><section className="wide">
    <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
    <input className="hidden-file" ref={patientFileInput} type="file" multiple onChange={handlePatientExamFiles}/>
+   {examUploadConfirm&&<div className="exam-upload-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setExamUploadConfirm(null)}}>
+     <section className="exam-upload-dialog" role="dialog" aria-modal="true" aria-labelledby="exam-upload-title">
+       <div className="exam-upload-dialog-head"><div><p className="eyebrow">ADICIONAR EXAME</p><h2 id="exam-upload-title">Confirme antes de selecionar o arquivo.</h2></div><button type="button" className="ghost compact" onClick={()=>setExamUploadConfirm(null)}>Fechar</button></div>
+       <div className="exam-upload-summary">
+         <label><span>Paciente</span><strong>{examUploadConfirm.patientName}</strong></label>
+         <label><span>Tipo de exame</span><strong>{examUploadConfirm.examTypeName}</strong><small>Este tipo vem do pedido e será mantido no vínculo com o dentista.</small></label>
+       </div>
+       <div className="exam-upload-dialog-actions">
+         <button type="button" className="ghost" onClick={()=>setExamUploadConfirm(null)}>Cancelar</button>
+         <button type="button" className="primary" onClick={()=>beginPatientExamFileSelection(examUploadConfirm.target)}>Selecionar ZIP / DICOM</button>
+       </div>
+     </section>
+   </div>}
    <header className="topbar"><BrandLockup role="RADIOLOGIA"/><button className="ghost" onClick={logout}>Sair</button></header>
    <div className="hero-row radiology-hero"><div><p className="eyebrow">OPERAÇÃO DA RADIOLOGIA</p><h1>{tab==="home"?"Visão geral da unidade.":tab==="agenda"?"Agenda da unidade.":tab==="patients"?"Pacientes da unidade.":tab==="exams"?"Exames em andamento.":"Importar DICOM."}</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:patients?.unit?patients.unit.organization.name+" • "+patients.unit.name:"Carregando unidade…"}</p></div><div className="radiology-hero-actions"><button className="primary" onClick={startRadiologyPatient}>＋ Novo paciente</button><button className="secondary" onClick={startLocalImport}>⬆ Importar DICOM</button></div></div>
    <nav className="workspace-tabs radiology-tabs">
@@ -676,7 +705,7 @@ function Radiology(){
        <div className="radiology-import-grid">
          <label><span>Paciente</span><select value={importPatientId} onChange={e=>setImportPatientId(e.target.value)}><option value="">Selecione o paciente</option>{localImportPatients.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
          <label><span>Tipo de exame</span><select value={importExamType} onChange={e=>{setImportExamType(e.target.value);setPatientExamType(e.target.value)}}>{radiologyExamTypes.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-         <button className="primary" disabled={!importPatientId} onClick={()=>{setPatientExamType(importExamType);choosePatientExam({kind:"patient",id:importPatientId})}}>Selecionar ZIP / DICOM</button>
+         <button className="primary" disabled={!importPatientId} onClick={()=>{setPatientExamType(importExamType);beginPatientExamFileSelection({kind:"patient",id:importPatientId,examTypeId:importExamType})}}>Selecionar ZIP / DICOM</button>
        </div>
        {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{setViewerSession({result:patientIngest.result,order:{patient:selectedImportPatient,examType:selectedImportType||{name:"Exame DICOM"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab=import"))}} onSend={sendPatientExam} sendLabel="Salvar exame na radiologia"/>}
      </>}
@@ -700,7 +729,7 @@ function Radiology(){
        </button>)}</div>}
      </section>
      {selectedPatient&&<section className="card patient-detail-card">
-       <div className="patient-detail-head"><div><p className="eyebrow">FICHA DO PACIENTE</p><h2>{selectedPatient.name}</h2></div><div className="patient-detail-head-actions"><button className="secondary compact" onClick={createRadiologyDentistInvite}>Compartilhar com dentista</button><button className="ghost compact" onClick={()=>{setSelectedPatient(null);setPatientDetail(null);setPatientIngest(null);setShareInvite(null)}}>Fechar</button></div></div>
+       <div className="patient-detail-head"><div><p className="eyebrow">FICHA DO PACIENTE</p><h2>{selectedPatient.name}</h2></div><div className="patient-detail-head-actions"><button className="secondary compact" onClick={createRadiologyDentistInvite}>Compartilhar com dentista</button><button className="ghost compact" onClick={()=>{setSelectedPatient(null);setPatientDetail(null);setPatientIngest(null);setExamUploadConfirm(null);setShareInvite(null)}}>Fechar</button></div></div>
        {patientDetailBusy||!patientDetail?<div className="empty">Abrindo ficha…</div>:<>
          <div className="patient-detail-meta">
            <span className={"source-badge "+(patientDetail.source==="ODONTOVIEW"?"odontoview":"radiology")}>{patientDetail.source==="ODONTOVIEW"?"OdontoView":"Radiologia"}</span>
@@ -717,7 +746,7 @@ function Radiology(){
                {o.study?.status==="READY"?<button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy({...o.study,examType:o.examType})}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":"Abrir exame"}</button>:
                o.status==="AGENDADO"?<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Confirmar chegada"}</button>:
                o.status==="PACIENTE_CHEGOU"?<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Marcar exame realizado"}</button>:
-               o.status==="EXAME_REALIZADO"?<button className="primary compact" onClick={()=>choosePatientExam({kind:"order",id:o.id,examTypeId:o.examType.id})}>＋ Adicionar exame</button>:
+               o.status==="EXAME_REALIZADO"?<button className="primary compact" onClick={()=>confirmOrderExamUpload(o)}>＋ Adicionar exame</button>:
                o.status==="IMAGENS_RECEBIDAS"?<span className="done">✓ Imagens recebidas</span>:
                <span className="muted">{STATUS[o.status]?.label||o.status}</span>}
              </div>
@@ -729,7 +758,7 @@ function Radiology(){
          </section>
          {patientDetail.source==="RADIOLOGIA"&&<section className="patient-detail-section add-local-exam">
            <div><p className="eyebrow">NOVO EXAME LOCAL</p><h3>Adicionar DICOM ao paciente</h3></div>
-           <div className="patient-local-exam-actions"><select value={patientExamType} onChange={e=>setPatientExamType(e.target.value)}>{patientDetail.examTypes.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button className="primary" onClick={()=>choosePatientExam({kind:"patient",id:patientDetail.patient.id})}>Selecionar exame</button></div>
+           <div className="patient-local-exam-actions"><select value={patientExamType} onChange={e=>setPatientExamType(e.target.value)}>{patientDetail.examTypes.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button className="primary" onClick={()=>beginPatientExamFileSelection({kind:"patient",id:patientDetail.patient.id,examTypeId:patientExamType})}>Selecionar ZIP / DICOM</button></div>
          </section>}
          {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{setViewerSession({result:patientIngest.result,order:{patient:patientDetail.patient,examType:patientDetail.examTypes.find(t=>t.id===(patientTarget?.examTypeId||patientExamType))||{name:"Exame DICOM"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab="+tab))}} onSend={sendPatientExam}/>}
        </>}
