@@ -114,6 +114,7 @@ export default function Viewer2(){
   const dragRef=useRef(null);
   const curveDragRef=useRef(null);
   const navDragRef=useRef(null);
+  const implantDragRef=useRef(null);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [meta,setMeta]=useState(null);
@@ -320,24 +321,60 @@ export default function Viewer2(){
       const normalCenter=center[normalKey],normalAxis=axis[normalKey];
       const min=normalCenter-Math.abs(normalAxis)*half-radius,max=normalCenter+Math.abs(normalAxis)*half+radius;
       if(fixedWorld<min||fixedWorld>max)return;
-      const p0={x:center.x-axis.x*half,y:center.y-axis.y*half,z:center.z-axis.z*half};
-      const p1={x:center.x+axis.x*half,y:center.y+axis.y*half,z:center.z+axis.z*half};
-      const a=screen(project(p0)),b=screen(project(p1));
+      const tipWorld={x:center.x-axis.x*half,y:center.y-axis.y*half,z:center.z-axis.z*half};
+      const topWorld={x:center.x+axis.x*half,y:center.y+axis.y*half,z:center.z+axis.z*half};
+      const tip=screen(project(tipWorld)),top=screen(project(topWorld));
       const active=implant.id===activeImplantId;
+      const bodyColor=active?"rgba(28,240,215,.28)":"rgba(247,185,85,.22)";
+      const lineColor=active?"rgba(56,255,229,.96)":"rgba(247,185,85,.88)";
+      const coreColor=active?"#e8fffc":"#fff0c9";
+      const dx=top.x-tip.x,dy=top.y-tip.y,len=Math.hypot(dx,dy);
+      const outerR=Math.max(2.5,radius*pxPerMm);
       ctx.save();
-      ctx.lineCap="round";ctx.lineJoin="round";
-      ctx.strokeStyle=active?"rgba(28,240,215,.92)":"rgba(247,185,85,.78)";
-      ctx.lineWidth=Math.max(2,implant.diameter*pxPerMm);
-      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
-      ctx.strokeStyle=active?"#dffffa":"#fff0c9";ctx.lineWidth=Math.max(1,1.15*map.dpr);
-      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+      ctx.lineJoin="round";ctx.lineCap="round";
+      if(len<6*map.dpr){
+        const c=screen(project(center));
+        ctx.fillStyle=bodyColor;ctx.strokeStyle=lineColor;ctx.lineWidth=Math.max(1.4,map.dpr);
+        ctx.beginPath();ctx.arc(c.x,c.y,outerR,0,Math.PI*2);ctx.fill();ctx.stroke();
+        ctx.strokeStyle=coreColor;ctx.lineWidth=Math.max(1,map.dpr*.85);
+        ctx.beginPath();ctx.arc(c.x,c.y,Math.max(1.4,outerR*.58),0,Math.PI*2);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(c.x-outerR*.7,c.y);ctx.lineTo(c.x+outerR*.7,c.y);ctx.moveTo(c.x,c.y-outerR*.7);ctx.lineTo(c.x,c.y+outerR*.7);ctx.stroke();
+      }else{
+        const ux=dx/len,uy=dy/len,nx=-uy,ny=ux;
+        const topR=outerR,tipR=Math.max(1.8,outerR*.34);
+        const poly=[
+          [top.x+nx*topR,top.y+ny*topR],
+          [top.x-nx*topR,top.y-ny*topR],
+          [tip.x-nx*tipR,tip.y-ny*tipR],
+          [tip.x+nx*tipR,tip.y+ny*tipR]
+        ];
+        ctx.fillStyle=bodyColor;ctx.strokeStyle=lineColor;ctx.lineWidth=Math.max(1.5,map.dpr);
+        ctx.beginPath();poly.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.strokeStyle=coreColor;ctx.lineWidth=Math.max(1,map.dpr*.85);
+        ctx.beginPath();ctx.moveTo(tip.x,tip.y);ctx.lineTo(top.x,top.y);ctx.stroke();
+        const threadCount=Math.max(5,Math.min(14,Math.round(implant.length/.8)));
+        ctx.strokeStyle=active?"rgba(210,255,248,.88)":"rgba(255,240,201,.76)";
+        ctx.lineWidth=Math.max(.8,map.dpr*.7);
+        for(let i=1;i<threadCount;i++){
+          const t=i/threadCount;
+          const cx=tip.x+dx*t,cy=tip.y+dy*t;
+          const rr=tipR+(topR-tipR)*Math.min(1,t*1.35);
+          const skew=((i%2)?1:-1)*Math.min(2.4*map.dpr,rr*.28);
+          ctx.beginPath();
+          ctx.moveTo(cx-nx*rr+ux*skew,cy-ny*rr+uy*skew);
+          ctx.lineTo(cx+nx*rr-ux*skew,cy+ny*rr-uy*skew);
+          ctx.stroke();
+        }
+        ctx.strokeStyle=lineColor;ctx.lineWidth=Math.max(1.3,map.dpr);
+        ctx.beginPath();ctx.moveTo(top.x-nx*topR,top.y-ny*topR);ctx.lineTo(top.x+nx*topR,top.y+ny*topR);ctx.stroke();
+      }
       if(active){
-        const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
-        ctx.fillStyle="rgba(3,14,20,.82)";ctx.font=`${10*map.dpr}px -apple-system,sans-serif`;
+        const mid={x:(tip.x+top.x)/2,y:(tip.y+top.y)/2};
+        ctx.fillStyle="rgba(3,14,20,.86)";ctx.font=`${10*map.dpr}px -apple-system,sans-serif`;
         const label=`${implant.model} • Ø${implant.diameter}×${implant.length}`;
         const tw=ctx.measureText(label).width;
-        ctx.fillRect(mid.x-tw/2-5*map.dpr,mid.y-19*map.dpr,tw+10*map.dpr,15*map.dpr);
-        ctx.fillStyle="#eafffb";ctx.fillText(label,mid.x-tw/2,mid.y-17*map.dpr);
+        ctx.fillRect(mid.x-tw/2-5*map.dpr,mid.y-21*map.dpr,tw+10*map.dpr,16*map.dpr);
+        ctx.fillStyle="#eafffb";ctx.fillText(label,mid.x-tw/2,mid.y-19*map.dpr);
       }
       ctx.restore();
     });
@@ -902,6 +939,35 @@ export default function Viewer2(){
     }
   }
 
+  function isActiveImplantHit(plane,pt){
+    const implant=implants.find(item=>item.id===activeImplantId),m=metaRef.current;
+    if(!implant||!m||!["axial","coronal","sagittal"].includes(plane))return false;
+    let da=0,db=0;
+    if(plane==="axial"){
+      da=(pt.a-implant.x/m.spacingX)*m.spacingX;
+      db=(pt.b-implant.y/m.spacingY)*m.spacingY;
+    }else if(plane==="coronal"){
+      da=(pt.a-implant.x/m.spacingX)*m.spacingX;
+      db=((m.d-1-pt.b)-implant.z/m.spacingZ)*m.spacingZ;
+    }else{
+      da=(pt.a-implant.y/m.spacingY)*m.spacingY;
+      db=((m.d-1-pt.b)-implant.z/m.spacingZ)*m.spacingZ;
+    }
+    return Math.hypot(da,db)<=Math.max(3.2,implant.diameter*1.25);
+  }
+
+  function moveActiveImplantToPoint(plane,pt){
+    const m=metaRef.current,id=activeImplantId;
+    if(!m||!id)return;
+    setImplants(items=>items.map(item=>{
+      if(item.id!==id)return item;
+      if(plane==="axial")return {...item,x:clamp(pt.a,0,m.w-1)*m.spacingX,y:clamp(pt.b,0,m.h-1)*m.spacingY};
+      if(plane==="coronal")return {...item,x:clamp(pt.a,0,m.w-1)*m.spacingX,z:clamp(m.d-1-pt.b,0,m.d-1)*m.spacingZ};
+      if(plane==="sagittal")return {...item,y:clamp(pt.a,0,m.h-1)*m.spacingY,z:clamp(m.d-1-pt.b,0,m.d-1)*m.spacingZ};
+      return item;
+    }));
+  }
+
   function onPointerDown(plane,e){
     const canvas=e.currentTarget,pt=toImagePoint(canvas,e);
     if(tool==="pan"){beginPan(plane,e);return}
@@ -922,6 +988,12 @@ export default function Viewer2(){
       return;
     }
     if(tool==="navigate"){
+      if(isActiveImplantHit(plane,pt)){
+        implantDragRef.current={plane,id:activeImplantId};
+        moveActiveImplantToPoint(plane,pt);
+        try{canvas.setPointerCapture(e.pointerId)}catch{}
+        return;
+      }
       navigateAt(plane,canvas,pt);
       navDragRef.current={plane};
       try{canvas.setPointerCapture(e.pointerId)}catch{}
@@ -929,6 +1001,10 @@ export default function Viewer2(){
   }
   function onPointerMove(plane,e){
     if(dragRef.current){movePan(e);return}
+    if(implantDragRef.current&&tool==="navigate"&&implantDragRef.current.plane===plane){
+      const pt=toImagePoint(e.currentTarget,e);if(pt)moveActiveImplantToPoint(plane,pt);
+      return;
+    }
     if(navDragRef.current&&tool==="navigate"&&navDragRef.current.plane===plane){
       const pt=toImagePoint(e.currentTarget,e);if(pt)navigateAt(plane,e.currentTarget,pt);
       return;
@@ -938,7 +1014,7 @@ export default function Viewer2(){
     const i=curveDragRef.current,m=metaRef.current;
     setCurvePoints(ps=>ps.map((p,index)=>index===i?{x:clamp(pt.a,0,m.w-1),y:clamp(pt.b,0,m.h-1)}:p));
   }
-  function onPointerUp(){dragRef.current=null;curveDragRef.current=null;navDragRef.current=null}
+  function onPointerUp(){dragRef.current=null;curveDragRef.current=null;navDragRef.current=null;implantDragRef.current=null}
 
   function planeControl(id){
     const m=metaRef.current;if(!m)return {min:0,max:0,value:0,label:""};
