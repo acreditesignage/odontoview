@@ -292,10 +292,27 @@ function createParametricImplantBundle(implant,active){
   actor.setPosition(implant.x,implant.y,implant.z);
   actor.setOrientation(implant.rx||0,implant.ry||0,implant.rz||0);
   const prop=actor.getProperty();
-  prop.setColor(...(active?[.08,.92,.82]:[.88,.72,.34]));
-  prop.setOpacity(active ? .98 : .90);
-  prop.setAmbient(.26);prop.setDiffuse(.80);prop.setSpecular(.86);prop.setSpecularPower(46);
-  return {actor,mapper,poly,points:vtkPts};
+  prop.setColor(...(active?[.04,1,.86]:[.96,.75,.30]));
+  prop.setOpacity(1);
+  prop.setAmbient(active?.92:.72);prop.setDiffuse(active?.46:.58);prop.setSpecular(.92);prop.setSpecularPower(54);
+  prop.setEdgeVisibility?.(active);
+  if(active)prop.setEdgeColor?.(.72,1,.96);
+  return {actor,mapper,poly,points:vtkPts,diameter:implant.diameter,length:implant.length};
+}
+
+function updateImplantBundle(bundle,implant,active){
+  if(!bundle?.actor)return;
+  bundle.actor.setPosition(implant.x,implant.y,implant.z);
+  bundle.actor.setOrientation(implant.rx||0,implant.ry||0,implant.rz||0);
+  const prop=bundle.actor.getProperty();
+  prop.setColor(...(active?[.04,1,.86]:[.96,.75,.30]));
+  prop.setOpacity(1);
+  prop.setAmbient(active?.92:.72);
+  prop.setDiffuse(active?.46:.58);
+  prop.setSpecular(.92);
+  prop.setSpecularPower(54);
+  prop.setEdgeVisibility?.(active);
+  if(active)prop.setEdgeColor?.(.72,1,.96);
 }
 
 export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{},layoutMode="mosaic"}){
@@ -325,7 +342,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   const [scanVisible,setScanVisible]=useState(true);
   const [scanOpacity,setScanOpacity]=useState(.96);
   const [scanTransform,setScanTransform]=useState({x:0,y:0,z:0,rx:0,ry:0,rz:0,scale:1});
-  const implantActorsRef=useRef([]);
+  const implantActorsRef=useRef(new Map());
   const [implantCatalogId,setImplantCatalogId]=useState(NEODENT_GM_LIBRARY[0]?.id||"");
   const selectedCatalogImplant=useMemo(()=>NEODENT_GM_LIBRARY.find(x=>x.id===implantCatalogId)||NEODENT_GM_LIBRARY[0],[implantCatalogId]);
   const implantGroups=useMemo(()=>{
@@ -344,13 +361,15 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
 
   function renderNow(){renderWindowRef.current?.render?.()}
 
-  function disposeImplants(){
+  function disposeImplantBundle(bundle){
     const renderer=rendererRef.current;
-    implantActorsRef.current.forEach(bundle=>{
-      if(bundle?.actor&&renderer)renderer.removeActor(bundle.actor);
-      bundle?.actor?.delete?.();bundle?.mapper?.delete?.();bundle?.poly?.delete?.();bundle?.points?.delete?.();
-    });
-    implantActorsRef.current=[];
+    if(bundle?.actor&&renderer)renderer.removeActor(bundle.actor);
+    bundle?.actor?.delete?.();bundle?.mapper?.delete?.();bundle?.poly?.delete?.();bundle?.points?.delete?.();
+  }
+
+  function disposeImplants(){
+    implantActorsRef.current.forEach(bundle=>disposeImplantBundle(bundle));
+    implantActorsRef.current.clear();
   }
 
   function disposeScan(){
@@ -467,6 +486,11 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   }
   function moveImplant(axis,delta){updateActiveImplant(item=>({[axis]:(item[axis]||0)+delta}))}
   function rotateImplant(axis,delta){const key="r"+axis;updateActiveImplant(item=>({[key]:(item[key]||0)+delta}))}
+  function alignImplantAxis(axis){
+    if(axis==="z")updateActiveImplant({rx:0,ry:0,rz:0});
+    if(axis==="y")updateActiveImplant({rx:-90,ry:0,rz:0});
+    if(axis==="x")updateActiveImplant({rx:0,ry:90,rz:0});
+  }
   function removeActiveImplant(){
     if(!activeImplantId)return;
     const next=implants.filter(item=>item.id!==activeImplantId);
@@ -643,16 +667,28 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
 
   useEffect(()=>{
     const renderer=rendererRef.current;
-    if(!renderer)return;
-    disposeImplants();
-    implantActorsRef.current=implants.map(implant=>{
-      const bundle=createParametricImplantBundle(implant,implant.id===activeImplantId);
-      renderer.addActor(bundle.actor);
-      return bundle;
+    if(!renderer||!ready)return;
+    const liveIds=new Set(implants.map(implant=>implant.id));
+    implantActorsRef.current.forEach((bundle,id)=>{
+      if(liveIds.has(id))return;
+      disposeImplantBundle(bundle);
+      implantActorsRef.current.delete(id);
+    });
+    implants.forEach(implant=>{
+      const active=implant.id===activeImplantId;
+      let bundle=implantActorsRef.current.get(implant.id);
+      const geometryChanged=!bundle||bundle.diameter!==implant.diameter||bundle.length!==implant.length;
+      if(geometryChanged){
+        if(bundle)disposeImplantBundle(bundle);
+        bundle=createParametricImplantBundle(implant,active);
+        renderer.addActor(bundle.actor);
+        implantActorsRef.current.set(implant.id,bundle);
+      }else{
+        updateImplantBundle(bundle,implant,active);
+      }
     });
     renderer.resetCameraClippingRange();
     renderNow();
-    return()=>disposeImplants();
   },[implants,activeImplantId,ready]);
 
   return <div className="viewer3d-panel viewer3d-v2">
@@ -732,11 +768,14 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
           </section>
           <span>Posição fina • 0,25 mm — ou arraste o implante diretamente no axial/coronal/sagital</span>
           <div><button onClick={()=>moveImplant("x",-.25)}>X−</button><button onClick={()=>moveImplant("x",.25)}>X+</button><button onClick={()=>moveImplant("y",-.25)}>Y−</button><button onClick={()=>moveImplant("y",.25)}>Y+</button><button onClick={()=>moveImplant("z",-.25)}>Z−</button><button onClick={()=>moveImplant("z",.25)}>Z+</button></div>
-          <span>Inclinação fina • 1°</span>
+          <span>Direção inicial do implante</span>
+          <div><button onClick={()=>alignImplantAxis("z")}>Eixo Z</button><button onClick={()=>alignImplantAxis("y")}>Eixo Y</button><button onClick={()=>alignImplantAxis("x")}>Eixo X</button></div>
+          <span>Inclinação livre • 1°</span>
           <div><button onClick={()=>rotateImplant("x",-1)}>RX−</button><button onClick={()=>rotateImplant("x",1)}>RX+</button><button onClick={()=>rotateImplant("y",-1)}>RY−</button><button onClick={()=>rotateImplant("y",1)}>RY+</button><button onClick={()=>rotateImplant("z",-1)}>RZ−</button><button onClick={()=>rotateImplant("z",1)}>RZ+</button></div>
           <div className="viewer3d-implant-angle-sliders">
-            <label>Inclinação X <input type="range" min="-45" max="45" step="1" value={activeImplant.rx||0} onChange={e=>updateActiveImplant({rx:Number(e.target.value)})}/><b>{Math.round(activeImplant.rx||0)}°</b></label>
-            <label>Inclinação Y <input type="range" min="-45" max="45" step="1" value={activeImplant.ry||0} onChange={e=>updateActiveImplant({ry:Number(e.target.value)})}/><b>{Math.round(activeImplant.ry||0)}°</b></label>
+            <label>Rotação X <input type="range" min="-180" max="180" step="1" value={activeImplant.rx||0} onChange={e=>updateActiveImplant({rx:Number(e.target.value)})}/><b>{Math.round(activeImplant.rx||0)}°</b></label>
+            <label>Rotação Y <input type="range" min="-180" max="180" step="1" value={activeImplant.ry||0} onChange={e=>updateActiveImplant({ry:Number(e.target.value)})}/><b>{Math.round(activeImplant.ry||0)}°</b></label>
+            <label>Rotação Z <input type="range" min="-180" max="180" step="1" value={activeImplant.rz||0} onChange={e=>updateActiveImplant({rz:Number(e.target.value)})}/><b>{Math.round(activeImplant.rz||0)}°</b></label>
           </div>
           <button type="button" className="viewer3d-remove-implant" onClick={removeActiveImplant}>Remover implante</button>
         </div>}

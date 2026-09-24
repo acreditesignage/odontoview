@@ -150,6 +150,20 @@ export default function Viewer2(){
   const [foramina,setForamina]=useState([]);
   const [implants,setImplants]=useState([]);
   const [activeImplantId,setActiveImplantId]=useState(null);
+
+  useEffect(()=>{
+    const m=meta,implant=implants.find(item=>item.id===activeImplantId);
+    if(!m||!implant)return;
+    const next={
+      x:clamp(implant.x/m.spacingX,0,m.w-1),
+      y:clamp(implant.y/m.spacingY,0,m.h-1),
+      z:clamp(implant.z/m.spacingZ,0,m.d-1)
+    };
+    setCursor(current=>{
+      if(Math.abs(current.x-next.x)<1e-4&&Math.abs(current.y-next.y)<1e-4&&Math.abs(current.z-next.z)<1e-4)return current;
+      return next;
+    });
+  },[implants,activeImplantId,meta]);
   const [exportCount,setExportCount]=useState(15);
   const [exportMode,setExportMode]=useState("complete");
   const [exportBusy,setExportBusy]=useState(false);
@@ -942,6 +956,12 @@ export default function Viewer2(){
   function isActiveImplantHit(plane,pt){
     const implant=implants.find(item=>item.id===activeImplantId),m=metaRef.current;
     if(!implant||!m||!["axial","coronal","sagittal"].includes(plane))return false;
+    const axis=implantAxisVector(implant),half=implant.length/2,radius=implant.diameter/2;
+    const fixedWorld=plane==="axial"?cursor.z*m.spacingZ:plane==="coronal"?cursor.y*m.spacingY:cursor.x*m.spacingX;
+    const normalCenter=plane==="axial"?implant.z:plane==="coronal"?implant.y:implant.x;
+    const normalAxis=plane==="axial"?axis.z:plane==="coronal"?axis.y:axis.x;
+    const min=normalCenter-Math.abs(normalAxis)*half-radius,max=normalCenter+Math.abs(normalAxis)*half+radius;
+    if(fixedWorld<min||fixedWorld>max)return false;
     let da=0,db=0;
     if(plane==="axial"){
       da=(pt.a-implant.x/m.spacingX)*m.spacingX;
@@ -958,14 +978,25 @@ export default function Viewer2(){
 
   function moveActiveImplantToPoint(plane,pt){
     const m=metaRef.current,id=activeImplantId;
-    if(!m||!id)return;
-    setImplants(items=>items.map(item=>{
-      if(item.id!==id)return item;
-      if(plane==="axial")return {...item,x:clamp(pt.a,0,m.w-1)*m.spacingX,y:clamp(pt.b,0,m.h-1)*m.spacingY};
-      if(plane==="coronal")return {...item,x:clamp(pt.a,0,m.w-1)*m.spacingX,z:clamp(m.d-1-pt.b,0,m.d-1)*m.spacingZ};
-      if(plane==="sagittal")return {...item,y:clamp(pt.a,0,m.h-1)*m.spacingY,z:clamp(m.d-1-pt.b,0,m.d-1)*m.spacingZ};
-      return item;
-    }));
+    if(!m||!id||!["axial","coronal","sagittal"].includes(plane))return;
+    const nextVoxel={x:cursor.x,y:cursor.y,z:cursor.z};
+    if(plane==="axial"){
+      nextVoxel.x=clamp(pt.a,0,m.w-1);
+      nextVoxel.y=clamp(pt.b,0,m.h-1);
+    }else if(plane==="coronal"){
+      nextVoxel.x=clamp(pt.a,0,m.w-1);
+      nextVoxel.z=clamp(m.d-1-pt.b,0,m.d-1);
+    }else{
+      nextVoxel.y=clamp(pt.a,0,m.h-1);
+      nextVoxel.z=clamp(m.d-1-pt.b,0,m.d-1);
+    }
+    setImplants(items=>items.map(item=>item.id===id?{
+      ...item,
+      x:nextVoxel.x*m.spacingX,
+      y:nextVoxel.y*m.spacingY,
+      z:nextVoxel.z*m.spacingZ
+    }:item));
+    setCursor(nextVoxel);
   }
 
   function onPointerDown(plane,e){
