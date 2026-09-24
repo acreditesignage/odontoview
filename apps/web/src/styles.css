@@ -628,3 +628,20 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .dentist-order-row,.patient-registry-row{align-items:flex-start}
   .topbar-actions{gap:5px}
 }
+
+
+/* Radiologia -> Dentista: envio e abertura de estudos */
+.dentist-order-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.dentist-order-row.has-exam{border-left:4px solid #11a76b;background:#f7fffb}
+.cloud-send-progress{margin-top:12px;padding:12px;border:1px solid #b7d8f7;border-radius:11px;background:#f4faff}
+.cloud-send-progress strong{display:block;color:#0b5f9d;margin-bottom:8px}
+.cloud-send-progress small{display:block;color:#67839b;margin-top:7px}
+.cloud-send-progress .ingest-bar span{display:block;min-width:3px;transition:width .18s ease}
+.cloud-send-done{margin-top:12px}
+.ingest-actions{flex-wrap:wrap}
+.workspace-tabs{flex-wrap:wrap}
+@media(max-width:620px){
+  .workspace-tabs{grid-template-columns:repeat(2,1fr)}
+  .dentist-order-actions{justify-content:flex-start}
+  .dentist-order-row{flex-direction:column}
+}
