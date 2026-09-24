@@ -127,8 +127,9 @@ model ExamType {
   name   String  @unique
   active Boolean @default(true)
 
-  offers UnitOffer[]
-  orders Order[]
+  offers  UnitOffer[]
+  orders  Order[]
+  studies ExamStudy[]
 }
 
 model UnitOffer {
