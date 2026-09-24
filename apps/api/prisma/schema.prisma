@@ -55,6 +55,9 @@ model Dentist {
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   patients Patient[]
   orders   Order[]
+  sharedPatients DentistPatientAccess[]
+  ownedStudies    ExamStudy[] @relation("DentistOwnedStudies")
+  claimedInvites  DentistInvite[] @relation("ClaimedDentistInvites")
 
   @@unique([cro, uf])
 }
@@ -73,6 +76,8 @@ model Patient {
   createdByUnit    Unit?    @relation(fields: [createdByUnitId], references: [id], onDelete: Restrict)
   orders           Order[]
   studies          ExamStudy[]
+  dentistAccess    DentistPatientAccess[]
+  dentistInvites   DentistInvite[]
 
   @@index([createdByDentistId])
   @@index([createdByUnitId])
@@ -105,6 +110,7 @@ model Unit {
   members      UnitMembership[]
   patients     Patient[]
   studies      ExamStudy[]
+  dentistInvites DentistInvite[]
 
   @@index([city, state])
 }
@@ -238,7 +244,8 @@ model ExamStudy {
   id              String      @id @default(cuid())
   orderId         String?     @unique
   patientId       String
-  unitId          String
+  unitId          String?
+  ownerDentistId  String?
   examTypeId      String?
   status          StudyStatus @default(UPLOADING)
   sourceType      String?
@@ -252,13 +259,16 @@ model ExamStudy {
   createdAt       DateTime    @default(now())
   completedAt     DateTime?
 
-  order    Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  patient  Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  unit     Unit      @relation(fields: [unitId], references: [id], onDelete: Restrict)
-  examType ExamType? @relation(fields: [examTypeId], references: [id], onDelete: SetNull)
-  files    StudyFile[]
+  order        Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  unit         Unit?     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  ownerDentist Dentist?  @relation("DentistOwnedStudies", fields: [ownerDentistId], references: [id], onDelete: Restrict)
+  examType     ExamType? @relation(fields: [examTypeId], references: [id], onDelete: SetNull)
+  files        StudyFile[]
+  invites      DentistInvite[]
 
   @@index([patientId, createdAt])
+  @@index([ownerDentistId, createdAt])
   @@index([unitId, status, createdAt])
 }
 
@@ -276,4 +286,39 @@ model StudyFile {
 
   @@unique([studyId, index])
   @@index([studyId, index])
+}
+
+
+model DentistPatientAccess {
+  id        String   @id @default(cuid())
+  dentistId String
+  patientId String
+  source    String   @default("INVITE")
+  createdAt DateTime @default(now())
+
+  dentist Dentist @relation(fields: [dentistId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([dentistId, patientId])
+  @@index([patientId, createdAt])
+}
+
+model DentistInvite {
+  id                   String    @id @default(cuid())
+  patientId            String
+  studyId              String?
+  unitId               String?
+  tokenHash            String    @unique
+  expiresAt            DateTime
+  claimedByDentistId   String?
+  claimedAt            DateTime?
+  createdAt            DateTime  @default(now())
+
+  patient          Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  study            ExamStudy? @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  unit             Unit?      @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  claimedByDentist Dentist?   @relation("ClaimedDentistInvites", fields: [claimedByDentistId], references: [id], onDelete: SetNull)
+
+  @@index([patientId, expiresAt])
+  @@index([studyId, expiresAt])
 }
