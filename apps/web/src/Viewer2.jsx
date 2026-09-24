@@ -105,8 +105,11 @@ function interpolateNervePath(points){
 
 function ViewerBootIntro({loading}){
   return <div className="viewer-boot" role="presentation" aria-hidden="true">
+    <div className="viewer-boot-glow"/>
     <div className="viewer-boot-orbit viewer-boot-orbit-a"/>
     <div className="viewer-boot-orbit viewer-boot-orbit-b"/>
+    <div className="viewer-boot-beam viewer-boot-beam-a"/>
+    <div className="viewer-boot-beam viewer-boot-beam-b"/>
     <div className="viewer-boot-scan"/>
     <div className="viewer-boot-center">
       <div className="viewer-boot-mark">
@@ -138,9 +141,7 @@ function ViewerBootIntro({loading}){
 export default function Viewer2(){
   const nav=useNavigate(),[query]=useSearchParams();
   const session=useMemo(()=>getViewerSession(),[]);
-  const [showIntro,setShowIntro]=useState(()=>{
-    try{return sessionStorage.getItem("odontoview_viewer_intro_seen")!=="1"}catch{return true}
-  });
+  const [showIntro,setShowIntro]=useState(true);
   const storedRole=localStorage.getItem("odontoview_role")||"";
   const fallbackHome=storedRole==="UNIT_USER"?"/radiologia":storedRole==="DENTIST"?"/dentista":"/";
   const origin=query.get("from")||(storedRole==="UNIT_USER"?"radiology":storedRole==="DENTIST"?"dentist":"shared");
@@ -195,8 +196,7 @@ export default function Viewer2(){
 
   useEffect(()=>{
     if(!showIntro)return;
-    try{sessionStorage.setItem("odontoview_viewer_intro_seen","1")}catch{}
-    const timer=setTimeout(()=>setShowIntro(false),2150);
+    const timer=setTimeout(()=>setShowIntro(false),2350);
     return ()=>clearTimeout(timer);
   },[showIntro]);
 
@@ -1315,7 +1315,7 @@ export default function Viewer2(){
     </button>;
   }
 
-  if(loading)return <>{showIntro&&<ViewerBootIntro loading/>}<main className="viewer2-loading"><div><div className="brand">OdontoView</div><h1>Preparando exame…</h1><p>Decodificando o volume DICOM localmente.</p></div></main></>;
+  if(loading)return <>{showIntro&&<ViewerBootIntro loading/>}<main className="viewer2-loading"><div className="viewer2-loading-card"><div className="brand">OdontoView</div><h1>Preparando exame…</h1><p>Decodificando o volume DICOM localmente.</p><div className="viewer2-loading-pulse" aria-hidden="true"><span/></div></div></main></>;
   if(error)return <main className="page centered"><section className="card auth"><button type="button" className="brand viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}}>OdontoView</button><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>{clearViewerSession();nav(returnTo)}}>{returnLabel}</button></section></main>;
 
   const toolName={navigate:"Cruzeta",pan:"Pan",measure:"Medir",curve:"Curva da arcada",nerve:"Nervo",foramen:"Forame"}[tool];

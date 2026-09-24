@@ -1281,3 +1281,148 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .viewer-boot-center{transform:none;filter:none}.viewer-boot-orbit{opacity:.12}
 }
 @keyframes viewerBootExitReduced{0%,60%{opacity:1}100%{opacity:0;visibility:hidden}}
+
+
+/* Viewer boot v2 — visibly animated on every exam open */
+.viewer-boot{
+  animation:viewerBootExitV2 2.35s cubic-bezier(.7,0,.2,1) both!important;
+  perspective:900px;
+}
+.viewer-boot-glow{
+  position:absolute;z-index:0;left:50%;top:50%;
+  width:min(58vw,760px);aspect-ratio:1;border-radius:50%;
+  transform:translate(-50%,-50%) scale(.35);
+  background:radial-gradient(circle,rgba(35,242,231,.24) 0%,rgba(24,183,238,.12) 30%,rgba(10,116,216,.04) 52%,transparent 72%);
+  filter:blur(18px);opacity:0;
+  animation:viewerBootGlowV2 1.7s .08s cubic-bezier(.16,.8,.2,1) forwards;
+}
+.viewer-boot-center{
+  animation:viewerBootCenterV2 2.05s cubic-bezier(.16,.8,.2,1) both!important;
+  transform-style:preserve-3d;
+}
+.viewer-boot-mark{
+  animation:viewerBootMarkV2 1.45s .06s cubic-bezier(.16,.85,.2,1) both;
+}
+.viewer-boot-orbit-a{
+  border-style:dashed;
+  animation:viewerBootOrbitAV2 1.85s .08s cubic-bezier(.16,.8,.2,1) forwards!important;
+}
+.viewer-boot-orbit-b{
+  border-width:2px;
+  animation:viewerBootOrbitBV2 1.65s .18s cubic-bezier(.16,.8,.2,1) forwards!important;
+}
+.viewer-boot-beam{
+  position:absolute;z-index:1;left:50%;top:50%;
+  width:min(86vw,1040px);height:2px;
+  transform-origin:center;
+  opacity:0;
+  background:linear-gradient(90deg,transparent,rgba(28,193,242,.08),rgba(37,244,229,.92),rgba(28,193,242,.08),transparent);
+  box-shadow:0 0 18px rgba(37,244,229,.55);
+}
+.viewer-boot-beam-a{animation:viewerBootBeamA 1.35s .28s ease-out forwards}
+.viewer-boot-beam-b{animation:viewerBootBeamB 1.15s .48s ease-out forwards}
+.viewer-boot-scan{
+  left:0!important;right:0!important;height:2px!important;
+  animation:viewerBootScanV2 1.36s .18s cubic-bezier(.18,.72,.2,1) forwards!important;
+}
+.viewer-boot-tooth{
+  stroke-dasharray:340!important;stroke-dashoffset:340!important;
+  animation:viewerBootDrawV2 .95s .14s cubic-bezier(.2,.8,.2,1) forwards!important;
+}
+.viewer-boot-slice{animation:viewerBootSliceV2 .6s .62s ease-out forwards!important}
+.viewer-boot-slice-two{animation-delay:.76s!important}
+.viewer-boot-pulse{animation:viewerBootPulseV2 .9s .82s ease-out forwards!important}
+.viewer-boot-word{
+  animation:viewerBootWordV2 .62s .78s cubic-bezier(.16,.8,.2,1) forwards!important;
+}
+.viewer-boot-tagline{
+  animation:viewerBootTaglineV2 .54s 1.03s cubic-bezier(.16,.8,.2,1) forwards!important;
+}
+.viewer-boot-status{
+  animation:viewerBootStatusV2 .48s 1.22s ease-out forwards!important;
+}
+@keyframes viewerBootExitV2{
+  0%,76%{opacity:1;visibility:visible}
+  88%{opacity:.92}
+  100%{opacity:0;visibility:hidden}
+}
+@keyframes viewerBootGlowV2{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.28)}
+  42%{opacity:1}
+  100%{opacity:.34;transform:translate(-50%,-50%) scale(1.2)}
+}
+@keyframes viewerBootCenterV2{
+  0%{opacity:0;filter:blur(10px);transform:translateY(34px) translateZ(-120px) scale(.84)}
+  34%{opacity:1;filter:blur(1px);transform:translateY(4px) translateZ(0) scale(1.035)}
+  66%{filter:blur(0);transform:translateY(0) translateZ(0) scale(1)}
+  100%{opacity:1;filter:blur(0);transform:translateY(-4px) translateZ(18px) scale(1.015)}
+}
+@keyframes viewerBootMarkV2{
+  0%{opacity:0;transform:rotate(-8deg) scale(.58)}
+  55%{opacity:1;transform:rotate(2deg) scale(1.08)}
+  100%{opacity:1;transform:rotate(0) scale(1)}
+}
+@keyframes viewerBootOrbitAV2{
+  0%{opacity:0;transform:rotate(-42deg) scale(.38)}
+  48%{opacity:.75}
+  100%{opacity:.16;transform:rotate(74deg) scale(1.18)}
+}
+@keyframes viewerBootOrbitBV2{
+  0%{opacity:0;transform:rotate(48deg) scale(.52)}
+  55%{opacity:.9}
+  100%{opacity:.18;transform:rotate(-68deg) scale(1.08)}
+}
+@keyframes viewerBootBeamA{
+  0%{opacity:0;transform:translate(-50%,-50%) rotate(-24deg) scaleX(.12)}
+  25%{opacity:.95}
+  100%{opacity:0;transform:translate(-50%,-50%) rotate(16deg) scaleX(1.05)}
+}
+@keyframes viewerBootBeamB{
+  0%{opacity:0;transform:translate(-50%,-50%) rotate(33deg) scaleX(.08)}
+  28%{opacity:.7}
+  100%{opacity:0;transform:translate(-50%,-50%) rotate(-10deg) scaleX(.94)}
+}
+@keyframes viewerBootScanV2{
+  0%{top:7%;opacity:0;transform:scaleX(.22)}
+  12%{opacity:1;transform:scaleX(.55)}
+  50%{opacity:1;transform:scaleX(1)}
+  90%{opacity:.85}
+  100%{top:93%;opacity:0;transform:scaleX(.62)}
+}
+@keyframes viewerBootDrawV2{to{stroke-dashoffset:0}}
+@keyframes viewerBootSliceV2{0%{opacity:0;stroke-dashoffset:100;transform:scaleX(.2)}100%{opacity:1;stroke-dashoffset:0;transform:scaleX(1)}}
+@keyframes viewerBootPulseV2{0%{opacity:0;transform:scale(.1)}35%{opacity:1;transform:scale(2.4)}100%{opacity:.9;transform:scale(.9)}}
+@keyframes viewerBootWordV2{0%{opacity:0;letter-spacing:.02em;transform:translateY(18px) scale(.94)}100%{opacity:1;letter-spacing:-.065em;transform:translateY(0) scale(1)}}
+@keyframes viewerBootTaglineV2{0%{opacity:0;transform:translateY(12px);letter-spacing:.4em}100%{opacity:1;transform:translateY(0);letter-spacing:.28em}}
+@keyframes viewerBootStatusV2{0%{opacity:0;transform:translateY(8px)}100%{opacity:.82;transform:translateY(0)}}
+
+.viewer2-loading-card{display:grid;justify-items:center;max-width:520px}
+.viewer2-loading-card p{color:#92a3b8}
+.viewer2-loading-pulse{
+  width:min(320px,72vw);height:3px;margin-top:22px;overflow:hidden;border-radius:999px;background:#111c29;position:relative;
+}
+.viewer2-loading-pulse span{
+  display:block;height:100%;width:42%;border-radius:inherit;
+  background:linear-gradient(90deg,transparent,#25e8dd,#139bea,transparent);
+  box-shadow:0 0 18px rgba(37,232,221,.45);
+  animation:viewerLoadingSweep 1.05s ease-in-out infinite;
+}
+@keyframes viewerLoadingSweep{
+  0%{transform:translateX(-120%) scaleX(.65)}
+  50%{transform:translateX(105%) scaleX(1)}
+  100%{transform:translateX(265%) scaleX(.65)}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .viewer-boot{animation:viewerBootExitReducedV2 .8s ease-out both!important}
+  .viewer-boot-center{animation:viewerBootReducedCenter .55s ease-out both!important}
+  .viewer-boot-mark,.viewer-boot-word,.viewer-boot-tagline,.viewer-boot-status{animation:viewerBootReducedFade .45s ease-out both!important}
+  .viewer-boot-tooth{animation:none!important;stroke-dashoffset:0!important}
+  .viewer-boot-slice,.viewer-boot-pulse{animation:none!important;opacity:1!important}
+  .viewer-boot-beam,.viewer-boot-scan,.viewer-boot-orbit,.viewer-boot-glow{display:none!important}
+  .viewer2-loading-pulse span{animation:viewerLoadingReduced 1.4s ease-in-out infinite!important}
+}
+@keyframes viewerBootExitReducedV2{0%,62%{opacity:1}100%{opacity:0;visibility:hidden}}
+@keyframes viewerBootReducedCenter{from{opacity:0}to{opacity:1}}
+@keyframes viewerBootReducedFade{from{opacity:0}to{opacity:1}}
+@keyframes viewerLoadingReduced{0%,100%{opacity:.25;transform:scaleX(.55)}50%{opacity:1;transform:scaleX(1)}}
