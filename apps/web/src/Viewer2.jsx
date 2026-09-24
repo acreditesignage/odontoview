@@ -103,9 +103,44 @@ function interpolateNervePath(points){
   return out;
 }
 
+function ViewerBootIntro({loading}){
+  return <div className="viewer-boot" role="presentation" aria-hidden="true">
+    <div className="viewer-boot-orbit viewer-boot-orbit-a"/>
+    <div className="viewer-boot-orbit viewer-boot-orbit-b"/>
+    <div className="viewer-boot-scan"/>
+    <div className="viewer-boot-center">
+      <div className="viewer-boot-mark">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <defs>
+            <linearGradient id="ovBootGradient" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#21f2e7"/>
+              <stop offset="52%" stopColor="#18b7ee"/>
+              <stop offset="100%" stopColor="#0a74d8"/>
+            </linearGradient>
+            <filter id="ovBootGlow" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="4" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <path className="viewer-boot-tooth" d="M34 22C23 30 20 46 25 59c4 10 8 18 10 30 2 12 7 15 12 4l7-17c2-5 10-5 12 0l7 17c5 11 10 8 12-4 2-12 6-20 10-30 5-13 2-29-9-37-8-6-17-4-26 0-9-4-18-6-26 0Z" fill="none" stroke="url(#ovBootGradient)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" filter="url(#ovBootGlow)"/>
+          <path className="viewer-boot-slice" d="M18 60h84" fill="none" stroke="url(#ovBootGradient)" strokeWidth="2.6" strokeLinecap="round"/>
+          <path className="viewer-boot-slice viewer-boot-slice-two" d="M28 48h64" fill="none" stroke="url(#ovBootGradient)" strokeWidth="1.6" strokeLinecap="round"/>
+          <circle className="viewer-boot-pulse" cx="60" cy="60" r="4.5" fill="#26eee3"/>
+        </svg>
+      </div>
+      <div className="viewer-boot-word">Odonto<span>View</span></div>
+      <div className="viewer-boot-tagline">IMAGEM ODONTOLÓGICA SEM LIMITES</div>
+      <div className="viewer-boot-status">{loading?"Preparando exame…":"Exame pronto"}</div>
+    </div>
+  </div>;
+}
+
 export default function Viewer2(){
   const nav=useNavigate(),[query]=useSearchParams();
   const session=useMemo(()=>getViewerSession(),[]);
+  const [showIntro,setShowIntro]=useState(()=>{
+    try{return sessionStorage.getItem("odontoview_viewer_intro_seen")!=="1"}catch{return true}
+  });
   const storedRole=localStorage.getItem("odontoview_role")||"";
   const fallbackHome=storedRole==="UNIT_USER"?"/radiologia":storedRole==="DENTIST"?"/dentista":"/";
   const origin=query.get("from")||(storedRole==="UNIT_USER"?"radiology":storedRole==="DENTIST"?"dentist":"shared");
@@ -157,6 +192,13 @@ export default function Viewer2(){
   const [foramina,setForamina]=useState([]);
   const [implants,setImplants]=useState([]);
   const [activeImplantId,setActiveImplantId]=useState(null);
+
+  useEffect(()=>{
+    if(!showIntro)return;
+    try{sessionStorage.setItem("odontoview_viewer_intro_seen","1")}catch{}
+    const timer=setTimeout(()=>setShowIntro(false),2150);
+    return ()=>clearTimeout(timer);
+  },[showIntro]);
 
   function updateCursorFrom3D(next){
     if(!meta||!next)return;
@@ -1273,11 +1315,12 @@ export default function Viewer2(){
     </button>;
   }
 
-  if(loading)return <main className="viewer2-loading"><div><div className="brand">OdontoView</div><h1>Montando Viewer 2.0…</h1><p>Decodificando o volume DICOM localmente.</p></div></main>;
+  if(loading)return <>{showIntro&&<ViewerBootIntro loading/>}<main className="viewer2-loading"><div><div className="brand">OdontoView</div><h1>Preparando exame…</h1><p>Decodificando o volume DICOM localmente.</p></div></main></>;
   if(error)return <main className="page centered"><section className="card auth"><button type="button" className="brand viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}}>OdontoView</button><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>{clearViewerSession();nav(returnTo)}}>{returnLabel}</button></section></main>;
 
   const toolName={navigate:"Cruzeta",pan:"Pan",measure:"Medir",curve:"Curva da arcada",nerve:"Nervo",foramen:"Forame"}[tool];
   return <main className="viewer2">
+    {showIntro&&<ViewerBootIntro loading={false}/>} 
     <header className="viewer2-top">
       <div><button type="button" className="brand light viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}} title="Ir para a página inicial">OdontoView</button><span className="viewer2-beta">VIEWER 2.0 BETA</span></div>
       <div className="viewer2-study"><strong>{session?.order?.patient?.name||"Exame local"}</strong><span>{session?.order?.examType?.name||session?.result?.series?.[meta.seriesIndex]?.description} • {meta.manufacturer}{meta.model?" "+meta.model:""}</span></div>

@@ -1182,3 +1182,102 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .radiology-import-grid{grid-template-columns:1fr}
   .radiology-import-grid>button{grid-column:1}
 }
+
+
+/* OdontoView Viewer boot — lightweight brand intro */
+.viewer-boot{
+  position:fixed;inset:0;z-index:9999;overflow:hidden;
+  display:grid;place-items:center;
+  background:
+    radial-gradient(circle at 50% 45%,rgba(16,117,175,.16),transparent 22rem),
+    radial-gradient(circle at 50% 50%,rgba(20,238,224,.055),transparent 34rem),
+    #03070d;
+  color:#eefaff;
+  animation:viewerBootExit 2.15s cubic-bezier(.7,0,.2,1) both;
+  pointer-events:all;
+}
+.viewer-boot:before{
+  content:"";position:absolute;inset:0;
+  background-image:linear-gradient(rgba(73,233,225,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(73,233,225,.018) 1px,transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(circle at center,#000,transparent 72%);
+  opacity:.65;
+}
+.viewer-boot-center{
+  position:relative;z-index:3;text-align:center;
+  display:grid;justify-items:center;
+  transform:translateY(7px);
+  animation:viewerBootCenter 1.9s cubic-bezier(.2,.8,.2,1) both;
+}
+.viewer-boot-mark{width:clamp(92px,12vw,132px);height:clamp(92px,12vw,132px);position:relative}
+.viewer-boot-mark svg{width:100%;height:100%;overflow:visible}
+.viewer-boot-tooth{
+  stroke-dasharray:300;stroke-dashoffset:300;
+  animation:viewerBootDraw .85s .08s ease-out forwards;
+}
+.viewer-boot-slice{
+  stroke-dasharray:100;stroke-dashoffset:100;opacity:0;
+  animation:viewerBootSlice .55s .48s ease-out forwards;
+}
+.viewer-boot-slice-two{animation-delay:.61s;opacity:.55}
+.viewer-boot-pulse{
+  transform-origin:60px 60px;
+  opacity:0;
+  animation:viewerBootPulse .9s .72s ease-out forwards;
+}
+.viewer-boot-word{
+  margin-top:8px;font-size:clamp(34px,5vw,56px);
+  line-height:.95;font-weight:850;letter-spacing:-.065em;
+  color:#fff;opacity:0;transform:translateY(10px) scale(.985);
+  animation:viewerBootWord .55s .72s ease-out forwards;
+  text-shadow:0 0 28px rgba(24,183,238,.14);
+}
+.viewer-boot-word span{color:#22d8e5}
+.viewer-boot-tagline{
+  margin-top:12px;
+  font-size:clamp(8px,1.05vw,11px);
+  font-weight:800;letter-spacing:.28em;
+  color:#71aabe;
+  opacity:0;transform:translateY(7px);
+  animation:viewerBootWord .48s .98s ease-out forwards;
+}
+.viewer-boot-status{
+  margin-top:24px;font-size:10px;letter-spacing:.13em;
+  color:#7e97a8;opacity:0;
+  animation:viewerBootStatus .4s 1.18s ease-out forwards;
+}
+.viewer-boot-scan{
+  position:absolute;z-index:2;left:12%;right:12%;height:1px;top:18%;
+  background:linear-gradient(90deg,transparent,rgba(36,244,231,.15),rgba(36,244,231,.95),rgba(36,244,231,.15),transparent);
+  box-shadow:0 0 18px rgba(36,244,231,.7),0 0 42px rgba(19,146,234,.3);
+  opacity:0;
+  animation:viewerBootScan 1.18s .18s cubic-bezier(.2,.7,.2,1) forwards;
+}
+.viewer-boot-orbit{
+  position:absolute;border:1px solid rgba(34,216,229,.11);border-radius:50%;
+  width:min(58vw,680px);aspect-ratio:1;
+  opacity:0;
+  animation:viewerBootOrbit 1.5s .22s ease-out forwards;
+}
+.viewer-boot-orbit-b{width:min(39vw,460px);border-color:rgba(10,116,216,.15);animation-delay:.38s}
+@keyframes viewerBootDraw{to{stroke-dashoffset:0}}
+@keyframes viewerBootSlice{0%{opacity:0;stroke-dashoffset:100}100%{opacity:.9;stroke-dashoffset:0}}
+@keyframes viewerBootPulse{0%{opacity:0;transform:scale(.15)}35%{opacity:1;transform:scale(1.55)}100%{opacity:.8;transform:scale(.9)}}
+@keyframes viewerBootWord{to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes viewerBootStatus{to{opacity:.8}}
+@keyframes viewerBootScan{0%{top:18%;opacity:0}12%{opacity:1}84%{opacity:.9}100%{top:82%;opacity:0}}
+@keyframes viewerBootOrbit{0%{opacity:0;transform:scale(.7)}55%{opacity:.9}100%{opacity:.18;transform:scale(1.08)}}
+@keyframes viewerBootCenter{0%{filter:blur(5px);transform:translateY(14px) scale(.985)}55%{filter:blur(0)}100%{filter:blur(0);transform:translateY(0) scale(1)}}
+@keyframes viewerBootExit{0%,72%{opacity:1;visibility:visible}100%{opacity:0;visibility:hidden}}
+@media(max-width:620px){
+  .viewer-boot-mark{width:96px;height:96px}
+  .viewer-boot-tagline{max-width:88vw;letter-spacing:.20em;line-height:1.6}
+  .viewer-boot-orbit{width:86vw}.viewer-boot-orbit-b{width:62vw}
+}
+@media(prefers-reduced-motion:reduce){
+  .viewer-boot{animation:viewerBootExitReduced .65s ease-out both}
+  .viewer-boot-center,.viewer-boot-mark *,.viewer-boot-scan,.viewer-boot-orbit,.viewer-boot-word,.viewer-boot-tagline,.viewer-boot-status{animation:none!important}
+  .viewer-boot-tooth{stroke-dashoffset:0}.viewer-boot-slice,.viewer-boot-pulse,.viewer-boot-word,.viewer-boot-tagline,.viewer-boot-status{opacity:1}
+  .viewer-boot-center{transform:none;filter:none}.viewer-boot-orbit{opacity:.12}
+}
+@keyframes viewerBootExitReduced{0%,60%{opacity:1}100%{opacity:0;visibility:hidden}}
