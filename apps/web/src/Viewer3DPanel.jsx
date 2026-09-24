@@ -641,8 +641,31 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     setView("oblique");
     renderWindow.render();
 
-    const ro=new ResizeObserver(()=>{generic.resize();renderWindow.render()});
+    let resizeRaf=0;
+    const resizeViewport=()=>{
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf=requestAnimationFrame(()=>{
+        if(cancelled)return;
+        const rect=host.getBoundingClientRect();
+        if(rect.width<32||rect.height<32)return;
+        generic.resize();
+        const gl=generic.getOpenGLRenderWindow?.();
+        if(gl?.setSize){
+          const dpr=Math.max(1,Math.min(window.devicePixelRatio||1,2));
+          gl.setSize(
+            Math.max(1,Math.round(rect.width*dpr)),
+            Math.max(1,Math.round(rect.height*dpr))
+          );
+        }
+        overlayRenderer.setActiveCamera(renderer.getActiveCamera());
+        renderer.resetCameraClippingRange();
+        renderWindow.render();
+      });
+    };
+    const ro=new ResizeObserver(resizeViewport);
     ro.observe(host);
+    window.addEventListener("resize",resizeViewport);
+    resizeViewport();
 
     if(!cancelled){
       setReady(true);
@@ -652,6 +675,8 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     return()=>{
       cancelled=true;
       ro.disconnect();
+      cancelAnimationFrame(resizeRaf);
+      window.removeEventListener("resize",resizeViewport);
       if(nerveActorRef.current?.actor)overlayRenderer.removeActor(nerveActorRef.current.actor);
       disposeScan();
       disposeImplants();
@@ -669,21 +694,39 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   useEffect(()=>{applyPreset(preset)},[preset,boneOpacityScale,denseBoost,lighting]);
 
   useEffect(()=>{
-    const generic=genericRef.current,renderer=rendererRef.current,window=renderWindowRef.current;
-    if(!generic||!renderer||!window)return;
-    let raf1=0,raf2=0,timer=0;
+    const generic=genericRef.current,renderer=rendererRef.current,renderWindow=renderWindowRef.current,host=hostRef.current;
+    if(!generic||!renderer||!renderWindow||!host)return;
+    let raf=0;
+    const timers=[];
     const resize=()=>{
+      const rect=host.getBoundingClientRect();
+      if(rect.width<32||rect.height<32)return;
       generic.resize();
+      const gl=generic.getOpenGLRenderWindow?.();
+      if(gl?.setSize){
+        const dpr=Math.max(1,Math.min(window.devicePixelRatio||1,2));
+        gl.setSize(
+          Math.max(1,Math.round(rect.width*dpr)),
+          Math.max(1,Math.round(rect.height*dpr))
+        );
+      }
       overlayRendererRef.current?.setActiveCamera?.(renderer.getActiveCamera());
       renderer.resetCameraClippingRange();
-      window.render();
+      renderWindow.render();
     };
-    raf1=requestAnimationFrame(()=>{
-      resize();
-      raf2=requestAnimationFrame(resize);
-    });
-    timer=setTimeout(resize,180);
-    return()=>{cancelAnimationFrame(raf1);cancelAnimationFrame(raf2);clearTimeout(timer)};
+    const schedule=()=>{
+      cancelAnimationFrame(raf);
+      raf=requestAnimationFrame(()=>{
+        resize();
+        raf=requestAnimationFrame(resize);
+      });
+      [60,160,320,650].forEach(ms=>timers.push(setTimeout(resize,ms)));
+    };
+    schedule();
+    return()=>{
+      cancelAnimationFrame(raf);
+      timers.forEach(clearTimeout);
+    };
   },[layoutMode]);
 
   useEffect(()=>{

@@ -808,3 +808,86 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
     width:auto!important;height:204px!important;max-height:204px!important;
   }
 }
+
+
+/* Authoritative 3D maximize layout — keep one stable geometry for VTK sizing. */
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded{
+  overflow:hidden!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded>.viewer2-pane-head{
+  height:44px!important;
+  flex:0 0 44px!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-split{
+  position:relative!important;
+  display:block!important;
+  width:100%!important;
+  height:calc(100% - 44px)!important;
+  min-width:0!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-primary,
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-panel{
+  position:relative!important;
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-stage{
+  position:absolute!important;
+  top:0!important;
+  left:0!important;
+  right:330px!important;
+  bottom:0!important;
+  width:auto!important;
+  height:auto!important;
+  min-width:0!important;
+  min-height:0!important;
+  display:block!important;
+  visibility:visible!important;
+  overflow:hidden!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-stage>canvas{
+  position:absolute!important;
+  inset:0!important;
+  display:block!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-controls{
+  display:block!important;
+  position:absolute!important;
+  top:0!important;
+  right:0!important;
+  bottom:0!important;
+  left:auto!important;
+  width:322px!important;
+  height:auto!important;
+  max-height:none!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-mini-pano{
+  display:none!important;
+}
+@media(max-width:980px){
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-stage{right:260px!important}
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-controls{width:252px!important}
+}
+@media(max-width:760px){
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-stage{
+    right:0!important;
+    bottom:210px!important;
+  }
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-controls{
+    top:auto!important;
+    left:0!important;
+    right:0!important;
+    bottom:0!important;
+    width:auto!important;
+    height:204px!important;
+    max-height:204px!important;
+  }
+}
