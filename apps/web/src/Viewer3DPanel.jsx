@@ -1,5 +1,6 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
 import "@kitware/vtk.js/Rendering/Profiles/Volume";
+import "@kitware/vtk.js/Rendering/Profiles/Geometry";
 
 import vtkGenericRenderWindow from "@kitware/vtk.js/Rendering/Misc/GenericRenderWindow";
 import vtkImageData from "@kitware/vtk.js/Common/DataModel/ImageData";
