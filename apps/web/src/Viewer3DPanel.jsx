@@ -605,6 +605,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       ro.disconnect();
       if(nerveActorRef.current?.actor)renderer.removeActor(nerveActorRef.current.actor);
       disposeScan();
+      disposeImplants();
       renderer.removeVolume(actor);
       nerveActorRef.current=null;
       generic.delete();
