@@ -244,7 +244,7 @@ model ExamStudy {
   model           String?
   seriesCount     Int         @default(0)
   fileCount       Int         @default(0)
-  totalBytes      BigInt      @default(0)
+  totalBytes      Int         @default(0)
   createdAt       DateTime    @default(now())
   completedAt     DateTime?
 
