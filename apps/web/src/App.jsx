@@ -1,7 +1,7 @@
 import React from "react";
 import {useEffect,useMemo,useRef,useState} from "react";
 import {Navigate,Route,Routes,useNavigate,useSearchParams} from "react-router-dom";
-import {api} from "./api.js";
+import {api,apiBinary,apiBlob} from "./api.js";
 import {importExam} from "./ingest.js";
 import Viewer2 from "./Viewer2.jsx";
 import {setViewerSession} from "./viewerSession.js";
@@ -55,7 +55,8 @@ function Login({initialMode="login"}){
 }
 
 function DentistDashboard(){
- const [data,setData]=useState(null),[types,setTypes]=useState([]),[tab,setTab]=useState("home"),[err,setErr]=useState(""),[busy,setBusy]=useState(false);
+ const nav=useNavigate();
+ const [data,setData]=useState(null),[types,setTypes]=useState([]),[tab,setTab]=useState("home"),[err,setErr]=useState(""),[busy,setBusy]=useState(false),[openingStudy,setOpeningStudy]=useState("");
  const [patientMode,setPatientMode]=useState("existing"),[selectedPatient,setSelectedPatient]=useState(""),[type,setType]=useState("");
  const [p,setP]=useState({name:"",birthDate:"",phone:"",email:""}),[out,setOut]=useState(null);
 
@@ -83,6 +84,31 @@ function DentistDashboard(){
      await load();
    }catch(e){setErr(e.message)}finally{setBusy(false)}
  }
+ async function openStudy(order){
+   if(!order?.study?.id)return;
+   setOpeningStudy(order.study.id);setErr("");
+   try{
+     const manifest=await api("/api/dentist/studies/"+order.study.id);
+     const files=new Array(manifest.files.length);
+     let cursor=0,done=0;
+     const worker=async()=>{
+       while(true){
+         const i=cursor++;
+         if(i>=manifest.files.length)return;
+         const meta=manifest.files[i];
+         const blob=await apiBlob("/api/dentist/studies/"+order.study.id+"/files/"+meta.id);
+         files[i]=new File([blob],meta.fileName||("dicom-"+String(i+1).padStart(4,"0")+".dcm"),{type:"application/dicom"});
+         done++;
+         setOpeningStudy(order.study.id+":"+done+"/"+manifest.files.length);
+       }
+     };
+     await Promise.all(Array.from({length:Math.min(6,manifest.files.length)},()=>worker()));
+     const result=await importExam(files);
+     setViewerSession({result,order:{...order,patient:manifest.order.patient,examType:manifest.order.examType,unit:manifest.order.unit}});
+     nav("/viewer2");
+   }catch(e){setErr(e.message||"Não foi possível abrir o exame.");}
+   finally{setOpeningStudy("")}
+ }
  const statusLabel=s=>STATUS[s]?.label||s;
  return <main className="page dentist-dashboard"><section className="wide">
    <header className="topbar"><BrandLockup role="DENTISTA"/><div className="topbar-actions"><a className="ghost compact" href="/cadastro-dentista" target="_blank" rel="noreferrer">Link de cadastro</a><button className="ghost" onClick={logout}>Sair</button></div></header>
@@ -90,7 +116,7 @@ function DentistDashboard(){
    <nav className="workspace-tabs">
      <button className={tab==="home"?"active":""} onClick={()=>setTab("home")}>Visão geral</button>
      <button className={tab==="new"?"active":""} onClick={()=>setTab("new")}>Novo pedido</button>
-     <button className={tab==="patients"?"active":""} onClick={()=>setTab("patients")}>Pacientes</button>
+     <button className={tab==="patients"?"active":""} onClick={()=>setTab("patients")}>Pacientes</button>\n     <button className={tab==="exams"?"active":""} onClick={()=>setTab("exams")}>Meus exames</button>
    </nav>
    {err&&<div className="error">{err}</div>}
    {!data?<section className="card">Carregando painel…</section>:<>
@@ -100,9 +126,12 @@ function DentistDashboard(){
        <section className="card dashboard-main">
          <div className="section-title"><div><p className="eyebrow">PEDIDOS RECENTES</p><h2>Acompanhe a jornada.</h2></div><button className="secondary compact" onClick={()=>setTab("new")}>Novo pedido</button></div>
          {data.orders.length===0?<div className="empty"><strong>Nenhum pedido ainda.</strong><p>Crie o primeiro pedido para testar o fluxo completo.</p></div>:
-         <div className="dentist-order-list">{data.orders.slice(0,12).map(o=><div className="dentist-order-row" key={o.id}>
+         <div className="dentist-order-list">{data.orders.slice(0,12).map(o=><div className={"dentist-order-row"+(o.study?.status==="READY"?" has-exam":"")} key={o.id}>
            <div><strong>{o.patient.name}</strong><small>{o.examType.name}{o.unit?" • "+o.unit.name:""}</small></div>
-           <span className={"badge "+(STATUS[o.status]?.tone||"")}>{statusLabel(o.status)}</span>
+           <div className="dentist-order-actions">
+             <span className={"badge "+(STATUS[o.status]?.tone||"")}>{o.study?.status==="READY"?"Exame disponível":statusLabel(o.status)}</span>
+             {o.study?.status==="READY"&&<button className="primary compact" disabled={openingStudy.startsWith(o.study.id)} onClick={()=>openStudy(o)}>{openingStudy.startsWith(o.study.id)?("Abrindo "+(openingStudy.split(":")[1]||"…")):"Abrir Viewer"}</button>}
+           </div>
          </div>)}</div>}
        </section>
      </div>}
@@ -116,6 +145,14 @@ function DentistDashboard(){
          <button className="primary" disabled={busy}>{busy?"Criando…":"Criar pedido e gerar link"}</button>
        </form>
        {out&&<section className="success order-link-box"><strong>Pedido criado ✓</strong><p>Envie este link seguro ao paciente para escolher a radiologia e o horário:</p><code>{out.patientAccessUrl}</code><button className="secondary" onClick={()=>navigator.clipboard.writeText(out.patientAccessUrl)}>Copiar link</button></section>}
+     </section>}
+     {tab==="exams"&&<section className="card">
+       <div className="section-title"><div><p className="eyebrow">MEUS EXAMES</p><h2>Exames recebidos.</h2><p className="muted">Estudos enviados pela radiologia ficam disponíveis aqui para abrir no Viewer.</p></div></div>
+       {data.orders.filter(o=>o.study?.status==="READY").length===0?<div className="empty"><strong>Nenhum exame recebido ainda.</strong><p>Quando a radiologia enviar as imagens, elas aparecerão aqui.</p></div>:
+       <div className="patient-registry">{data.orders.filter(o=>o.study?.status==="READY").map(o=><div className="patient-registry-row is-network" key={o.study.id}>
+         <div className="patient-registry-main"><div className="patient-name-line"><strong>{o.patient.name}</strong><span className="source-badge odontoview">Exame disponível</span></div><small>{o.examType.name}{o.unit?" • "+o.unit.name:""}</small><small>{o.study.fileCount} arquivo(s) • {formatBytes(o.study.totalBytes)}{o.study.manufacturer?" • "+o.study.manufacturer:""}</small></div>
+         <button className="primary compact" disabled={openingStudy.startsWith(o.study.id)} onClick={()=>openStudy(o)}>{openingStudy.startsWith(o.study.id)?("Abrindo "+(openingStudy.split(":")[1]||"…")):"Abrir Viewer"}</button>
+       </div>)}</div>}
      </section>}
      {tab==="patients"&&<section className="card">
        <div className="section-title"><div><p className="eyebrow">PACIENTES</p><h2>Sua base de pacientes.</h2></div><button className="primary compact" onClick={()=>{setPatientMode("new");setTab("new")}}>+ Cadastrar</button></div>
@@ -142,7 +179,7 @@ const STATUS={
  IMAGENS_RECEBIDAS:{label:"Imagens recebidas",tone:"green"}
 };
 
-function IngestResult({state,onClear,onOpenViewer}){
+function IngestResult({state,onClear,onOpenViewer,onSend}){
  if(!state)return null;
  if(state.status==="reading"){
    const p=state.progress||{};
@@ -211,6 +248,42 @@ function Radiology(){
      setIngest({orderId:order.id,status:"error",message:e.message||"Falha ao abrir exame."});
    }
  }
+ async function sendExamToDentist(order){
+   if(!ingest?.result||ingest.orderId!==order.id)return;
+   const r=ingest.result;
+   const firstValid=r.series.find(s=>s.valid)||r.series[0]||{};
+   try{
+     setIngest(prev=>({...prev,send:{status:"uploading",done:0,total:r.files.length}}));
+     const created=await api("/api/unit/orders/"+order.id+"/study",{method:"POST",body:JSON.stringify({
+       sourceType:r.sourceType,
+       modality:firstValid.modality,
+       manufacturer:firstValid.manufacturer,
+       model:firstValid.model,
+       seriesCount:r.seriesCount
+     })});
+     const studyId=created.study.id;
+     let next=0,done=0;
+     const worker=async()=>{
+       while(true){
+         const index=next++;
+         if(index>=r.files.length)return;
+         const file=r.files[index];
+         await apiBinary("/api/unit/studies/"+studyId+"/files/"+index,file,{
+           "Content-Type":"application/octet-stream",
+           "X-File-Name":encodeURIComponent(file.name||("dicom-"+(index+1)+".dcm"))
+         });
+         done++;
+         setIngest(prev=>({...prev,send:{status:"uploading",done,total:r.files.length}}));
+       }
+     };
+     await Promise.all(Array.from({length:Math.min(4,r.files.length)},()=>worker()));
+     await api("/api/unit/studies/"+studyId+"/complete",{method:"POST",body:"{}"});
+     setIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId}}));
+     await load();
+   }catch(e){
+     setIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha no envio."}}));
+   }
+ }
  const tomorrow=()=>{const x=new Date();x.setDate(x.getDate()+1);setDate(localDateValue(x))};
  return <main className="page radiology"><section className="wide">
    <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
@@ -236,7 +309,7 @@ function Radiology(){
            {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Exame recebido pelo OdontoView</span>}
          </div>
        </div>
-       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{setViewerSession({result:ingest.result,order:o});nav("/viewer2")}}/>}
+       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{setViewerSession({result:ingest.result,order:o});nav("/viewer2")}} onSend={()=>sendExamToDentist(o)}/>}
      </article>
    })}</div>)}
    {tab==="patients"&&<div className="radiology-patient-layout">
