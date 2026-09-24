@@ -718,3 +718,9 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 .viewer3d-implant-tools>div:not(.viewer3d-implant-summary){display:flex;flex-wrap:wrap;gap:5px}
 .viewer3d-implant-summary{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:#e6f5f5}
 .viewer3d-remove-implant{justify-self:start;color:#ffb5ae!important;border-color:rgba(255,111,97,.42)!important}
+
+.viewer3d-implant-angle-sliders{display:grid!important;grid-template-columns:1fr 1fr;gap:8px!important}
+.viewer3d-implant-angle-sliders label{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:7px;color:#9bb0bc;font-size:10px}
+.viewer3d-implant-angle-sliders input{min-width:90px;accent-color:#20d8c8}
+.viewer3d-implant-angle-sliders b{color:#e8fffc;min-width:28px;text-align:right}
+@media(max-width:720px){.viewer3d-implant-angle-sliders{grid-template-columns:1fr}}
