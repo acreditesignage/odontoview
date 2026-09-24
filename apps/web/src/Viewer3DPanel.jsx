@@ -386,13 +386,14 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     if(!activeImplantId)return;
     setPreset("implant");
     setDenseBoost(false);
-    setBoneOpacityScale(v=>Math.min(v,.45));
+    setNerveVisible(true);
+    setBoneOpacityScale(.18);
   },[activeImplantId]);
 
   function renderNow(){renderWindowRef.current?.render?.()}
 
   function disposeImplantBundle(bundle){
-    const renderer=overlayRendererRef.current||rendererRef.current;
+    const renderer=rendererRef.current;
     if(bundle?.actor&&renderer)renderer.removeActor(bundle.actor);
     if(bundle?.guide?.actor&&renderer)renderer.removeActor(bundle.guide.actor);
     bundle?.actor?.delete?.();bundle?.mapper?.delete?.();bundle?.poly?.delete?.();bundle?.points?.delete?.();
@@ -538,6 +539,10 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     }else if(name==="impacted"){
       setBoneOpacityScale(.25);
       setDenseBoost(true);
+      setNerveVisible(true);
+    }else if(name==="implant"){
+      setBoneOpacityScale(.18);
+      setDenseBoost(false);
       setNerveVisible(true);
     }
   }
@@ -685,7 +690,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   },[volumeVisible]);
 
   useEffect(()=>{
-    const renderer=overlayRendererRef.current;if(!renderer||!meta)return;
+    const renderer=rendererRef.current;if(!renderer||!meta)return;
     if(nerveActorRef.current?.actor){
       renderer.removeActor(nerveActorRef.current.actor);
       nerveActorRef.current=null;
@@ -716,7 +721,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   },[scanVisible,scanOpacity,scanTransform]);
 
   useEffect(()=>{
-    const renderer=overlayRendererRef.current;
+    const renderer=rendererRef.current;
     if(!renderer||!ready)return;
     const liveIds=new Set(implants.map(implant=>implant.id));
     implantActorsRef.current.forEach((bundle,id)=>{
