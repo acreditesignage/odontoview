@@ -1419,8 +1419,9 @@ export default function Viewer2(){
   const toolName={navigate:"Cruzeta",pan:"Pan",measure:"Medir",curve:"Curva da arcada",nerve:"Nervo",foramen:"Forame"}[tool];
   return <main className="viewer2">
     {showIntro&&<ViewerBootIntro loading={false}/>} 
+    {session?.isDemo&&<div className="viewer2-demo-banner"><strong>DEMONSTRAÇÃO</strong><span>Paciente fictício • alterações desta sessão não afetam sua conta</span></div>}
     <header className="viewer2-top">
-      <div><button type="button" className="brand light viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}} title="Ir para a página inicial">OdontoView</button><span className="viewer2-beta">VIEWER 2.0 BETA</span></div>
+      <div><button type="button" className="brand light viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}} title="Ir para a página inicial">OdontoView</button><span className="viewer2-beta">VIEWER 2.0 BETA</span>{session?.isDemo&&<span className="viewer2-demo-badge">DEMO</span>}</div>
       <div className="viewer2-study"><strong>{session?.order?.patient?.name||"Exame local"}</strong><span>{session?.order?.examType?.name||session?.result?.series?.[meta.seriesIndex]?.description} • {meta.manufacturer}{meta.model?" "+meta.model:""}</span></div>
       <button className="viewer2-exit" onClick={()=>{clearViewerSession();nav(returnTo)}}>← {returnLabel}</button>
     </header>
