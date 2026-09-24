@@ -17,7 +17,7 @@ import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
 import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
 import vtkSTLReader from "@kitware/vtk.js/IO/Geometry/STLReader";
 import vtkPLYReader from "@kitware/vtk.js/IO/Geometry/PLYReader";
-import {NEODENT_GM_LIBRARY} from "./implantLibrary.js";
+import {NEODENT_GM_LIBRARY,implantAxisVector} from "./implantLibrary.js";
 
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 
@@ -133,6 +133,70 @@ function nervePointToWorld(n,curve,meta){
   const x=c.x+nx*n.offsetMm/meta.spacingX;
   const y=c.y+ny*n.offsetMm/meta.spacingY;
   return [x*meta.spacingX,y*meta.spacingY,n.z*meta.spacingZ];
+}
+
+function segmentSegmentDistance(p1,q1,p2,q2){
+  const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+  const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  const u=sub(q1,p1),v=sub(q2,p2),w=sub(p1,p2);
+  const a=dot(u,u),b=dot(u,v),c=dot(v,v),d=dot(u,w),e=dot(v,w);
+  const EPS=1e-9;
+  if(a<EPS&&c<EPS)return Math.hypot(...w);
+  if(a<EPS){
+    const t=clamp(e/c,0,1);
+    return Math.hypot(p1[0]-(p2[0]+v[0]*t),p1[1]-(p2[1]+v[1]*t),p1[2]-(p2[2]+v[2]*t));
+  }
+  if(c<EPS){
+    const t=clamp(-d/a,0,1);
+    return Math.hypot((p1[0]+u[0]*t)-p2[0],(p1[1]+u[1]*t)-p2[1],(p1[2]+u[2]*t)-p2[2]);
+  }
+
+  const D=a*c-b*b;
+  let sN,sD=D,tN,tD=D;
+  if(D<EPS){sN=0;sD=1;tN=e;tD=c}
+  else{
+    sN=b*e-c*d;
+    tN=a*e-b*d;
+    if(sN<0){sN=0;tN=e;tD=c}
+    else if(sN>sD){sN=sD;tN=e+b;tD=c}
+  }
+  if(tN<0){
+    tN=0;
+    if(-d<0)sN=0;
+    else if(-d>a)sN=sD;
+    else{sN=-d;sD=a}
+  }else if(tN>tD){
+    tN=tD;
+    if((-d+b)<0)sN=0;
+    else if((-d+b)>a)sN=sD;
+    else{sN=-d+b;sD=a}
+  }
+  const sc=Math.abs(sN)<EPS?0:sN/sD;
+  const tc=Math.abs(tN)<EPS?0:tN/tD;
+  return Math.hypot(
+    w[0]+sc*u[0]-tc*v[0],
+    w[1]+sc*u[1]-tc*v[1],
+    w[2]+sc*u[2]-tc*v[2]
+  );
+}
+
+function implantNerveClearance(implant,nerveWorldPoints){
+  if(!implant||nerveWorldPoints.length<2)return null;
+  const axis=implantAxisVector(implant);
+  const half=Math.max(0,Number(implant.length)||0)/2;
+  const radius=Math.max(0,Number(implant.diameter)||0)/2;
+  const center=[Number(implant.x)||0,Number(implant.y)||0,Number(implant.z)||0];
+  const a=[center[0]-axis.x*half,center[1]-axis.y*half,center[2]-axis.z*half];
+  const b=[center[0]+axis.x*half,center[1]+axis.y*half,center[2]+axis.z*half];
+  let axisDistance=Infinity;
+  for(let i=0;i<nerveWorldPoints.length-1;i++){
+    axisDistance=Math.min(axisDistance,segmentSegmentDistance(a,b,nerveWorldPoints[i],nerveWorldPoints[i+1]));
+  }
+  if(!Number.isFinite(axisDistance))return null;
+  return {
+    axisDistance,
+    clearance:Math.max(0,axisDistance-radius)
+  };
 }
 
 function createTubeActor(worldPoints,radius,color){
@@ -272,7 +336,11 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     });
     return [...map.entries()];
   },[]);
+  const [nerveSafetyMargin,setNerveSafetyMargin]=useState(2);
   const activeImplant=implants.find(x=>x.id===activeImplantId)||null;
+  const nerveWorldPoints=useMemo(()=>meta&&curve.length>=2?nervePoints.map(n=>nervePointToWorld(n,curve,meta)).filter(Boolean):[],[nervePoints,curve,meta]);
+  const activeNerveClearance=useMemo(()=>implantNerveClearance(activeImplant,nerveWorldPoints),[activeImplant,nerveWorldPoints]);
+  const nerveMarginDelta=activeNerveClearance?activeNerveClearance.clearance-nerveSafetyMargin:null;
 
   function renderNow(){renderWindowRef.current?.render?.()}
 
@@ -551,7 +619,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       nerveActorRef.current=null;
     }
     if(!nerveVisible||nervePoints.length<2||curve.length<2){renderNow();return}
-    const pts=nervePoints.map(n=>nervePointToWorld(n,curve,meta)).filter(Boolean);
+    const pts=nerveWorldPoints;
     const radius=Math.max(1.05,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*5.8);
     const bundle=createTubeActor(pts,radius,[1,.08,.08]);
     if(bundle){
@@ -559,7 +627,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       nerveActorRef.current=bundle;
       renderNow();
     }
-  },[nervePoints,curve,meta,nerveVisible]);
+  },[nerveWorldPoints,meta,nerveVisible]);
 
   useEffect(()=>{
     const actor=scanActorRef.current?.actor;
@@ -644,6 +712,24 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
         </div>}
         {activeImplant&&<div className="viewer3d-implant-tools">
           <div className="viewer3d-implant-summary"><strong>{activeImplant.model}</strong><span>Ø {activeImplant.diameter} × {activeImplant.length} mm</span></div>
+          <section className={"viewer3d-nerve-clearance "+(!activeNerveClearance?"unavailable":nerveMarginDelta>=0?"within":"below")}>
+            <div className="viewer3d-nerve-clearance-head">
+              <span>Distância implante ↔ nervo</span>
+              <strong>{activeNerveClearance?activeNerveClearance.clearance.toFixed(2)+" mm":"—"}</strong>
+            </div>
+            {activeNerveClearance?<>
+              <div className="viewer3d-nerve-clearance-state">
+                {nerveMarginDelta>=0
+                  ?"Margem configurada atendida • +"+nerveMarginDelta.toFixed(2)+" mm"
+                  :"Abaixo da margem configurada • "+Math.abs(nerveMarginDelta).toFixed(2)+" mm"}
+              </div>
+              <label className="viewer3d-nerve-margin">Margem
+                <input type="range" min=".5" max="5" step=".25" value={nerveSafetyMargin} onChange={e=>setNerveSafetyMargin(Number(e.target.value))}/>
+                <b>{nerveSafetyMargin.toFixed(2)} mm</b>
+              </label>
+              <small>Estimativa geométrica da superfície nominal do implante até o traçado central do nervo. O traçado manual/assistido não representa a parede real do canal mandibular.</small>
+            </>:<small>Marque pelo menos 2 pontos do nervo para calcular a distância em milímetros.</small>}
+          </section>
           <span>Posição fina • 0,25 mm — ou arraste o implante diretamente no axial/coronal/sagital</span>
           <div><button onClick={()=>moveImplant("x",-.25)}>X−</button><button onClick={()=>moveImplant("x",.25)}>X+</button><button onClick={()=>moveImplant("y",-.25)}>Y−</button><button onClick={()=>moveImplant("y",.25)}>Y+</button><button onClick={()=>moveImplant("z",-.25)}>Z−</button><button onClick={()=>moveImplant("z",.25)}>Z+</button></div>
           <span>Inclinação fina • 1°</span>
