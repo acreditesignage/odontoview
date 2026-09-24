@@ -43,6 +43,18 @@ Node.prototype.insertBefore=function(newNode,referenceNode){
   return nativeInsertBefore.call(this,newNode,referenceNode);
 };
 
+// Network pilot must not be controlled by the legacy cache-first PWA worker.
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.getRegistrations().then(registrations=>{
+    registrations.forEach(registration=>registration.unregister().catch(()=>{}));
+  }).catch(()=>{});
+}
+if("caches" in window){
+  caches.keys().then(keys=>Promise.all(
+    keys.filter(key=>/^odontoview-(shell|runtime)-v/i.test(key)).map(key=>caches.delete(key))
+  )).catch(()=>{});
+}
+
 const rootEl=document.getElementById("root");
 const fallback=document.getElementById("startup-fallback");
 if(fallback)fallback.remove();
