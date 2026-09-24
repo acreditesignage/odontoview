@@ -627,10 +627,14 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
         </div>}
         {activeImplant&&<div className="viewer3d-implant-tools">
           <div className="viewer3d-implant-summary"><strong>{activeImplant.model}</strong><span>Ø {activeImplant.diameter} × {activeImplant.length} mm</span></div>
-          <span>Mover 1 mm</span>
-          <div><button onClick={()=>moveImplant("x",-1)}>X−</button><button onClick={()=>moveImplant("x",1)}>X+</button><button onClick={()=>moveImplant("y",-1)}>Y−</button><button onClick={()=>moveImplant("y",1)}>Y+</button><button onClick={()=>moveImplant("z",-1)}>Z−</button><button onClick={()=>moveImplant("z",1)}>Z+</button></div>
-          <span>Inclinar 2°</span>
-          <div><button onClick={()=>rotateImplant("x",-2)}>RX−</button><button onClick={()=>rotateImplant("x",2)}>RX+</button><button onClick={()=>rotateImplant("y",-2)}>RY−</button><button onClick={()=>rotateImplant("y",2)}>RY+</button><button onClick={()=>rotateImplant("z",-2)}>RZ−</button><button onClick={()=>rotateImplant("z",2)}>RZ+</button></div>
+          <span>Posição fina • 0,25 mm — ou arraste o implante diretamente no axial/coronal/sagital</span>
+          <div><button onClick={()=>moveImplant("x",-.25)}>X−</button><button onClick={()=>moveImplant("x",.25)}>X+</button><button onClick={()=>moveImplant("y",-.25)}>Y−</button><button onClick={()=>moveImplant("y",.25)}>Y+</button><button onClick={()=>moveImplant("z",-.25)}>Z−</button><button onClick={()=>moveImplant("z",.25)}>Z+</button></div>
+          <span>Inclinação fina • 1°</span>
+          <div><button onClick={()=>rotateImplant("x",-1)}>RX−</button><button onClick={()=>rotateImplant("x",1)}>RX+</button><button onClick={()=>rotateImplant("y",-1)}>RY−</button><button onClick={()=>rotateImplant("y",1)}>RY+</button><button onClick={()=>rotateImplant("z",-1)}>RZ−</button><button onClick={()=>rotateImplant("z",1)}>RZ+</button></div>
+          <div className="viewer3d-implant-angle-sliders">
+            <label>Inclinação X <input type="range" min="-45" max="45" step="1" value={activeImplant.rx||0} onChange={e=>updateActiveImplant({rx:Number(e.target.value)})}/><b>{Math.round(activeImplant.rx||0)}°</b></label>
+            <label>Inclinação Y <input type="range" min="-45" max="45" step="1" value={activeImplant.ry||0} onChange={e=>updateActiveImplant({ry:Number(e.target.value)})}/><b>{Math.round(activeImplant.ry||0)}°</b></label>
+          </div>
           <button type="button" className="viewer3d-remove-implant" onClick={removeActiveImplant}>Remover implante</button>
         </div>}
       </div>
