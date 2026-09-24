@@ -93,13 +93,15 @@ const PRESETS={
     ambient:.26,diffuse:.82,specular:.24,specularPower:14
   },
   patient:{
-    label:"Paciente",bg:[.055,.085,.11],
+    label:"Paciente",bg:[.008,.016,.026],
     colors:[
-      ["air",0,0,0],["soft",.16,.10,.075],["trab",.48,.31,.17],
-      ["bone",.82,.62,.38],["cortical",1,.84,.57],["dense",1,.98,.90],["max",1,1,1]
+      ["air",0,0,0],["soft",.015,.012,.010],["trab",.18,.14,.10],
+      ["bone",.56,.47,.36],["cortical",.92,.86,.75],["dense",1,.98,.92],["max",1,1,.99]
     ],
-    opacity:[["air",0],["soft",0],["trab",.006],["bone",.045],["cortical",.16],["dense",.64],["max",.86]],
-    ambient:.42,diffuse:.74,specular:.44,specularPower:24
+    opacity:[["air",0],["soft",0],["trab",0],["bone",.005],["cortical",.05],["dense",.86],["max",1]],
+    ambient:.16,diffuse:.94,specular:.56,specularPower:42,
+    sampleFactor:.55,unitDistanceFactor:1.0,
+    gradient:{minFactor:.035,maxFactor:.23,minOpacity:0,maxOpacity:1}
   },
   translucent:{
     label:"Translúcido",bg:[.025,.045,.065],
@@ -117,7 +119,9 @@ const PRESETS={
       ["bone",.62,.60,.56],["cortical",.88,.86,.80],["dense",1,1,1],["max",1,1,1]
     ],
     opacity:[["air",0],["soft",0],["trab",.004],["bone",.035],["cortical",.17],["dense",.72],["max",.92]],
-    ambient:.30,diffuse:.82,specular:.50,specularPower:30
+    ambient:.28,diffuse:.86,specular:.54,specularPower:34,
+    sampleFactor:.72,unitDistanceFactor:1.35,
+    gradient:{minFactor:.025,maxFactor:.30,minOpacity:.04,maxOpacity:1}
   }
 };
 
@@ -714,6 +718,18 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       setBoneOpacityScale(.18);
       setDenseBoost(false);
       setNerveVisible(true);
+    }else if(name==="patient"){
+      setBoneOpacityScale(.95);
+      setDenseBoost(true);
+      setLighting(true);
+    }else if(name==="detail"){
+      setBoneOpacityScale(.82);
+      setDenseBoost(true);
+      setLighting(true);
+    }else if(name==="clinical"){
+      setBoneOpacityScale(.74);
+      setDenseBoost(true);
+      setLighting(true);
     }
   }
 
@@ -730,6 +746,28 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     prop.setDiffuse(cfg.diffuse);
     prop.setSpecular(cfg.specular);
     prop.setSpecularPower(cfg.specularPower);
+
+    const minSpacing=Math.max(.05,Math.min(meta?.spacingX||1,meta?.spacingY||1,meta?.spacingZ||1));
+    const mapper=mapperRef.current;
+    if(mapper){
+      const sampleFactor=cfg.sampleFactor||1.05;
+      mapper.setAutoAdjustSampleDistances(false);
+      mapper.setSampleDistance(Math.max(.10,minSpacing*sampleFactor));
+    }
+    prop.setScalarOpacityUnitDistance(0,Math.max(.28,minSpacing*(cfg.unitDistanceFactor||2.0)));
+
+    const gradient=cfg.gradient;
+    if(prop.setUseGradientOpacity){
+      prop.setUseGradientOpacity(0,Boolean(gradient));
+      if(gradient){
+        const spread=Math.max(1,stats.dense-stats.bone);
+        prop.setGradientOpacityMinimumValue?.(0,Math.max(1,spread*gradient.minFactor));
+        prop.setGradientOpacityMinimumOpacity?.(0,gradient.minOpacity);
+        prop.setGradientOpacityMaximumValue?.(0,Math.max(2,spread*gradient.maxFactor));
+        prop.setGradientOpacityMaximumOpacity?.(0,gradient.maxOpacity);
+      }
+    }
+
     renderer.setBackground(...cfg.bg);
     renderNow();
   }
@@ -745,6 +783,11 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     if(kind==="side"){cam.setPosition(c[0]+r*2.15,c[1],c[2]);cam.setViewUp(0,0,1)}
     if(kind==="top"){cam.setPosition(c[0],c[1],c[2]+r*2.15);cam.setViewUp(0,-1,0)}
     if(kind==="oblique"){cam.setPosition(c[0]+r*1.55,c[1]-r*1.35,c[2]+r*.75);cam.setViewUp(0,0,1)}
+    if(kind==="presentation"){
+      cam.setPosition(c[0]+r*1.28,c[1]-r*1.16,c[2]+r*.50);
+      cam.setViewUp(0,0,1);
+      cam.setViewAngle?.(26);
+    }
     renderer.resetCameraClippingRange();
     renderNow();
   }
@@ -979,6 +1022,15 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     renderNow();
   },[implants,activeImplantId,ready]);
 
+  function improve3D(){
+    setPreset("patient");
+    setBoneOpacityScale(.95);
+    setDenseBoost(true);
+    setLighting(true);
+    setStatus("Apresentação 3D • refinando superfície…");
+    setTimeout(()=>setView("presentation"),0);
+  }
+
   return <div className="viewer3d-panel viewer3d-v2">
     <div className={"viewer3d-stage "+(interactionMode!=="camera"?"is-picking":"")} ref={hostRef}
       onPointerDownCapture={onStagePointerDownCapture}
@@ -1001,6 +1053,10 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
         <button type="button" className={crosshairVisible?"active":""} onClick={()=>onCrosshairVisibleChange(!crosshairVisible)}>{crosshairVisible?"Cruzeta visível":"Mostrar cruzeta"}</button>
       </div>
       {pickMessage&&<div className="viewer3d-pick-note">{pickMessage}</div>}
+      <div className="viewer3d-presentation-action">
+        <button type="button" className={preset==="patient"?"active":""} onClick={improve3D}>✨ Melhorar 3D</button>
+        <span>Remove densidades fracas, reforça bordas e aplica enquadramento de apresentação.</span>
+      </div>
       <div className="viewer3d-presets" role="group" aria-label="Presets 3D">
         {Object.entries(PRESETS).map(([key,cfg])=><button key={key} className={preset===key?"active":""} onClick={()=>choosePreset(key)}>{cfg.label}</button>)}
       </div>

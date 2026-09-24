@@ -1572,3 +1572,23 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .viewer2-demo-banner{justify-content:flex-start;overflow:hidden;white-space:nowrap}
   .viewer2-demo-banner span{overflow:hidden;text-overflow:ellipsis}
 }
+
+
+/* 3D presentation action */
+.viewer3d-presentation-action{
+  display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:center;margin-bottom:7px
+}
+.viewer3d-presentation-action button{
+  min-height:34px;border:1px solid #28727a;background:linear-gradient(135deg,#0d3e45,#0b6971);
+  color:#b8fff8;border-radius:9px;padding:6px 12px;font:inherit;font-size:10px;font-weight:900;
+  box-shadow:0 7px 18px rgba(14,174,176,.10)
+}
+.viewer3d-presentation-action button.active{
+  border-color:#42e6d9;background:linear-gradient(135deg,#0b5960,#0c8586);color:#fff;
+  box-shadow:0 0 0 1px rgba(66,230,217,.12),0 8px 24px rgba(23,205,195,.15)
+}
+.viewer3d-presentation-action span{font-size:9px;line-height:1.35;color:#83a3b7}
+@media(max-width:760px){
+  .viewer3d-presentation-action{grid-template-columns:1fr}
+  .viewer3d-presentation-action button{min-height:40px;font-size:11px}
+}
