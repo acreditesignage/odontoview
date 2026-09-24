@@ -1555,3 +1555,20 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .dentist-demo-action{grid-column:auto;grid-template-columns:1fr}
   .dentist-demo-action small{text-align:center}
 }
+
+
+/* Viewer demo safety state */
+.viewer2-demo-banner{
+  display:flex;align-items:center;justify-content:center;gap:10px;padding:7px 12px;
+  background:linear-gradient(90deg,#0b5e67,#0b7b84,#0b5e67);color:#eafffd;border-bottom:1px solid rgba(120,255,244,.22);
+  font-size:10px;letter-spacing:.02em
+}
+.viewer2-demo-banner strong{font-size:9px;letter-spacing:.16em;color:#7ff7ec}
+.viewer2-demo-badge{
+  display:inline-flex;align-items:center;margin-left:8px;padding:4px 7px;border-radius:999px;
+  background:#0d3f45;border:1px solid #2c7c83;color:#8df7ee;font-size:8px;font-weight:900;letter-spacing:.14em
+}
+@media(max-width:760px){
+  .viewer2-demo-banner{justify-content:flex-start;overflow:hidden;white-space:nowrap}
+  .viewer2-demo-banner span{overflow:hidden;text-overflow:ellipsis}
+}
