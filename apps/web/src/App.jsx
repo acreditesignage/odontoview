@@ -5,6 +5,7 @@ import {api,apiBinary,apiBlob} from "./api.js";
 import {importExam} from "./ingest.js";
 import Viewer2 from "./Viewer2.jsx";
 import {setViewerSession} from "./viewerSession.js";
+import QRCode from "qrcode";
 
 function routeForRole(role){return role==="UNIT_USER"?"/radiologia":"/dentista"}
 function viewerRoute(origin,returnTo){const params=new URLSearchParams({from:origin,returnTo});return "/viewer2?"+params.toString()}
@@ -61,10 +62,10 @@ function Login({initialMode="login"}){
 function DentistDashboard(){
  const nav=useNavigate(),[q]=useSearchParams();
  const requestedTab=q.get("tab");
- const initialTab=["home","new","patients","exams","import"].includes(requestedTab)?requestedTab:"home";
+ const initialTab=["home","new","new-patient","patients","exams","import"].includes(requestedTab)?requestedTab:"home";
  const [data,setData]=useState(null),[types,setTypes]=useState([]),[tab,setTab]=useState(initialTab),[err,setErr]=useState(""),[busy,setBusy]=useState(false),[openingStudy,setOpeningStudy]=useState("");
  const [patientMode,setPatientMode]=useState("existing"),[selectedPatient,setSelectedPatient]=useState(""),[type,setType]=useState("");
- const [p,setP]=useState({name:"",birthDate:"",phone:"",email:""}),[out,setOut]=useState(null);
+ const [p,setP]=useState({name:"",birthDate:"",phone:"",email:""}),[out,setOut]=useState(null),[createdPatient,setCreatedPatient]=useState(null),[patientSaving,setPatientSaving]=useState(false),[orderQr,setOrderQr]=useState(""),[shareMessage,setShareMessage]=useState("");
  const dentistFileInput=useRef(null);
  const [dentistIngest,setDentistIngest]=useState(null),[dentistImportPatient,setDentistImportPatient]=useState(""),[dentistImportType,setDentistImportType]=useState("");
 
@@ -80,15 +81,53 @@ function DentistDashboard(){
    }catch(e){setErr(e.message)}
  }
  useEffect(()=>{load()},[]);
+ useEffect(()=>{
+   let alive=true;
+   setOrderQr("");
+   if(!out?.patientAccessUrl)return ()=>{alive=false};
+   QRCode.toDataURL(out.patientAccessUrl,{width:240,margin:1,errorCorrectionLevel:"M"})
+     .then(url=>{if(alive)setOrderQr(url)})
+     .catch(()=>{if(alive)setOrderQr("")});
+   return ()=>{alive=false};
+ },[out?.patientAccessUrl]);
+
+ async function saveStandalonePatient(e){
+   e.preventDefault();
+   setPatientSaving(true);setErr("");setCreatedPatient(null);
+   try{
+     const patient=await api("/api/patients",{method:"POST",body:JSON.stringify(p)});
+     setCreatedPatient(patient);
+     setSelectedPatient(patient.id);
+     setDentistImportPatient(patient.id);
+     setPatientMode("existing");
+     setP({name:"",birthDate:"",phone:"",email:""});
+     await load();
+   }catch(e){setErr(e.message)}
+   finally{setPatientSaving(false)}
+ }
+
+ async function shareOrderLink(){
+   if(!out?.patientAccessUrl)return;
+   setShareMessage("");
+   const shareData={title:"Exame no OdontoView",text:"Acesse o OdontoView para escolher a radiologia e o horário do seu exame.",url:out.patientAccessUrl};
+   try{
+     if(navigator.share){
+       await navigator.share(shareData);
+       setShareMessage("Compartilhado ✓");
+     }else{
+       await navigator.clipboard.writeText(out.patientAccessUrl);
+       setShareMessage("Link copiado ✓");
+     }
+   }catch(e){
+     if(e?.name!=="AbortError")setShareMessage("Não foi possível compartilhar.");
+   }
+ }
+
  async function submitOrder(e){
    e.preventDefault();setBusy(true);setErr("");setOut(null);
    try{
-     let patientId=selectedPatient;
-     if(patientMode==="new"){
-       const patient=await api("/api/patients",{method:"POST",body:JSON.stringify(p)});
-       patientId=patient.id;
-     }
-     if(!patientId)throw new Error("Selecione ou cadastre um paciente.");
+     const patientId=selectedPatient;
+     if(!patientId)throw new Error("Selecione um paciente cadastrado.");
      const order=await api("/api/orders",{method:"POST",body:JSON.stringify({patientId,examTypeId:type})});
      setOut(order);setP({name:"",birthDate:"",phone:"",email:""});setPatientMode("existing");
      await load();
@@ -165,9 +204,9 @@ function DentistDashboard(){
    nav("/dentista?tab="+encodeURIComponent(next),{replace:true});
  };
  const startNewPatient=()=>{
-   setPatientMode("new");
-   setOut(null);
-   goDentistTab("new");
+   setCreatedPatient(null);
+   setP({name:"",birthDate:"",phone:"",email:""});
+   goDentistTab("new-patient");
  };
  const recentExams=[
    ...data?.orders?.filter(o=>o.study?.status==="READY").map(o=>({
@@ -234,16 +273,44 @@ function DentistDashboard(){
          </article>)}</div>}
        </section>
      </div>}
+     {tab==="new-patient"&&<section className="card dentist-patient-create-card">
+       <div className="section-title"><div><p className="eyebrow">NOVO PACIENTE</p><h2>Cadastre sem criar pedido.</h2><p className="muted">Use este caminho quando o paciente já possui o exame ou quando você só quer adicioná-lo à sua base.</p></div></div>
+       {!createdPatient?<form className="stack" onSubmit={saveStandalonePatient}>
+         <input required autoFocus placeholder="Nome completo" value={p.name} onChange={e=>setP({...p,name:e.target.value})}/>
+         <div className="two"><input type="date" value={p.birthDate} onChange={e=>setP({...p,birthDate:e.target.value})}/><input placeholder="Telefone / WhatsApp" value={p.phone} onChange={e=>setP({...p,phone:e.target.value})}/></div>
+         <input type="email" placeholder="E-mail (opcional)" value={p.email} onChange={e=>setP({...p,email:e.target.value})}/>
+         <button className="primary" disabled={patientSaving}>{patientSaving?"Salvando…":"Salvar paciente"}</button>
+       </form>:<section className="patient-created-success">
+         <div className="patient-created-check">✓</div>
+         <div><p className="eyebrow">PACIENTE CADASTRADO</p><h3>{createdPatient.name}</h3><p className="muted">O paciente foi salvo. Agora escolha o que deseja fazer.</p></div>
+         <div className="patient-next-actions">
+           <button className="primary" onClick={()=>{setDentistImportPatient(createdPatient.id);goDentistTab("import")}}>⬆ Importar DICOM</button>
+           <button className="secondary" onClick={()=>{setSelectedPatient(createdPatient.id);setOut(null);goDentistTab("new")}}>＋ Criar pedido de exame</button>
+           <button className="ghost" onClick={()=>goDentistTab("patients")}>Concluir / Ver pacientes</button>
+         </div>
+       </section>}
+     </section>}
      {tab==="new"&&<section className="card dentist-order-card">
        <div className="section-title"><div><p className="eyebrow">NOVO PEDIDO</p><h2>Solicite o exame em poucos passos.</h2></div></div>
        <form className="stack" onSubmit={submitOrder}>
-         <div className="choice-tabs"><button type="button" className={patientMode==="existing"?"active":""} onClick={()=>setPatientMode("existing")}>Paciente cadastrado</button><button type="button" className={patientMode==="new"?"active":""} onClick={()=>setPatientMode("new")}>Novo paciente</button></div>
-         {patientMode==="existing"?<select value={selectedPatient} onChange={e=>setSelectedPatient(e.target.value)}><option value="">Selecione o paciente</option>{data.patients.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>:
-         <div className="stack"><input required placeholder="Nome do paciente" value={p.name} onChange={e=>setP({...p,name:e.target.value})}/><div className="two"><input type="date" value={p.birthDate} onChange={e=>setP({...p,birthDate:e.target.value})}/><input placeholder="Telefone / WhatsApp" value={p.phone} onChange={e=>setP({...p,phone:e.target.value})}/></div><input type="email" placeholder="Email (opcional)" value={p.email} onChange={e=>setP({...p,email:e.target.value})}/></div>}
-         <select value={type} onChange={e=>setType(e.target.value)}>{types.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select>
-         <button className="primary" disabled={busy}>{busy?"Criando…":"Criar pedido e gerar link"}</button>
+         <label className="field-label"><span>Paciente</span><select value={selectedPatient} onChange={e=>setSelectedPatient(e.target.value)}><option value="">Selecione o paciente</option>{data.patients.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+         <label className="field-label"><span>Tipo de exame</span><select value={type} onChange={e=>setType(e.target.value)}>{types.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+         <div className="order-form-foot"><button type="button" className="secondary" onClick={startNewPatient}>＋ Cadastrar outro paciente</button><button className="primary" disabled={busy||!selectedPatient}>{busy?"Criando…":"Criar pedido e gerar link"}</button></div>
        </form>
-       {out&&<section className="success order-link-box"><strong>Pedido criado ✓</strong><p>Envie este link seguro ao paciente para escolher a radiologia e o horário:</p><code>{out.patientAccessUrl}</code><button className="secondary" onClick={()=>navigator.clipboard.writeText(out.patientAccessUrl)}>Copiar link</button></section>}
+       {out&&<section className="success order-link-box order-share-box">
+         <div className="order-share-head"><div><strong>Pedido criado ✓</strong><p>O paciente pode apontar a câmera para o QR Code ou usar o link para escolher a radiologia e o horário.</p></div></div>
+         <div className="order-share-content">
+           <div className="order-qr-wrap">{orderQr?<img src={orderQr} alt="QR Code do link seguro do paciente"/>:<div className="order-qr-loading">Gerando QR…</div>}</div>
+           <div className="order-link-actions">
+             <label><span>Link seguro do paciente</span><code>{out.patientAccessUrl}</code></label>
+             <div className="order-share-actions">
+               <button className="secondary" onClick={async()=>{await navigator.clipboard.writeText(out.patientAccessUrl);setShareMessage("Link copiado ✓")}}>Copiar link</button>
+               <button className="primary" onClick={shareOrderLink}>Compartilhar</button>
+             </div>
+             {shareMessage&&<small className="share-feedback">{shareMessage}</small>}
+           </div>
+         </div>
+       </section>}
      </section>}
      {tab==="import"&&<section className="card dentist-import-card">
        <div className="section-title"><div><p className="eyebrow">IMPORTAR DICOM</p><h2>Abra qualquer exame no OdontoView.</h2><p className="muted">Escolha um paciente e envie ZIP/DICOM para salvar de forma privada na sua biblioteca.</p></div></div>
@@ -270,7 +337,7 @@ function DentistDashboard(){
      </section>}
      {tab==="patients"&&<section className="card">
        <div className="section-title"><div><p className="eyebrow">PACIENTES</p><h2>Sua base de pacientes.</h2></div><button className="primary compact" onClick={startNewPatient}>+ Cadastrar</button></div>
-       {data.patients.length===0?<div className="empty">Nenhum paciente cadastrado.</div>:<div className="patient-registry">{data.patients.map(x=><div className="patient-registry-row" key={x.id}><div><strong>{x.name}</strong><small>{x.phone||"Sem telefone"}{x.birthDate?" • "+new Date(x.birthDate).toLocaleDateString("pt-BR"):""}</small></div><button className="secondary compact" onClick={()=>{setSelectedPatient(x.id);setPatientMode("existing");setTab("new")}}>Criar pedido</button></div>)}</div>}
+       {data.patients.length===0?<div className="empty">Nenhum paciente cadastrado.</div>:<div className="patient-registry">{data.patients.map(x=><div className="patient-registry-row" key={x.id}><div><strong>{x.name}</strong><small>{x.phone||"Sem telefone"}{x.birthDate?" • "+new Date(x.birthDate).toLocaleDateString("pt-BR"):""}</small></div><button className="secondary compact" onClick={()=>{setSelectedPatient(x.id);setPatientMode("existing");setOut(null);goDentistTab("new")}}>Criar pedido</button></div>)}</div>}
      </section>}
    </>}
  </section></main>

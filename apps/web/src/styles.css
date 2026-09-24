@@ -1044,3 +1044,68 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .dentist-recent-row>button{width:100%}
   .dentist-recent-main small,.dentist-recent-name strong{white-space:normal;overflow:visible;text-overflow:clip}
 }
+
+
+/* Dentist patient-only flow + order QR */
+.dentist-patient-create-card{max-width:820px}
+.patient-created-success{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  gap:16px;
+  align-items:start;
+  padding:18px;
+  border:1px solid #b9dfca;
+  border-radius:16px;
+  background:#f7fff9;
+}
+.patient-created-check{
+  width:46px;height:46px;border-radius:50%;
+  display:grid;place-items:center;
+  background:#16a05d;color:#fff;font-size:24px;font-weight:900;
+}
+.patient-created-success h3{margin:.1rem 0;font-size:24px}
+.patient-next-actions{
+  grid-column:1/-1;
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:9px;
+}
+.patient-next-actions button{min-width:0}
+.field-label{display:grid;gap:6px}
+.field-label>span{font-size:12px;font-weight:800;color:#5e7185}
+.order-form-foot{display:grid;grid-template-columns:auto minmax(220px,1fr);gap:10px;align-items:center}
+.order-share-box{margin-top:18px}
+.order-share-head p{margin:.4rem 0 0;color:#53677c;line-height:1.45}
+.order-share-content{
+  display:grid;
+  grid-template-columns:190px minmax(0,1fr);
+  gap:20px;
+  align-items:center;
+  margin-top:16px;
+}
+.order-qr-wrap{
+  min-height:170px;
+  display:grid;place-items:center;
+  padding:10px;
+  background:#fff;
+  border:1px solid #dce5ee;
+  border-radius:16px;
+}
+.order-qr-wrap img{width:100%;max-width:170px;height:auto;display:block}
+.order-qr-loading{font-size:12px;color:#74879a}
+.order-link-actions{min-width:0;display:grid;gap:10px}
+.order-link-actions label{min-width:0;display:grid;gap:5px}
+.order-link-actions label>span{font-size:11px;font-weight:800;color:#5e7185}
+.order-link-actions code{margin:0;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.order-share-actions{display:flex;gap:9px;flex-wrap:wrap}
+.share-feedback{color:#177646;font-weight:750}
+
+@media(max-width:760px){
+  .patient-next-actions{grid-template-columns:1fr}
+  .order-form-foot{grid-template-columns:1fr}
+  .order-form-foot button{width:100%}
+  .order-share-content{grid-template-columns:1fr}
+  .order-qr-wrap{width:min(220px,100%);justify-self:center}
+  .order-share-actions{display:grid;grid-template-columns:1fr}
+  .order-share-actions button{width:100%}
+}
