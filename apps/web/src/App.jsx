@@ -179,7 +179,7 @@ const STATUS={
  IMAGENS_RECEBIDAS:{label:"Imagens recebidas",tone:"green"}
 };
 
-function IngestResult({state,onClear,onOpenViewer,onSend}){
+function IngestResult({state,onClear,onOpenViewer,onSend,sendLabel="Enviar exame ao dentista"}){
  if(!state)return null;
  if(state.status==="reading"){
    const p=state.progress||{};
@@ -189,15 +189,22 @@ function IngestResult({state,onClear,onOpenViewer,onSend}){
  if(state.status==="error")return <div className="ingest-panel ingest-error"><strong>Não foi possível abrir este exame.</strong><p>{state.message}</p><button className="ghost compact" onClick={onClear}>Fechar</button></div>;
  if(state.status!=="ready")return null;
  const r=state.result;
+ const sending=state.send?.status==="uploading",sent=state.send?.status==="done";
  return <div className="ingest-panel">
-   <div className="ingest-head"><div><strong>Exame reconhecido localmente ✓</strong><p className="muted">{r.sourceType} • {r.totalFiles} DICOM • {formatBytes(r.totalBytes)} • {r.seriesCount} série(s)</p></div><button className="ghost compact" onClick={onClear}>Descartar</button></div>
+   <div className="ingest-head"><div><strong>Exame reconhecido localmente ✓</strong><p className="muted">{r.sourceType} • {r.totalFiles} DICOM • {formatBytes(r.totalBytes)} • {r.seriesCount} série(s)</p></div><button className="ghost compact" onClick={onClear} disabled={sending}>Descartar</button></div>
    {r.failedFiles.length>0&&<div className="warn">{r.failedFiles.length} arquivo(s) não puderam ser lidos e foram ignorados.</div>}
    <div className="series-list">{r.series.map(s=><div className="series-card" key={s.index}>
      <div><strong>{s.description}</strong><small>{s.modality} • {s.files} corte(s){s.dimensions?" • "+s.dimensions:""}</small><small>{s.manufacturer}{s.model?" • "+s.model:""}</small></div>
      <span className={"series-status "+(s.valid?"ok":"bad")}>{s.valid?"Série válida":"Revisar"}</span>
    </div>)}</div>
-   <p className="privacy-note">Leitura local. Nesta etapa nenhum arquivo foi enviado para a nuvem e o pedido ainda permanece como “Exame realizado”.</p>
-   <div className="ingest-actions"><button className="primary" onClick={onOpenViewer}>Abrir Viewer 2.0 Beta</button><button className="secondary" disabled>Associar ao pedido e enviar • próxima etapa</button></div>
+   {sending&&<div className="cloud-send-progress"><strong>Enviando com segurança… {state.send.done}/{state.send.total}</strong><div className="ingest-bar"><span style={{width:Math.round((state.send.done/Math.max(1,state.send.total))*100)+"%"}}/></div><small>Gravando no storage privado do OdontoView.</small></div>}
+   {sent&&<div className="success cloud-send-done"><strong>Exame enviado ✓</strong><p>O estudo foi associado ao paciente/pedido e já pode ser acessado conforme as permissões do fluxo.</p></div>}
+   {state.send?.status==="error"&&<div className="error">Falha no envio: {state.send.message}</div>}
+   {!state.send&&<p className="privacy-note">Leitura local concluída. Clique em “{sendLabel}” para gravar os DICOMs no storage privado e associá-los ao paciente/pedido.</p>}
+   <div className="ingest-actions">
+     <button className="primary" onClick={onOpenViewer} disabled={sending}>Abrir Viewer 2.0</button>
+     <button className="secondary" onClick={onSend} disabled={sending||sent||!onSend}>{sent?"Enviado ✓":sending?"Enviando…":sendLabel}</button>
+   </div>
  </div>;
 }
 
