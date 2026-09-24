@@ -289,6 +289,30 @@ export function createApp(){
     }catch(e){next(e);}
   });
 
+  app.post("/api/unit/patients/:id/dentist-invite",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const patient=await prisma.patient.findFirst({
+        where:{id:req.params.id,OR:[{createdByUnitId:membership.unitId},{orders:{some:{unitId:membership.unitId}}}]}
+      });
+      if(!patient) return res.status(404).json({error:"Paciente não encontrado nesta unidade."});
+      let studyId=null;
+      if(req.body?.studyId){
+        const study=await prisma.examStudy.findFirst({where:{id:String(req.body.studyId),patientId:patient.id,unitId:membership.unitId,status:"READY"}});
+        if(!study) return res.status(404).json({error:"Exame não encontrado para este paciente."});
+        studyId=study.id;
+      }
+      const rawToken=newToken(),expiresAt=new Date(Date.now()+7*24*3600000);
+      await prisma.dentistInvite.create({data:{
+        patientId:patient.id,studyId,unitId:membership.unitId,tokenHash:hashToken(rawToken),expiresAt
+      }});
+      const base=`${req.protocol}://${req.get("host")}`;
+      res.status(201).json({inviteUrl:base+"/convite-dentista?token="+encodeURIComponent(rawToken),expiresAt});
+    }catch(e){next(e);}
+  });
+
   app.post("/api/unit/patients/:id/studies",auth,async(req,res,next)=>{
     try{
       if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
@@ -679,6 +703,74 @@ export function createApp(){
     res.set("Cache-Control","no-store");
     res.set("Referrer-Policy","no-referrer");
     next();
+  });
+
+  app.get("/api/public/dentist-invites/:token",async(req,res,next)=>{
+    try{
+      const invite=await prisma.dentistInvite.findUnique({
+        where:{tokenHash:hashToken(req.params.token)},
+        include:{
+          patient:{select:{id:true,name:true}},
+          study:{select:{id:true,status:true,fileCount:true,totalBytes:true,examType:true}},
+          unit:{include:{organization:true}},
+          claimedByDentist:{include:{user:{select:{name:true,email:true}}}}
+        }
+      });
+      if(!invite||invite.expiresAt<=new Date()) return res.status(401).json({error:"Convite inválido ou expirado."});
+      res.set("Cache-Control","no-store");
+      res.json({
+        invite:{
+          patient:invite.patient,
+          study:invite.study,
+          unit:invite.unit?{id:invite.unit.id,name:invite.unit.name,organization:invite.unit.organization.name}:null,
+          claimed:Boolean(invite.claimedAt),
+          claimedBy:invite.claimedByDentist?.user||null,
+          expiresAt:invite.expiresAt
+        }
+      });
+    }catch(e){next(e);}
+  });
+
+  app.post("/api/dentist/invites/:token/claim",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      const dentist=await dentistFor(req.auth.sub);
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
+      const invite=await prisma.dentistInvite.findUnique({where:{tokenHash:hashToken(req.params.token)}});
+      if(!invite||invite.expiresAt<=new Date()) return res.status(401).json({error:"Convite inválido ou expirado."});
+      if(invite.claimedByDentistId&&invite.claimedByDentistId!==dentist.id) return res.status(409).json({error:"Este convite já foi utilizado por outro dentista."});
+      await prisma.$transaction([
+        prisma.dentistPatientAccess.upsert({
+          where:{dentistId_patientId:{dentistId:dentist.id,patientId:invite.patientId}},
+          create:{dentistId:dentist.id,patientId:invite.patientId,source:"INVITE"},
+          update:{}
+        }),
+        prisma.dentistInvite.update({
+          where:{id:invite.id},
+          data:{claimedByDentistId:dentist.id,claimedAt:invite.claimedAt||new Date()}
+        })
+      ]);
+      res.json({ok:true,patientId:invite.patientId,studyId:invite.studyId||null});
+    }catch(e){next(e);}
+  });
+
+  app.post("/api/public/orders/access/:token/dentist-invite",async(req,res,next)=>{
+    try{
+      const access=await resolveAccessToken(prisma,req.params.token);
+      if(!access) return res.status(401).json({error:"Link inválido ou expirado."});
+      const order=await prisma.order.findUnique({where:{id:access.orderId},include:{study:true}});
+      if(!order) return res.status(404).json({error:"Pedido não encontrado."});
+      const rawToken=newToken(),expiresAt=new Date(Date.now()+7*24*3600000);
+      await prisma.dentistInvite.create({data:{
+        patientId:order.patientId,
+        studyId:order.study?.status==="READY"?order.study.id:null,
+        unitId:order.unitId||null,
+        tokenHash:hashToken(rawToken),
+        expiresAt
+      }});
+      const base=`${req.protocol}://${req.get("host")}`;
+      res.status(201).json({inviteUrl:base+"/convite-dentista?token="+encodeURIComponent(rawToken),expiresAt});
+    }catch(e){next(e);}
   });
 
   app.get("/api/public/orders/access/:token",async(req,res,next)=>{
