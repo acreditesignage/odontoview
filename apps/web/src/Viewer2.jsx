@@ -337,7 +337,7 @@ export default function Viewer2(){
     ctx.restore();
   }
 
-  function drawImplantOverlays(ctx,canvas,plane,currentSlice){
+  function drawImplantOverlays(ctx,canvas,plane,currentSlice,showLabel=true){
     const m=metaRef.current,map=canvas?._map;
     if(!m||!map||!implants.length)return;
     const fixedWorld=plane==="axial"?currentSlice*m.spacingZ:plane==="coronal"?currentSlice*m.spacingY:currentSlice*m.spacingX;
@@ -402,7 +402,7 @@ export default function Viewer2(){
         ctx.strokeStyle=lineColor;ctx.lineWidth=Math.max(1.3,map.dpr);
         ctx.beginPath();ctx.moveTo(top.x-nx*topR,top.y-ny*topR);ctx.lineTo(top.x+nx*topR,top.y+ny*topR);ctx.stroke();
       }
-      if(active){
+      if(active&&showLabel){
         const mid={x:(tip.x+top.x)/2,y:(tip.y+top.y)/2};
         ctx.fillStyle="rgba(3,14,20,.86)";ctx.font=`${10*map.dpr}px -apple-system,sans-serif`;
         const label=`${implant.model} • Ø${implant.diameter}×${implant.length}`;
@@ -558,7 +558,7 @@ export default function Viewer2(){
     ctx.restore();
   }
 
-  function drawTangentialImplants(ctx,map,frame,stepMm){
+  function drawTangentialImplants(ctx,map,frame,stepMm,showLabel=true){
     const m=metaRef.current;if(!m||!map||!frame)return;
     implants.forEach(implant=>{
       const axis=implantAxisVector(implant),half=implant.length/2,radius=implant.diameter/2;
@@ -571,7 +571,7 @@ export default function Viewer2(){
       const axisIn=axis.x*frame.nx+axis.y*frame.ny;
       const tip={a:map.pixelW/2+(offset-axisIn*half)/stepMm,b:m.d-1-(implant.z-axis.z*half)/m.spacingZ};
       const top={a:map.pixelW/2+(offset+axisIn*half)/stepMm,b:m.d-1-(implant.z+axis.z*half)/m.spacingZ};
-      paintProjectedImplant(ctx,map,tip,top,radius,implant.id===activeImplantId,`${implant.model} • Ø${implant.diameter}×${implant.length}`);
+      paintProjectedImplant(ctx,map,tip,top,radius,implant.id===activeImplantId,showLabel?`${implant.model} • Ø${implant.diameter}×${implant.length}`:"");
     });
   }
 
@@ -678,7 +678,7 @@ export default function Viewer2(){
       const x=pixelW/2+n.offsetMm/stepMm,y=d-1-n.z;
       ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);ctx.stroke();
     });
-    drawTangentialImplants(ctx,map,frame,stepMm);
+    drawTangentialImplants(ctx,map,frame,stepMm,false);
     if(crosshairVisible&&index===curveIndex){
       const dx=(cursor.x-frame.c.x)*m.spacingX,dy=(cursor.y-frame.c.y)*m.spacingY;
       const offsetMm=dx*frame.nx+dy*frame.ny;
@@ -726,7 +726,7 @@ export default function Viewer2(){
 
     drawExportNerveOrthogonal(ctx,canvas,plane,index);
     drawExportForaminaOrthogonal(ctx,canvas,plane,index);
-    drawImplantOverlays(ctx,canvas,plane,index);
+    drawImplantOverlays(ctx,canvas,plane,index,false);
     if(crosshairVisible){
       if(plane==="axial"&&Math.abs(index-cursor.z)<.51)drawCrosshair(ctx,canvas,cursor.x,cursor.y);
       if(plane==="coronal"&&Math.abs(index-cursor.y)<.51)drawCrosshair(ctx,canvas,cursor.x,d-1-cursor.z);
@@ -756,10 +756,19 @@ export default function Viewer2(){
     setExportBusy(true);setExportMessage("");
     try{
       const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4",compress:true});
-      const pageW=210,pageH=297,margin=12,gap=6,headerH=24;
-      const cellW=(pageW-margin*2-gap)/2,cellH=(pageH-margin*2-headerH-gap)/2;
+      const pageW=210,pageH=297,margin=12,gap=6;
       const patient=session?.order?.patient?.name||"Paciente";
       const exam=session?.order?.examType?.name||session?.result?.series?.[meta.seriesIndex]?.description||"CBCT";
+      const planningItems=implants.map((item,index)=>{
+        const family=item.familyLabel||"Implante";
+        const model=item.model||item.catalogId||item.id||"";
+        return `#${index+1} · ${family}${model?" · "+model:""} · Ø ${item.diameter} × ${item.length} mm`;
+      });
+      const planningText=planningItems.join("    |    ");
+      const planningLines=planningText?pdf.splitTextToSize(planningText,pageW-margin*2-6):[];
+      const planningBlockH=planningLines.length?8+planningLines.length*4.2:0;
+      const headerH=24+planningBlockH;
+      const cellW=(pageW-margin*2-gap)/2,cellH=(pageH-margin*2-headerH-gap)/2;
       let firstPage=true,pageGlobal=0;
 
       for(const group of groups){
@@ -771,6 +780,17 @@ export default function Viewer2(){
           pdf.setFont("helvetica","normal");pdf.setFontSize(9);
           pdf.text(`${patient} • ${exam}`,margin,18);
           pdf.text(`${group.label} • página ${page+1}/${pagesForGroup}`,pageW-margin,18,{align:"right"});
+          if(planningLines.length){
+            const boxY=22;
+            pdf.setFillColor(246,249,251);
+            pdf.setDrawColor(214,223,230);
+            pdf.roundedRect(margin,boxY,pageW-margin*2,planningBlockH-1,2,2,"FD");
+            pdf.setFont("helvetica","bold");pdf.setFontSize(8);pdf.setTextColor(35,65,78);
+            pdf.text("PLANEJAMENTO DE IMPLANTES",margin+3,boxY+4.5);
+            pdf.setFont("helvetica","normal");pdf.setFontSize(8);pdf.setTextColor(35,45,55);
+            planningLines.forEach((line,i)=>pdf.text(line,margin+3,boxY+9+i*4.2));
+            pdf.setTextColor(0);
+          }
 
           const pageIndices=group.indices.slice(page*4,page*4+4);
           pageIndices.forEach((idx,slot)=>{
@@ -794,8 +814,8 @@ export default function Viewer2(){
       const safe=patient.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_|_$/g,"");
       pdf.save(`OdontoView_${safe||"Paciente"}_${exportMode==="complete"?"4_eixos":"tangencial"}_${exportCount}.pdf`);
       setExportMessage(exportMode==="complete"
-        ?`PDF completo gerado com overlays clínicos: ${groups.map(g=>g.indices.length+" "+g.label.toLowerCase()).join(" • ")} (${totalCuts} cortes).`
-        :`PDF tangencial gerado com overlays clínicos em ${totalCuts} cortes.`);
+        ?`PDF completo gerado: imagens limpas + planejamento de implantes em área separada • ${groups.map(g=>g.indices.length+" "+g.label.toLowerCase()).join(" • ")} (${totalCuts} cortes).`
+        :`PDF tangencial gerado com imagens limpas e planejamento de implantes em área separada (${totalCuts} cortes).`);
     }catch(e){
       setExportMessage(e?.message||"Não foi possível gerar o PDF.");
     }finally{setExportBusy(false)}
