@@ -164,7 +164,8 @@ function DentistDashboard(){
    <nav className="workspace-tabs">
      <button className={tab==="home"?"active":""} onClick={()=>setTab("home")}>Visão geral</button>
      <button className={tab==="new"?"active":""} onClick={()=>setTab("new")}>Novo pedido</button>
-     <button className={tab==="patients"?"active":""} onClick={()=>setTab("patients")}>Pacientes</button>\n     <button className={tab==="exams"?"active":""} onClick={()=>setTab("exams")}>Meus exames</button>
+     <button className={tab==="patients"?"active":""} onClick={()=>setTab("patients")}>Pacientes</button>
+     <button className={tab==="exams"?"active":""} onClick={()=>setTab("exams")}>Meus exames</button>
      <button className={tab==="import"?"active":""} onClick={()=>setTab("import")}>Importar DICOM</button>
    </nav>
    {err&&<div className="error">{err}</div>}
