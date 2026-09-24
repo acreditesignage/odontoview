@@ -209,7 +209,7 @@ function createParametricImplantBundle(implant,active){
   actor.setOrientation(implant.rx||0,implant.ry||0,implant.rz||0);
   const prop=actor.getProperty();
   prop.setColor(...(active?[.08,.92,.82]:[.88,.72,.34]));
-  prop.setOpacity(active?.98:.86);
+  prop.setOpacity(active ? .98 : .86);
   prop.setAmbient(.35);prop.setDiffuse(.72);prop.setSpecular(.72);prop.setSpecularPower(32);
   return {actor,mapper,poly,points:vtkPts};
 }
