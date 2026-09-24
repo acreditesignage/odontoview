@@ -3,6 +3,7 @@ import {useNavigate,useSearchParams} from "react-router-dom";
 import {jsPDF} from "jspdf";
 import Viewer3DPanel from "./Viewer3DPanel.jsx";
 import {implantAxisVector} from "./implantLibrary.js";
+import {PERMANENT_FDI_LIBRARY,TOOTH_ARCH_ROWS,toothByFDI} from "./toothLibrary.js";
 import {clearViewerSession,getViewerSession} from "./viewerSession.js";
 
 const PANORAMIC_BAND_HALF_MM=2;
@@ -193,12 +194,46 @@ export default function Viewer2(){
   const [foramina,setForamina]=useState([]);
   const [implants,setImplants]=useState([]);
   const [activeImplantId,setActiveImplantId]=useState(null);
+  const [plannedTeeth,setPlannedTeeth]=useState([]);
+  const [selectedToothFDI,setSelectedToothFDI]=useState("11");
+  const selectedTooth=useMemo(()=>toothByFDI(selectedToothFDI),[selectedToothFDI]);
+  const selectedToothPlaced=plannedTeeth.some(item=>item.fdi===selectedToothFDI);
 
   useEffect(()=>{
     if(!showIntro)return;
     const timer=setTimeout(()=>setShowIntro(false),2350);
     return ()=>clearTimeout(timer);
   },[showIntro]);
+
+  function placeSelectedToothAtCursor(){
+    const catalog=selectedTooth;
+    if(!catalog||!meta)return;
+    const next={
+      ...catalog,
+      id:"planned-tooth-"+catalog.fdi,
+      x:cursor.x,
+      y:cursor.y,
+      z:cursor.z,
+      curveIndex,
+      placedAt:Date.now()
+    };
+    setPlannedTeeth(items=>[...items.filter(item=>item.fdi!==catalog.fdi),next]);
+  }
+
+  function focusPlannedTooth(item){
+    if(!item||!meta)return;
+    setCursor({
+      x:clamp(Number(item.x)||0,0,meta.w-1),
+      y:clamp(Number(item.y)||0,0,meta.h-1),
+      z:clamp(Number(item.z)||0,0,meta.d-1)
+    });
+    if(Number.isFinite(item.curveIndex)&&curve.length)setCurveIndex(clamp(item.curveIndex,archRange.start,archRange.end));
+    setSelectedToothFDI(item.fdi);
+  }
+
+  function removePlannedTooth(fdi){
+    setPlannedTeeth(items=>items.filter(item=>item.fdi!==String(fdi)));
+  }
 
   function updateCursorFrom3D(next){
     if(!meta||!next)return;
@@ -386,6 +421,65 @@ export default function Viewer2(){
     ctx.restore();
   }
 
+  function paintToothMarker(ctx,map,a,b,tooth,active=false){
+    if(!map||!tooth)return;
+    const x=map.ox+(a/map.pixelW)*map.dw;
+    const y=map.oy+(b/map.pixelH)*map.dh;
+    const r=Math.max(9,10*map.dpr);
+    ctx.save();
+    ctx.shadowColor=active?"rgba(47,239,225,.72)":"rgba(112,198,255,.45)";
+    ctx.shadowBlur=active?12*map.dpr:7*map.dpr;
+    ctx.fillStyle=active?"rgba(10,39,49,.96)":"rgba(8,24,39,.90)";
+    ctx.strokeStyle=active?"#35f0df":"#78c9ff";
+    ctx.lineWidth=Math.max(1.5,1.4*map.dpr);
+    ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.shadowBlur=0;
+    ctx.fillStyle="#f3fbff";
+    ctx.font=`700 ${Math.max(9,9.5*map.dpr)}px -apple-system,sans-serif`;
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(tooth.fdi,x,y+.2*map.dpr);
+    ctx.restore();
+  }
+
+  function drawToothMarkersOrthogonal(ctx,canvas,plane,currentSlice){
+    const m=metaRef.current,map=canvas?._map;
+    if(!m||!map||!plannedTeeth.length)return;
+    const tolerance=plane==="axial"
+      ?Math.max(2,2/m.spacingZ)
+      :plane==="coronal"
+        ?Math.max(2,2/m.spacingY)
+        :Math.max(2,2/m.spacingX);
+    plannedTeeth.forEach(tooth=>{
+      let a,b,normal;
+      if(plane==="axial"){a=tooth.x;b=tooth.y;normal=tooth.z}
+      else if(plane==="coronal"){a=tooth.x;b=m.d-1-tooth.z;normal=tooth.y}
+      else{a=tooth.y;b=m.d-1-tooth.z;normal=tooth.x}
+      if(Math.abs(normal-currentSlice)>tolerance)return;
+      paintToothMarker(ctx,map,a,b,tooth,tooth.fdi===selectedToothFDI);
+    });
+  }
+
+  function drawTangentialToothMarkers(ctx,map,frame,stepMm,index){
+    const m=metaRef.current;if(!m||!map||!frame||!plannedTeeth.length)return;
+    plannedTeeth.forEach(tooth=>{
+      const toothIndex=Number.isFinite(tooth.curveIndex)?tooth.curveIndex:nearestCurveIndexWorld(tooth.x*m.spacingX,tooth.y*m.spacingY)?.index;
+      if(toothIndex!==index)return;
+      const dx=(tooth.x-frame.c.x)*m.spacingX,dy=(tooth.y-frame.c.y)*m.spacingY;
+      const offset=dx*frame.nx+dy*frame.ny;
+      const a=map.pixelW/2+offset/stepMm,b=m.d-1-tooth.z;
+      paintToothMarker(ctx,map,a,b,tooth,tooth.fdi===selectedToothFDI);
+    });
+  }
+
+  function drawPanoramicToothMarkers(ctx,map,start,end){
+    const m=metaRef.current;if(!m||!map||!plannedTeeth.length)return;
+    plannedTeeth.forEach(tooth=>{
+      const hit=nearestCurveIndexWorld(tooth.x*m.spacingX,tooth.y*m.spacingY,start,end);
+      if(!hit||hit.index<start||hit.index>end||hit.distance>14)return;
+      paintToothMarker(ctx,map,hit.index-start,m.d-1-tooth.z,tooth,tooth.fdi===selectedToothFDI);
+    });
+  }
+
   function drawImplantOverlays(ctx,canvas,plane,currentSlice,showLabel=true){
     const m=metaRef.current,map=canvas?._map;
     if(!m||!map||!implants.length)return;
@@ -544,6 +638,7 @@ export default function Viewer2(){
     });
     if(crosshairVisible)drawCrosshair(ctx,canvas,cursor.x,cursor.y);
     drawImplantOverlays(ctx,canvas,"axial",z);
+    drawToothMarkersOrthogonal(ctx,canvas,"axial",z);
     drawMmScale(ctx,canvas);
     drawMeasurementOverlay(ctx,canvas,"axial",z);
   }
@@ -564,6 +659,7 @@ export default function Viewer2(){
     ctx.fillStyle="#05070a";ctx.fillRect(0,0,cw,ch);ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
     if(crosshairVisible){if(isCoronal)drawCrosshair(ctx,canvas,cursor.x,d-1-cursor.z);else drawCrosshair(ctx,canvas,cursor.y,d-1-cursor.z)}
     drawImplantOverlays(ctx,canvas,plane,fixed);
+    drawToothMarkersOrthogonal(ctx,canvas,plane,fixed);
     drawMmScale(ctx,canvas);
     drawMeasurementOverlay(ctx,canvas,plane,fixed);
   }
@@ -929,6 +1025,7 @@ export default function Viewer2(){
       }
 
       drawTangentialImplants(ctx,map,frame,stepMm);
+      drawTangentialToothMarkers(ctx,map,frame,stepMm,idx);
       const previousMap=canvas._map;canvas._map=map;
       drawMmScale(ctx,canvas,map);
       drawMeasurementOverlay(ctx,canvas,"tangential",idx);
@@ -965,6 +1062,7 @@ export default function Viewer2(){
     if(sorted.length){ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();sorted.forEach((n,i)=>{const local=n.curveIndex-start,x=map.ox+local/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();sorted.forEach(n=>{const local=n.curveIndex-start,x=map.ox+local/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.beginPath();ctx.arc(x,y,3*map.dpr,0,Math.PI*2);ctx.fill()})}
     foramina.filter(n=>n.curveIndex>=start&&n.curveIndex<=end).forEach(n=>{const local=n.curveIndex-start,x=map.ox+local/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(x,y,7*map.dpr,0,Math.PI*2);ctx.stroke()});
     drawPanoramicImplants(ctx,map,start,end);
+    drawPanoramicToothMarkers(ctx,map,start,end);
     if(crosshairVisible)drawCrosshair(ctx,canvas,curveIndex-start,d-1-cursor.z);
     drawMmScale(ctx,canvas);
     ctx.save();ctx.fillStyle="rgba(49,215,210,.88)";ctx.font=`${10*map.dpr}px -apple-system,sans-serif`;ctx.textAlign="right";ctx.textBaseline="top";ctx.fillText(`Faixa panorâmica ${PANORAMIC_BAND_HALF_MM*2} mm • ${archRange.label}`,map.ox+map.dw-6*map.dpr,map.oy+6*map.dpr);ctx.restore();
@@ -974,7 +1072,7 @@ export default function Viewer2(){
     if(loading||error||!meta)return;
     const draw=()=>{drawAxial(canvases.axial.current);drawOrthogonal(canvases.coronal.current,"coronal");drawOrthogonal(canvases.sagittal.current,"sagittal");drawTangential(canvases.tangential.current);drawPanoramic(canvases.panoramic.current)};
     draw();window.addEventListener("resize",draw);return()=>window.removeEventListener("resize",draw);
-  },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,implants,activeImplantId,transforms,crosshairVisible,expandedPanel]);
+  },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,implants,activeImplantId,plannedTeeth,selectedToothFDI,transforms,crosshairVisible,expandedPanel]);
 
   function resetPlane(plane){setTransforms(t=>({...t,[plane]:{zoom:1,panX:0,panY:0}}))}
   function adjustBrightness(delta){setWindowLevel(v=>({...v,wc:Math.round(v.wc+delta)}))}
@@ -1431,6 +1529,34 @@ export default function Viewer2(){
             {foramina.length>0&&<button className="viewer2-small" onClick={undoLastForamen}>Desfazer último forame</button>}
             <button className="viewer2-small danger" onClick={()=>{setNervePoints([]);setNerveAssist(true);setForamina([])}}>Limpar tudo</button>
           </div>}
+        </section>
+        <section className="viewer2-tooth-library">
+          <p className="eyebrow">BIBLIOTECA DENTÁRIA</p>
+          <strong>FDI permanente • 11–48</strong>
+          <small>Selecione o dente e posicione a referência na cruzeta. O catálogo já está preparado para receber a malha 3D correspondente; nesta etapa o marcador não representa anatomia final.</small>
+          <div className="tooth-arch-list">
+            {TOOTH_ARCH_ROWS.map(row=><div className="tooth-arch-row" key={row.key}>
+              <span>{row.label}</span>
+              <div className="tooth-grid">
+                {row.fdi.map(fdi=>{
+                  const placed=plannedTeeth.some(item=>item.fdi===fdi);
+                  return <button type="button" key={fdi} className={(selectedToothFDI===fdi?"active ":"")+(placed?"placed":"")} onClick={()=>setSelectedToothFDI(fdi)} aria-pressed={selectedToothFDI===fdi}>{fdi}</button>
+                })}
+              </div>
+            </div>)}
+          </div>
+          {selectedTooth&&<div className="tooth-selected-card">
+            <div><b>Dente {selectedTooth.fdi}</b><span>{selectedTooth.label} • {selectedTooth.archLabel} • lado {selectedTooth.sideLabel.toLowerCase()}</span></div>
+            <span className="tooth-mesh-status">Malha 3D pendente</span>
+          </div>}
+          <button type="button" className="viewer2-small assist tooth-place-btn" onClick={placeSelectedToothAtCursor}>{selectedToothPlaced?"Reposicionar "+selectedToothFDI+" na cruzeta":"Adicionar "+selectedToothFDI+" na cruzeta"}</button>
+          {plannedTeeth.length>0&&<div className="planned-tooth-list">
+            {plannedTeeth.slice().sort((a,b)=>Number(a.fdi)-Number(b.fdi)).map(item=><div key={item.id}>
+              <button type="button" className="planned-tooth-focus" onClick={()=>focusPlannedTooth(item)}><b>{item.fdi}</b><span>{item.label}</span></button>
+              <button type="button" className="planned-tooth-remove" aria-label={"Remover dente "+item.fdi} onClick={()=>removePlannedTooth(item.fdi)}>×</button>
+            </div>)}
+          </div>}
+          <small>{PERMANENT_FDI_LIBRARY.length} dentes permanentes catalogados. Dentes decíduos ficam para a próxima biblioteca.</small>
         </section>
         <section>
           <p className="eyebrow">MEDIÇÕES</p><strong>{measurements.length} medida(s)</strong>
