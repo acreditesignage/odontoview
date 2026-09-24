@@ -5,7 +5,7 @@ import cors from "cors";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "./prisma.js";
-import { createAccessToken, resolveAccessToken } from "./token.js";
+import { createAccessToken, resolveAccessToken, newToken, hashToken } from "./token.js";
 import { getPrivateObject, putPrivateObject, storageReady } from "./storage.js";
 
 const auth=(req,res,next)=>{
@@ -20,6 +20,14 @@ const unitMembershipFor=(userId)=>prisma.unitMembership.findFirst({
   include:{unit:{include:{organization:true}}}
 });
 const sign=(user)=>jwt.sign({sub:user.id,role:user.role,email:user.email},process.env.JWT_SECRET,{expiresIn:"8h"});
+const dentistPatientWhere=(dentistId,patientId)=>({
+  id:patientId,
+  OR:[
+    {createdByDentistId:dentistId},
+    {dentistAccess:{some:{dentistId}}}
+  ]
+});
+
 
 export function createApp(){
   const app=express();
@@ -97,11 +105,14 @@ export function createApp(){
         include:{user:{select:{id:true,name:true,email:true,phone:true}}}
       });
       if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
-      const [patients,orders]=await Promise.all([
+      const [patients,orders,directStudies]=await Promise.all([
         prisma.patient.findMany({
-          where:{createdByDentistId:dentist.id},
+          where:{OR:[
+            {createdByDentistId:dentist.id},
+            {dentistAccess:{some:{dentistId:dentist.id}}}
+          ]},
           orderBy:{createdAt:"desc"},
-          take:100
+          take:150
         }),
         prisma.order.findMany({
           where:{dentistId:dentist.id},
@@ -114,12 +125,19 @@ export function createApp(){
           },
           orderBy:{requestedAt:"desc"},
           take:100
+        }),
+        prisma.examStudy.findMany({
+          where:{ownerDentistId:dentist.id,status:"READY"},
+          include:{patient:{select:{id:true,name:true,phone:true,birthDate:true}},examType:true},
+          orderBy:{createdAt:"desc"},
+          take:100
         })
       ]);
       res.json({
         dentist:{id:dentist.id,cro:dentist.cro,uf:dentist.uf,user:dentist.user},
         patients,
-        orders
+        orders,
+        directStudies
       });
     }catch(e){next(e);}
   });
@@ -129,7 +147,7 @@ export function createApp(){
       if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
       const dentist=await dentistFor(req.auth.sub); if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
       const [patient,examType]=await Promise.all([
-        prisma.patient.findFirst({where:{id:req.body.patientId,createdByDentistId:dentist.id}}),
+        prisma.patient.findFirst({where:dentistPatientWhere(dentist.id,req.body.patientId)}),
         prisma.examType.findFirst({where:{id:req.body.examTypeId,active:true}})
       ]);
       if(!patient) return res.status(404).json({error:"Paciente não encontrado."});
