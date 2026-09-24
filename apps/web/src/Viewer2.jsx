@@ -2,6 +2,7 @@ import React,{useEffect,useMemo,useRef,useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {jsPDF} from "jspdf";
 import Viewer3DPanel from "./Viewer3DPanel.jsx";
+import {implantAxisVector} from "./implantLibrary.js";
 import {clearViewerSession,getViewerSession} from "./viewerSession.js";
 
 const PANORAMIC_BAND_HALF_MM=2;
@@ -146,6 +147,8 @@ export default function Viewer2(){
   const [nerveAssist,setNerveAssist]=useState(true);
   const nerveDisplayPoints=useMemo(()=>nerveAssist?interpolateNervePath(nervePoints):[...nervePoints].sort((a,b)=>a.curveIndex-b.curveIndex),[nervePoints,nerveAssist]);
   const [foramina,setForamina]=useState([]);
+  const [implants,setImplants]=useState([]);
+  const [activeImplantId,setActiveImplantId]=useState(null);
   const [exportCount,setExportCount]=useState(15);
   const [exportMode,setExportMode]=useState("complete");
   const [exportBusy,setExportBusy]=useState(false);
@@ -299,6 +302,47 @@ export default function Viewer2(){
     ctx.restore();
   }
 
+  function drawImplantOverlays(ctx,canvas,plane,currentSlice){
+    const m=metaRef.current,map=canvas?._map;
+    if(!m||!map||!implants.length)return;
+    const fixedWorld=plane==="axial"?currentSlice*m.spacingZ:plane==="coronal"?currentSlice*m.spacingY:currentSlice*m.spacingX;
+    const normalKey=plane==="axial"?"z":plane==="coronal"?"y":"x";
+    const project=p=>{
+      if(plane==="axial")return {a:p.x/m.spacingX,b:p.y/m.spacingY};
+      if(plane==="coronal")return {a:p.x/m.spacingX,b:m.d-1-p.z/m.spacingZ};
+      return {a:p.y/m.spacingY,b:m.d-1-p.z/m.spacingZ};
+    };
+    const screen=p=>({x:map.ox+(p.a/map.pixelW)*map.dw,y:map.oy+(p.b/map.pixelH)*map.dh});
+    const pxPerMm=(map.dw/(map.pixelW*map.spacingA)+map.dh/(map.pixelH*map.spacingB))/2;
+    implants.forEach(implant=>{
+      const axis=implantAxisVector(implant),half=implant.length/2,radius=implant.diameter/2;
+      const center={x:implant.x,y:implant.y,z:implant.z};
+      const normalCenter=center[normalKey],normalAxis=axis[normalKey];
+      const min=normalCenter-Math.abs(normalAxis)*half-radius,max=normalCenter+Math.abs(normalAxis)*half+radius;
+      if(fixedWorld<min||fixedWorld>max)return;
+      const p0={x:center.x-axis.x*half,y:center.y-axis.y*half,z:center.z-axis.z*half};
+      const p1={x:center.x+axis.x*half,y:center.y+axis.y*half,z:center.z+axis.z*half};
+      const a=screen(project(p0)),b=screen(project(p1));
+      const active=implant.id===activeImplantId;
+      ctx.save();
+      ctx.lineCap="round";ctx.lineJoin="round";
+      ctx.strokeStyle=active?"rgba(28,240,215,.92)":"rgba(247,185,85,.78)";
+      ctx.lineWidth=Math.max(2,implant.diameter*pxPerMm);
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+      ctx.strokeStyle=active?"#dffffa":"#fff0c9";ctx.lineWidth=Math.max(1,1.15*map.dpr);
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+      if(active){
+        const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+        ctx.fillStyle="rgba(3,14,20,.82)";ctx.font=`${10*map.dpr}px -apple-system,sans-serif`;
+        const label=`${implant.model} • Ø${implant.diameter}×${implant.length}`;
+        const tw=ctx.measureText(label).width;
+        ctx.fillRect(mid.x-tw/2-5*map.dpr,mid.y-19*map.dpr,tw+10*map.dpr,15*map.dpr);
+        ctx.fillStyle="#eafffb";ctx.fillText(label,mid.x-tw/2,mid.y-17*map.dpr);
+      }
+      ctx.restore();
+    });
+  }
+
   function drawMmScale(ctx,canvas,mapOverride=null){
     const map=mapOverride||canvas?._map;if(!map)return;
     const physicalW=map.pixelW*map.spacingA,physicalH=map.pixelH*map.spacingB;
@@ -379,6 +423,7 @@ export default function Viewer2(){
       ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(q.x,q.y,7*map.dpr,0,Math.PI*2);ctx.stroke();
     });
     if(crosshairVisible)drawCrosshair(ctx,canvas,cursor.x,cursor.y);
+    drawImplantOverlays(ctx,canvas,"axial",z);
     drawMmScale(ctx,canvas);
     drawMeasurementOverlay(ctx,canvas,"axial",z);
   }
@@ -398,6 +443,7 @@ export default function Viewer2(){
     const tmp=document.createElement("canvas");tmp.width=pixelW;tmp.height=pixelH;tmp.getContext("2d").putImageData(img,0,0);
     ctx.fillStyle="#05070a";ctx.fillRect(0,0,cw,ch);ctx.imageSmoothingEnabled=true;ctx.drawImage(tmp,ox,oy,dw,dh);
     if(crosshairVisible){if(isCoronal)drawCrosshair(ctx,canvas,cursor.x,d-1-cursor.z);else drawCrosshair(ctx,canvas,cursor.y,d-1-cursor.z)}
+    drawImplantOverlays(ctx,canvas,plane,fixed);
     drawMmScale(ctx,canvas);
     drawMeasurementOverlay(ctx,canvas,plane,fixed);
   }
@@ -638,7 +684,7 @@ export default function Viewer2(){
     if(loading||error||!meta)return;
     const draw=()=>{drawAxial(canvases.axial.current);drawOrthogonal(canvases.coronal.current,"coronal");drawOrthogonal(canvases.sagittal.current,"sagittal");drawTangential(canvases.tangential.current);drawPanoramic(canvases.panoramic.current)};
     draw();window.addEventListener("resize",draw);return()=>window.removeEventListener("resize",draw);
-  },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,transforms,crosshairVisible,expandedPanel]);
+  },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,implants,activeImplantId,transforms,crosshairVisible,expandedPanel]);
 
   function resetPlane(plane){setTransforms(t=>({...t,[plane]:{zoom:1,panX:0,panY:0}}))}
   function adjustBrightness(delta){setWindowLevel(v=>({...v,wc:Math.round(v.wc+delta)}))}
@@ -962,7 +1008,7 @@ export default function Viewer2(){
         <div className="viewer2-pane-head"><strong>Modelo 3D • Planejamento</strong><div className="viewer2-pane-actions"><span className="viewer3d-badge">3D PROFISSIONAL</span>{expandButton("3d","3D")}</div></div>
         <div className="viewer3d-split">
           <div className="viewer3d-primary">
-            <Viewer3DPanel volume={volumeRef.current} meta={meta} nervePoints={nerveDisplayPoints} curve={curve}/>
+            <Viewer3DPanel volume={volumeRef.current} meta={meta} nervePoints={nerveDisplayPoints} curve={curve} cursor={cursor} implants={implants} activeImplantId={activeImplantId} onImplantsChange={setImplants} onActiveImplantChange={setActiveImplantId}/>
           </div>
           <div className={"viewer3d-mini-pano"+(expandedPanel==="panoramic"?" is-expanded":"")}>
             <div className="viewer3d-mini-head"><strong>Panorâmica reconstruída</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane("panoramic")}>1:1</button>{expandButton("panoramic","Panorâmica")}</div></div>
