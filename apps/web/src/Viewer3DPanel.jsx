@@ -431,25 +431,36 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   }
 
   function pickWorldAtEvent(event){
-    const host=hostRef.current,renderer=rendererRef.current,generic=genericRef.current;
-    if(!host||!renderer||!generic||!meta||!volume?.length)return null;
+    const host=hostRef.current,renderer=rendererRef.current;
+    if(!host||!renderer||!meta||!volume?.length)return null;
     const rect=host.getBoundingClientRect();
     if(rect.width<2||rect.height<2)return null;
 
-    const gl=generic.getOpenGLRenderWindow?.();
-    if(!gl?.displayToWorld)return null;
-    const size=gl.getSize?.()||[Math.round(rect.width),Math.round(rect.height)];
-    const px=(event.clientX-rect.left)/rect.width*size[0];
-    const py=(rect.bottom-event.clientY)/rect.height*size[1];
-    const near=gl.displayToWorld(px,py,0,renderer);
-    const far=gl.displayToWorld(px,py,1,renderer);
-    if(!near||!far||near.length<3||far.length<3)return null;
+    const cam=renderer.getActiveCamera();
+    const position=cam.getPosition(),focal=cam.getFocalPoint(),viewUp=cam.getViewUp();
+    const norm=a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l]};
+    const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+    const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+    const mul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
 
-    const origin=[near[0],near[1],near[2]];
-    let dir=[far[0]-near[0],far[1]-near[1],far[2]-near[2]];
-    const len=Math.hypot(dir[0],dir[1],dir[2]);
-    if(!Number.isFinite(len)||len<1e-6)return null;
-    dir=dir.map(v=>v/len);
+    const forward=norm([focal[0]-position[0],focal[1]-position[1],focal[2]-position[2]]);
+    const right=norm(cross(forward,viewUp));
+    const up=norm(cross(right,forward));
+    const ndcX=((event.clientX-rect.left)/rect.width)*2-1;
+    const ndcY=1-((event.clientY-rect.top)/rect.height)*2;
+    const aspect=rect.width/rect.height;
+
+    let origin,dir;
+    if(cam.getParallelProjection?.()){
+      const scale=cam.getParallelScale?.()||1;
+      origin=add(add(position,mul(right,ndcX*scale*aspect)),mul(up,ndcY*scale));
+      dir=forward;
+    }else{
+      const angle=(cam.getViewAngle?.()||30)*Math.PI/180;
+      const half=Math.tan(angle/2);
+      origin=[...position];
+      dir=norm(add(add(forward,mul(right,ndcX*half*aspect)),mul(up,ndcY*half)));
+    }
 
     const bounds=[
       [0,(meta.w-1)*meta.spacingX],
@@ -474,7 +485,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     const stats=statsRef.current;
     const threshold=stats?.bone??stats?.trab??0;
     const fallbackThreshold=stats?.trab??threshold;
-    const step=Math.max(.10,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*.55);
+    const step=Math.max(.08,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*.45);
     let best=null,bestValue=-Infinity;
     for(let t=tMin;t<=tMax;t+=step){
       const wx=origin[0]+dir[0]*t,wy=origin[1]+dir[1]*t,wz=origin[2]+dir[2]*t;
@@ -484,6 +495,24 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       const value=volume[iz*meta.w*meta.h+iy*meta.w+ix];
       if(value>bestValue){bestValue=value;best=[wx,wy,wz]}
       if(value>=threshold)return [wx,wy,wz];
+    }
+
+    // Guaranteed fallback: intersect the click ray with the plane through the current cursor,
+    // perpendicular to the camera direction. This keeps the 3D crosshair movable even when
+    // the volume preset is too translucent to yield a density hit.
+    if(cursor){
+      const planePoint=[cursor.x*meta.spacingX,cursor.y*meta.spacingY,cursor.z*meta.spacingZ];
+      const denom=dir[0]*forward[0]+dir[1]*forward[1]+dir[2]*forward[2];
+      if(Math.abs(denom)>1e-6){
+        const t=((planePoint[0]-origin[0])*forward[0]+(planePoint[1]-origin[1])*forward[1]+(planePoint[2]-origin[2])*forward[2])/denom;
+        if(Number.isFinite(t)&&t>=0){
+          return [
+            clamp(origin[0]+dir[0]*t,bounds[0][0],bounds[0][1]),
+            clamp(origin[1]+dir[1]*t,bounds[1][0],bounds[1][1]),
+            clamp(origin[2]+dir[2]*t,bounds[2][0],bounds[2][1])
+          ];
+        }
+      }
     }
     return bestValue>=fallbackThreshold?best:null;
   }
@@ -504,7 +533,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       updateActiveImplant({x:world[0],y:world[1],z:world[2]});
       setPickMessage("Implante reposicionado no 3D.");
     }else{
-      setPickMessage("Cruzeta sincronizada com os cortes.");
+      setPickMessage(`Cruzeta • X ${Math.round(nextCursor.x)+1} • Y ${Math.round(nextCursor.y)+1} • Z ${Math.round(nextCursor.z)+1}`);
     }
   }
 

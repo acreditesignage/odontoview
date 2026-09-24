@@ -601,6 +601,58 @@ export default function Viewer2(){
     });
   }
 
+  function nerveVoxelPoint(n){
+    const m=metaRef.current,c=curve[n.curveIndex];
+    if(!m||!c)return null;
+    const prev=curve[Math.max(0,n.curveIndex-1)]||c,next=curve[Math.min(curve.length-1,n.curveIndex+1)]||c;
+    let tx=(next.x-prev.x)*m.spacingX,ty=(next.y-prev.y)*m.spacingY,len=Math.hypot(tx,ty)||1;tx/=len;ty/=len;
+    const nx=-ty,ny=tx;
+    return {x:c.x+nx*n.offsetMm/m.spacingX,y:c.y+ny*n.offsetMm/m.spacingY,z:n.z};
+  }
+
+  function drawExportNerveOrthogonal(ctx,canvas,plane,index){
+    const m=metaRef.current,map=canvas._map;
+    if(!m||!map||nerveDisplayPoints.length<1)return;
+    const points=nerveDisplayPoints.map(nerveVoxelPoint).filter(Boolean);
+    const toAB=p=>plane==="axial"
+      ?{a:p.x,b:p.y,normal:p.z}
+      :plane==="coronal"
+        ?{a:p.x,b:m.d-1-p.z,normal:p.y}
+        :{a:p.y,b:m.d-1-p.z,normal:p.x};
+    const tolerance=plane==="axial"
+      ?Math.max(2,2/m.spacingZ)
+      :plane==="coronal"
+        ?Math.max(2,2/m.spacingY)
+        :Math.max(2,2/m.spacingX);
+    const visible=points.map(toAB).filter(p=>Math.abs(p.normal-index)<=tolerance);
+    if(!visible.length)return;
+    const screen=p=>({x:map.ox+p.a/map.pixelW*map.dw,y:map.oy+p.b/map.pixelH*map.dh});
+    ctx.save();ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=Math.max(2,map.dpr*2);
+    if(visible.length>1){ctx.beginPath();visible.forEach((p,i)=>{const q=screen(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)});ctx.stroke()}
+    visible.forEach(p=>{const q=screen(p);ctx.beginPath();ctx.arc(q.x,q.y,Math.max(2.5,3*map.dpr),0,Math.PI*2);ctx.fill()});
+    ctx.restore();
+  }
+
+  function drawExportForaminaOrthogonal(ctx,canvas,plane,index){
+    const m=metaRef.current,map=canvas._map;if(!m||!map||!foramina.length)return;
+    const toAB=p=>plane==="axial"
+      ?{a:p.x,b:p.y,normal:p.z}
+      :plane==="coronal"
+        ?{a:p.x,b:m.d-1-p.z,normal:p.y}
+        :{a:p.y,b:m.d-1-p.z,normal:p.x};
+    const tolerance=plane==="axial"
+      ?Math.max(2,2/m.spacingZ)
+      :plane==="coronal"
+        ?Math.max(2,2/m.spacingY)
+        :Math.max(2,2/m.spacingX);
+    ctx.save();ctx.strokeStyle="#ff2d2d";ctx.lineWidth=Math.max(2,map.dpr*2);
+    foramina.map(nerveVoxelPoint).filter(Boolean).map(toAB).filter(p=>Math.abs(p.normal-index)<=tolerance).forEach(p=>{
+      const x=map.ox+p.a/map.pixelW*map.dw,y=map.oy+p.b/map.pixelH*map.dh;
+      ctx.beginPath();ctx.arc(x,y,Math.max(5,7*map.dpr),0,Math.PI*2);ctx.stroke();
+    });
+    ctx.restore();
+  }
+
   function makeTangentialCanvas(index){
     const m=metaRef.current,v=volumeRef.current;
     if(!m||!v||!curve.length)throw new Error("Volume ainda não está pronto.");
@@ -615,16 +667,24 @@ export default function Viewer2(){
       img.data[p++]=g;img.data[p++]=g;img.data[p++]=g;img.data[p++]=255;
     }
     ctx.putImageData(img,0,0);
+    const map={ox:0,oy:0,dw:pixelW,dh:pixelH,pixelW,pixelH,spacingA:stepMm,spacingB:m.spacingZ,dpr:1,plane:"tangential",curveIndex:index};
+    canvas._map=map;
 
-    const nerve=nerveDisplayPoints.find(n=>n.curveIndex===index);
-    if(nerve){
-      const x=pixelW/2+nerve.offsetMm/stepMm,y=d-1-nerve.z;
+    nerveDisplayPoints.filter(n=>n.curveIndex===index).forEach(n=>{
+      const x=pixelW/2+n.offsetMm/stepMm,y=d-1-n.z;
       ctx.fillStyle="#ff2d2d";ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();
-    }
+    });
     foramina.filter(n=>n.curveIndex===index).forEach(n=>{
       const x=pixelW/2+n.offsetMm/stepMm,y=d-1-n.z;
       ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);ctx.stroke();
     });
+    drawTangentialImplants(ctx,map,frame,stepMm);
+    if(crosshairVisible&&index===curveIndex){
+      const dx=(cursor.x-frame.c.x)*m.spacingX,dy=(cursor.y-frame.c.y)*m.spacingY;
+      const offsetMm=dx*frame.nx+dy*frame.ny;
+      drawCrosshair(ctx,canvas,pixelW/2+offsetMm/stepMm,d-1-cursor.z);
+    }
+    drawMeasurementOverlay(ctx,canvas,"tangential",index);
     return canvas;
   }
 
@@ -660,6 +720,19 @@ export default function Viewer2(){
       img.data[p++]=g;img.data[p++]=g;img.data[p++]=g;img.data[p++]=255;
     }
     ctx.putImageData(img,0,0);
+    const spacingA=plane==="axial"?m.spacingX:plane==="coronal"?m.spacingX:m.spacingY;
+    const spacingB=plane==="axial"?m.spacingY:m.spacingZ;
+    canvas._map={ox:0,oy:0,dw:pixelW,dh:pixelH,pixelW,pixelH,spacingA,spacingB,dpr:1,plane};
+
+    drawExportNerveOrthogonal(ctx,canvas,plane,index);
+    drawExportForaminaOrthogonal(ctx,canvas,plane,index);
+    drawImplantOverlays(ctx,canvas,plane,index);
+    if(crosshairVisible){
+      if(plane==="axial"&&Math.abs(index-cursor.z)<.51)drawCrosshair(ctx,canvas,cursor.x,cursor.y);
+      if(plane==="coronal"&&Math.abs(index-cursor.y)<.51)drawCrosshair(ctx,canvas,cursor.x,d-1-cursor.z);
+      if(plane==="sagittal"&&Math.abs(index-cursor.x)<.51)drawCrosshair(ctx,canvas,cursor.y,d-1-cursor.z);
+    }
+    drawMeasurementOverlay(ctx,canvas,plane,index);
     return canvas;
   }
 
@@ -721,8 +794,8 @@ export default function Viewer2(){
       const safe=patient.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_|_$/g,"");
       pdf.save(`OdontoView_${safe||"Paciente"}_${exportMode==="complete"?"4_eixos":"tangencial"}_${exportCount}.pdf`);
       setExportMessage(exportMode==="complete"
-        ?`PDF completo gerado: ${groups.map(g=>g.indices.length+" "+g.label.toLowerCase()).join(" • ")} (${totalCuts} cortes).`
-        :`PDF tangencial gerado com ${totalCuts} cortes.`);
+        ?`PDF completo gerado com overlays clínicos: ${groups.map(g=>g.indices.length+" "+g.label.toLowerCase()).join(" • ")} (${totalCuts} cortes).`
+        :`PDF tangencial gerado com overlays clínicos em ${totalCuts} cortes.`);
     }catch(e){
       setExportMessage(e?.message||"Não foi possível gerar o PDF.");
     }finally{setExportBusy(false)}
