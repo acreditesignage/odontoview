@@ -1500,3 +1500,58 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .tooth-grid button{min-width:28px}
   .tooth-selected-card{align-items:flex-start;flex-direction:column}
 }
+
+
+/* OdontoView onboarding — patient demo */
+.dentist-demo-card{
+  position:relative;overflow:hidden;display:grid;grid-template-columns:180px minmax(0,1fr) minmax(220px,270px);
+  gap:24px;align-items:center;padding:24px 26px;border:1px solid rgba(37,177,226,.28);border-radius:24px;
+  background:
+    radial-gradient(circle at 14% 45%,rgba(35,185,232,.18),transparent 18rem),
+    linear-gradient(135deg,#08284f 0%,#0a3f73 52%,#0b6c9f 100%);
+  box-shadow:0 22px 54px rgba(8,47,89,.16);color:#fff;
+}
+.dentist-demo-card:after{
+  content:"";position:absolute;right:-110px;top:-155px;width:360px;height:360px;border-radius:50%;
+  border:1px solid rgba(255,255,255,.10);box-shadow:0 0 0 54px rgba(255,255,255,.025),0 0 0 108px rgba(255,255,255,.018);pointer-events:none;
+}
+.dentist-demo-visual{
+  position:relative;z-index:1;height:150px;border-radius:22px;border:1px solid rgba(132,225,255,.23);
+  background:radial-gradient(circle at 50% 45%,rgba(32,229,219,.18),rgba(2,22,48,.48) 55%,rgba(3,18,38,.78));
+  display:grid;place-items:center;overflow:hidden;
+}
+.dentist-demo-mark{
+  position:relative;z-index:3;width:70px;height:70px;border-radius:50%;display:grid;place-items:center;
+  border:1px solid rgba(73,241,228,.7);box-shadow:0 0 26px rgba(48,226,219,.35),inset 0 0 28px rgba(32,192,233,.12);
+  font-size:22px;font-weight:900;letter-spacing:.04em;color:#dffffc;background:rgba(4,31,55,.72);
+}
+.dentist-demo-orbit{position:absolute;border:1px solid rgba(75,225,242,.28);border-radius:50%;animation:dentist-demo-spin 8s linear infinite}
+.dentist-demo-orbit-a{width:122px;height:72px;transform:rotate(24deg)}
+.dentist-demo-orbit-b{width:88px;height:132px;transform:rotate(-31deg);animation-duration:11s;animation-direction:reverse}
+.dentist-demo-scan{position:absolute;left:16px;right:16px;height:1px;background:linear-gradient(90deg,transparent,#34eee1,transparent);box-shadow:0 0 13px #2adbcf;animation:dentist-demo-scan 2.3s ease-in-out infinite}
+@keyframes dentist-demo-spin{to{transform:rotate(384deg)}}
+@keyframes dentist-demo-scan{0%,100%{top:24%;opacity:.25}50%{top:75%;opacity:1}}
+.dentist-demo-copy{position:relative;z-index:1;min-width:0}
+.dentist-demo-kicker{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.dentist-demo-kicker span{font-size:10px;font-weight:900;letter-spacing:.16em;color:#76f1e7}
+.dentist-demo-kicker b{padding:4px 7px;border-radius:999px;border:1px solid rgba(123,218,255,.32);background:rgba(8,42,72,.45);font-size:9px;letter-spacing:.12em;color:#d8f5ff}
+.dentist-demo-copy h2{margin:.1em 0 .35em;font-size:clamp(24px,2.6vw,34px);line-height:1.02;letter-spacing:-.035em;color:#fff}
+.dentist-demo-copy p{margin:0;max-width:660px;color:#c8dced;line-height:1.55;font-size:13px}
+.dentist-demo-features{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.dentist-demo-features span{padding:5px 8px;border-radius:999px;border:1px solid rgba(148,211,237,.22);background:rgba(3,27,50,.28);font-size:9px;font-weight:850;color:#d6edf8}
+.dentist-demo-action{position:relative;z-index:1;display:grid;gap:9px;align-content:center}
+.dentist-demo-button{min-height:48px;width:100%;font-weight:850}
+.dentist-demo-button:disabled{transform:none;box-shadow:none;opacity:.64;cursor:not-allowed}
+.dentist-demo-action small{display:block;color:#b6ccdd;font-size:10px;line-height:1.45;text-align:center}
+@media(max-width:900px){
+  .dentist-demo-card{grid-template-columns:130px minmax(0,1fr);gap:18px}
+  .dentist-demo-action{grid-column:1/-1;grid-template-columns:minmax(0,1fr) minmax(240px,.7fr);align-items:center}
+  .dentist-demo-action small{text-align:left}
+  .dentist-demo-visual{height:130px}
+}
+@media(max-width:620px){
+  .dentist-demo-card{grid-template-columns:1fr;padding:20px;border-radius:20px}
+  .dentist-demo-visual{height:120px}
+  .dentist-demo-action{grid-column:auto;grid-template-columns:1fr}
+  .dentist-demo-action small{text-align:center}
+}
