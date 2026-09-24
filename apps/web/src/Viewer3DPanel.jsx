@@ -17,6 +17,7 @@ import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
 import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
 import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
 import vtkRenderer from "@kitware/vtk.js/Rendering/Core/Renderer";
+import vtkCellPicker from "@kitware/vtk.js/Rendering/Core/CellPicker";
 import vtkSTLReader from "@kitware/vtk.js/IO/Geometry/STLReader";
 import vtkPLYReader from "@kitware/vtk.js/IO/Geometry/PLYReader";
 import {NEODENT_GM_LIBRARY,implantAxisVector} from "./implantLibrary.js";
@@ -317,6 +318,20 @@ function createParametricImplantBundle(implant,active){
   return {actor,mapper,poly,points:vtkPts,guide,diameter:implant.diameter,length:implant.length};
 }
 
+function createCrosshairBundle(){
+  const radius=.28,span=10;
+  const axes=[
+    createTubeActor([[-span,0,0],[span,0,0]],radius,[.12,1,.90]),
+    createTubeActor([[0,-span,0],[0,span,0]],radius,[.12,1,.90]),
+    createTubeActor([[0,0,-span],[0,0,span]],radius,[.12,1,.90])
+  ].filter(Boolean);
+  axes.forEach(bundle=>{
+    const prop=bundle.actor.getProperty();
+    prop.setOpacity(.98);prop.setAmbient(1);prop.setDiffuse(.08);prop.setSpecular(.2);
+  });
+  return axes;
+}
+
 function updateImplantBundle(bundle,implant,active){
   if(!bundle?.actor)return;
   bundle.actor.setPosition(implant.x,implant.y,implant.z);
@@ -338,7 +353,7 @@ function updateImplantBundle(bundle,implant,active){
   }
 }
 
-export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{},layoutMode="mosaic"}){
+export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,crosshairVisible=true,onCrosshairVisibleChange=()=>{},onCursorChange=()=>{},implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{},layoutMode="mosaic"}){
   const hostRef=useRef(null);
   const genericRef=useRef(null);
   const rendererRef=useRef(null);
@@ -352,6 +367,8 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   const scanActorRef=useRef(null);
   const scanInitialRef=useRef(null);
   const scanInputRef=useRef(null);
+  const crosshairActorsRef=useRef([]);
+  const placementDragRef=useRef(false);
 
   const [ready,setReady]=useState(false);
   const [status,setStatus]=useState("Preparando GPU Volume Rendering…");
@@ -361,6 +378,8 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   const [denseBoost,setDenseBoost]=useState(true);
   const [lighting,setLighting]=useState(true);
   const [boneOpacityScale,setBoneOpacityScale]=useState(.68);
+  const [interactionMode,setInteractionMode]=useState("camera");
+  const [pickMessage,setPickMessage]=useState("");
   const [scanName,setScanName]=useState("");
   const [scanStatus,setScanStatus]=useState("Nenhum scan intraoral carregado.");
   const [scanVisible,setScanVisible]=useState(true);
@@ -392,6 +411,84 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   },[activeImplantId]);
 
   function renderNow(){renderWindowRef.current?.render?.()}
+
+  function disposeCrosshair(){
+    const renderer=rendererRef.current;
+    crosshairActorsRef.current.forEach(bundle=>{
+      if(bundle?.actor&&renderer)renderer.removeActor(bundle.actor);
+      bundle?.actor?.delete?.();bundle?.tube?.delete?.();bundle?.mapper?.delete?.();bundle?.poly?.delete?.();bundle?.pts?.delete?.();bundle?.lines?.delete?.();
+    });
+    crosshairActorsRef.current=[];
+  }
+
+  function pickWorldAtEvent(event){
+    const host=hostRef.current,renderer=rendererRef.current,actor=volumeActorRef.current,generic=genericRef.current;
+    if(!host||!renderer||!actor||!generic||!meta)return null;
+    const rect=host.getBoundingClientRect();
+    if(rect.width<2||rect.height<2)return null;
+    const gl=generic.getOpenGLRenderWindow?.();
+    const size=gl?.getSize?.()||[Math.round(rect.width),Math.round(rect.height)];
+    const px=(event.clientX-rect.left)/rect.width*size[0];
+    const py=(rect.bottom-event.clientY)/rect.height*size[1];
+    const picker=vtkCellPicker.newInstance({tolerance:.001});
+    picker.setPickFromList(true);
+    picker.addPickList(actor);
+    picker.setOpacityThreshold?.(.015);
+    const hit=picker.pick([px,py,0],renderer);
+    const pos=picker.getPickPosition?.();
+    picker.delete();
+    if(!hit||!pos||pos.length<3||pos.some(n=>!Number.isFinite(n)))return null;
+    return [
+      clamp(pos[0],0,(meta.w-1)*meta.spacingX),
+      clamp(pos[1],0,(meta.h-1)*meta.spacingY),
+      clamp(pos[2],0,(meta.d-1)*meta.spacingZ)
+    ];
+  }
+
+  function applyPickedWorld(world){
+    if(!world||!meta)return;
+    const nextCursor={
+      x:clamp(world[0]/meta.spacingX,0,meta.w-1),
+      y:clamp(world[1]/meta.spacingY,0,meta.h-1),
+      z:clamp(world[2]/meta.spacingZ,0,meta.d-1)
+    };
+    onCursorChange(nextCursor);
+    if(interactionMode==="implant"){
+      if(!activeImplantId){
+        setPickMessage("Selecione ou insira um implante antes de posicionar.");
+        return;
+      }
+      updateActiveImplant({x:world[0],y:world[1],z:world[2]});
+      setPickMessage("Implante reposicionado no 3D.");
+    }else{
+      setPickMessage("Cruzeta sincronizada com os cortes.");
+    }
+  }
+
+  function pickFromPointer(event){
+    const world=pickWorldAtEvent(event);
+    if(world)applyPickedWorld(world);
+    else setPickMessage("Não encontrei superfície do CBCT nesse ponto.");
+  }
+
+  function onStagePointerDownCapture(event){
+    if(interactionMode==="camera")return;
+    event.preventDefault();event.stopPropagation();
+    placementDragRef.current=true;
+    try{hostRef.current?.setPointerCapture?.(event.pointerId)}catch{}
+    pickFromPointer(event);
+  }
+  function onStagePointerMoveCapture(event){
+    if(interactionMode==="camera"||!placementDragRef.current)return;
+    event.preventDefault();event.stopPropagation();
+    if(event.buttons)pickFromPointer(event);
+  }
+  function onStagePointerUpCapture(event){
+    if(interactionMode==="camera")return;
+    event.preventDefault();event.stopPropagation();
+    placementDragRef.current=false;
+    try{hostRef.current?.releasePointerCapture?.(event.pointerId)}catch{}
+  }
 
   function disposeImplantBundle(bundle){
     const renderer=rendererRef.current;
@@ -624,6 +721,10 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     actor.setMapper(mapper);
     renderer.addVolume(actor);
 
+    const crosshairBundles=createCrosshairBundle();
+    crosshairBundles.forEach(bundle=>renderer.addActor(bundle.actor));
+    crosshairActorsRef.current=crosshairBundles;
+
     genericRef.current=generic;
     rendererRef.current=renderer;
     overlayRendererRef.current=overlayRenderer;
@@ -680,6 +781,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       if(nerveActorRef.current?.actor)overlayRenderer.removeActor(nerveActorRef.current.actor);
       disposeScan();
       disposeImplants();
+      disposeCrosshair();
       renderer.removeVolume(actor);
       nerveActorRef.current=null;
       renderWindow.removeRenderer(overlayRenderer);
@@ -728,6 +830,20 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       timers.forEach(clearTimeout);
     };
   },[layoutMode]);
+
+  useEffect(()=>{
+    if(!meta||!cursor||!crosshairActorsRef.current.length)return;
+    const world=[
+      clamp(cursor.x,0,meta.w-1)*meta.spacingX,
+      clamp(cursor.y,0,meta.h-1)*meta.spacingY,
+      clamp(cursor.z,0,meta.d-1)*meta.spacingZ
+    ];
+    crosshairActorsRef.current.forEach(bundle=>{
+      bundle.actor.setPosition(...world);
+      bundle.actor.setVisibility(crosshairVisible);
+    });
+    renderNow();
+  },[cursor?.x,cursor?.y,cursor?.z,crosshairVisible,meta,ready]);
 
   useEffect(()=>{
     if(volumeActorRef.current){volumeActorRef.current.setVisibility(volumeVisible);renderNow()}
@@ -792,7 +908,11 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   },[implants,activeImplantId,ready]);
 
   return <div className="viewer3d-panel viewer3d-v2">
-    <div className="viewer3d-stage" ref={hostRef}>
+    <div className={"viewer3d-stage "+(interactionMode!=="camera"?"is-picking":"")} ref={hostRef}
+      onPointerDownCapture={onStagePointerDownCapture}
+      onPointerMoveCapture={onStagePointerMoveCapture}
+      onPointerUpCapture={onStagePointerUpCapture}
+      onPointerCancelCapture={onStagePointerUpCapture}>
       {!ready&&<div className="viewer3d-loading"><span className="viewer3d-orbit">◌</span><strong>OdontoView 3D Engine v2</strong><small>{status}</small></div>}
       {ready&&<div className="viewer3d-status">{status}</div>}
       {ready&&<div className="viewer3d-engine-badge">VTK.js • GPU</div>}
@@ -802,6 +922,13 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
         <button type="button" className="viewer3d-add-scan" onClick={()=>scanInputRef.current?.click()}>＋ Adicionar scan intraoral</button>
         <span>{scanName?"Fusion ativo • "+scanName:"CBCT aberto • adicione STL/PLY para fusionar"}</span>
       </div>
+      <div className="viewer3d-interaction" role="group" aria-label="Interação 3D">
+        <button type="button" className={interactionMode==="camera"?"active":""} onClick={()=>{setInteractionMode("camera");setPickMessage("")}}>↻ Câmera</button>
+        <button type="button" className={interactionMode==="cursor"?"active":""} onClick={()=>{setInteractionMode("cursor");setPickMessage("Clique no 3D para mover a cruzeta.")}}>⌖ Cruzeta 3D</button>
+        <button type="button" className={interactionMode==="implant"?"active implant":""} disabled={!activeImplant} onClick={()=>{setInteractionMode("implant");setPickMessage(activeImplant?"Clique/arraste no osso para posicionar o implante.":"Insira ou selecione um implante.")}}>◈ Posicionar implante</button>
+        <button type="button" className={crosshairVisible?"active":""} onClick={()=>onCrosshairVisibleChange(!crosshairVisible)}>{crosshairVisible?"Cruzeta visível":"Mostrar cruzeta"}</button>
+      </div>
+      {pickMessage&&<div className="viewer3d-pick-note">{pickMessage}</div>}
       <div className="viewer3d-presets" role="group" aria-label="Presets 3D">
         {Object.entries(PRESETS).map(([key,cfg])=><button key={key} className={preset===key?"active":""} onClick={()=>choosePreset(key)}>{cfg.label}</button>)}
       </div>
@@ -866,7 +993,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
               <small>Estimativa geométrica da superfície nominal do implante até o traçado central do nervo. O traçado manual/assistido não representa a parede real do canal mandibular.</small>
             </>:<small>Marque pelo menos 2 pontos do nervo para calcular a distância em milímetros.</small>}
           </section>
-          <span>Posição fina • 0,25 mm — ou arraste o implante diretamente no axial/coronal/sagital</span>
+          <span>Posição fina • 0,25 mm — ajuste nos cortes ou use “Posicionar implante” diretamente no 3D</span>
           <div><button onClick={()=>moveImplant("x",-.25)}>X−</button><button onClick={()=>moveImplant("x",.25)}>X+</button><button onClick={()=>moveImplant("y",-.25)}>Y−</button><button onClick={()=>moveImplant("y",.25)}>Y+</button><button onClick={()=>moveImplant("z",-.25)}>Z−</button><button onClick={()=>moveImplant("z",.25)}>Z+</button></div>
           <span>Direção inicial do implante</span>
           <div><button onClick={()=>alignImplantAxis("z")}>Eixo Z</button><button onClick={()=>alignImplantAxis("y")}>Eixo Y</button><button onClick={()=>alignImplantAxis("x")}>Eixo X</button></div>

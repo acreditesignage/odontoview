@@ -891,3 +891,49 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
     max-height:204px!important;
   }
 }
+
+
+/* 3D synchronized picking + implant placement */
+.viewer3d-stage.is-picking,
+.viewer3d-stage.is-picking canvas{cursor:crosshair!important}
+.viewer3d-interaction{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:5px;
+  margin-bottom:7px;
+}
+.viewer3d-interaction button{
+  border:1px solid #314559;
+  background:#111a24;
+  color:#a7b8c9;
+  border-radius:8px;
+  min-height:31px;
+  padding:5px 6px;
+  font:inherit;
+  font-size:9px;
+  font-weight:850;
+}
+.viewer3d-interaction button.active{
+  background:#0d3439;
+  border-color:#2d8f91;
+  color:#b9fff9;
+}
+.viewer3d-interaction button.active.implant{
+  background:#14382d;
+  border-color:#35ba8b;
+  color:#baffdf;
+}
+.viewer3d-interaction button:disabled{opacity:.42;cursor:not-allowed}
+.viewer3d-pick-note{
+  margin:0 0 7px;
+  padding:6px 8px;
+  border:1px solid rgba(66,187,180,.28);
+  border-radius:8px;
+  background:rgba(10,39,45,.55);
+  color:#a8e8e2;
+  font-size:9px;
+  line-height:1.35;
+}
+@media(max-width:760px){
+  .viewer3d-interaction{grid-template-columns:1fr 1fr}
+}

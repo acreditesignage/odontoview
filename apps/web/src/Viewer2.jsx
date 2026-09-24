@@ -151,6 +151,26 @@ export default function Viewer2(){
   const [implants,setImplants]=useState([]);
   const [activeImplantId,setActiveImplantId]=useState(null);
 
+  function updateCursorFrom3D(next){
+    if(!meta||!next)return;
+    const normalized={
+      x:clamp(Number(next.x)||0,0,meta.w-1),
+      y:clamp(Number(next.y)||0,0,meta.h-1),
+      z:clamp(Number(next.z)||0,0,meta.d-1)
+    };
+    setCursor(normalized);
+    if(curve.length){
+      let best=0,bestDist=Infinity;
+      for(let i=0;i<curve.length;i++){
+        const dx=(curve[i].x-normalized.x)*meta.spacingX;
+        const dy=(curve[i].y-normalized.y)*meta.spacingY;
+        const dist=dx*dx+dy*dy;
+        if(dist<bestDist){bestDist=dist;best=i}
+      }
+      setCurveIndex(clamp(best,archRange.start,archRange.end));
+    }
+  }
+
   useEffect(()=>{
     const m=meta,implant=implants.find(item=>item.id===activeImplantId);
     if(!m||!implant)return;
@@ -1192,7 +1212,22 @@ export default function Viewer2(){
         <div className="viewer2-pane-head"><strong>Modelo 3D • Planejamento</strong><div className="viewer2-pane-actions"><span className="viewer3d-badge">3D PROFISSIONAL</span>{expandButton("3d","3D")}</div></div>
         <div className="viewer3d-split">
           <div className="viewer3d-primary">
-            <Viewer3DPanel volume={volumeRef.current} meta={meta} nervePoints={nerveDisplayPoints} curve={curve} cursor={cursor} implants={implants} activeImplantId={activeImplantId} onImplantsChange={setImplants} onActiveImplantChange={setActiveImplantId} layoutMode={expandedPanel||"mosaic"}/>
+            <Viewer3DPanel
+              key={expandedPanel==="3d"?"viewer3d-expanded":"viewer3d-standard"}
+              volume={volumeRef.current}
+              meta={meta}
+              nervePoints={nerveDisplayPoints}
+              curve={curve}
+              cursor={cursor}
+              crosshairVisible={crosshairVisible}
+              onCrosshairVisibleChange={setCrosshairVisible}
+              onCursorChange={updateCursorFrom3D}
+              implants={implants}
+              activeImplantId={activeImplantId}
+              onImplantsChange={setImplants}
+              onActiveImplantChange={setActiveImplantId}
+              layoutMode={expandedPanel||"mosaic"}
+            />
           </div>
           <div className={"viewer3d-mini-pano"+(expandedPanel==="panoramic"?" is-expanded":"")}>
             <div className="viewer3d-mini-head"><strong>Panorâmica reconstruída</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane("panoramic")}>1:1</button>{expandButton("panoramic","Panorâmica")}</div></div>
