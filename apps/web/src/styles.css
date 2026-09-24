@@ -1109,3 +1109,76 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .order-share-actions{display:grid;grid-template-columns:1fr}
   .order-share-actions button{width:100%}
 }
+
+
+/* Radiology — operational home */
+.radiology-hero{margin-bottom:12px}
+.radiology-hero-actions{display:flex;gap:9px;flex-wrap:wrap}
+.radiology-hero-actions button{white-space:nowrap}
+.radiology-home{display:grid;gap:16px}
+.radiology-home-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.radiology-action-card{
+  min-width:0;min-height:132px;padding:21px;border:1px solid #d9e5ef;border-radius:20px;
+  background:linear-gradient(145deg,#fff,#f6f9fc);box-shadow:0 14px 34px rgba(18,42,66,.08);
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:15px;align-items:center;text-align:left;color:#12263a;
+}
+.radiology-action-card.is-primary{background:linear-gradient(145deg,#0a84ff,#086acb);border-color:#0a84ff;color:#fff;box-shadow:0 16px 38px rgba(10,132,255,.22)}
+.radiology-action-card:hover{transform:translateY(-1px)}
+.radiology-action-icon{width:50px;height:50px;border-radius:15px;display:grid;place-items:center;background:rgba(10,132,255,.09);font-size:25px;font-weight:900}
+.radiology-action-card.is-primary .radiology-action-icon{background:rgba(255,255,255,.16)}
+.radiology-action-card>span:nth-child(2){min-width:0;display:grid;gap:5px}
+.radiology-action-card strong{font-size:19px;line-height:1.1;overflow-wrap:anywhere}
+.radiology-action-card small{font-size:12px;line-height:1.45;color:#667b90;overflow-wrap:anywhere}
+.radiology-action-card.is-primary small{color:rgba(255,255,255,.78)}
+.radiology-action-card>b{font-size:22px;opacity:.7}
+.radiology-home-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.radiology-shortcut{min-width:0;border:1px solid #dfe7ef;border-radius:16px;background:#fff;padding:15px 17px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;color:#1d3246}
+.radiology-shortcut>span{font-size:22px}
+.radiology-shortcut>div{min-width:0;display:grid;gap:3px}
+.radiology-shortcut strong{font-size:14px}
+.radiology-shortcut small{font-size:11px;color:#718396;overflow-wrap:anywhere}
+.radiology-shortcut>b{color:#0a84ff;font-size:18px}
+.radiology-ops-card{padding:22px}
+.radiology-ops-list,.radiology-exam-list{display:grid;gap:9px}
+.radiology-ops-row,.radiology-exam-row{display:grid;grid-template-columns:115px minmax(0,1fr) auto;gap:14px;align-items:center;padding:13px 14px;border:1px solid #e0e7ef;border-radius:13px;background:#fff;min-width:0}
+.radiology-ops-time{display:grid;gap:6px;justify-items:start}.radiology-ops-time>strong{font-size:18px}
+.radiology-ops-main,.radiology-exam-main{min-width:0;display:grid;gap:3px}
+.radiology-ops-main strong,.radiology-exam-main strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.radiology-ops-main small,.radiology-exam-main small{color:#6d7f91;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.radiology-ops-actions,.radiology-exam-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.radiology-ops-ingest,.radiology-exam-ingest{grid-column:1/-1}
+.radiology-home-empty{text-align:center;padding:28px 16px;border:1px dashed #d6e1eb;border-radius:14px;background:#f9fbfd}
+.radiology-home-empty p{color:#718396}
+.radiology-datebar{display:flex;justify-content:flex-end;margin-bottom:14px}
+.radiology-exams-card,.radiology-import-card{min-width:0}
+.radiology-import-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:10px;align-items:end}
+.radiology-import-grid label{display:grid;gap:6px;min-width:0}
+.radiology-import-grid label>span{font-size:11px;font-weight:800;color:#5e7185}
+.radiology-import-grid select{min-width:0;width:100%}
+
+@media(max-width:900px){
+  .radiology-home-actions,.radiology-home-shortcuts{grid-template-columns:1fr 1fr}
+  .radiology-ops-row,.radiology-exam-row{grid-template-columns:100px minmax(0,1fr)}
+  .radiology-ops-actions,.radiology-exam-actions{grid-column:2}
+  .radiology-import-grid{grid-template-columns:1fr 1fr}
+  .radiology-import-grid>button{grid-column:1/-1}
+}
+@media(max-width:620px){
+  .radiology-hero{align-items:stretch}
+  .radiology-hero-actions{display:grid;grid-template-columns:1fr}
+  .radiology-hero-actions button{width:100%;white-space:normal}
+  .radiology-home-actions,.radiology-home-shortcuts{grid-template-columns:1fr}
+  .radiology-action-card{min-height:112px;padding:16px;gap:12px}
+  .radiology-action-icon{width:44px;height:44px;border-radius:13px;font-size:21px}
+  .radiology-action-card strong{font-size:17px}
+  .radiology-ops-card{padding:17px}
+  .radiology-ops-card .section-title{align-items:stretch}
+  .radiology-ops-card .date-actions{width:100%;display:grid;grid-template-columns:1fr}
+  .radiology-ops-row,.radiology-exam-row{grid-template-columns:1fr;align-items:stretch}
+  .radiology-ops-time{display:flex;align-items:center;justify-content:space-between}
+  .radiology-ops-actions,.radiology-exam-actions{grid-column:1;justify-content:stretch}
+  .radiology-ops-actions button,.radiology-exam-actions button{width:100%}
+  .radiology-ops-main strong,.radiology-exam-main strong,.radiology-ops-main small,.radiology-exam-main small{white-space:normal;overflow:visible;text-overflow:clip}
+  .radiology-import-grid{grid-template-columns:1fr}
+  .radiology-import-grid>button{grid-column:1}
+}
