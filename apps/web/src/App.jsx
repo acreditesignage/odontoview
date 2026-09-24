@@ -715,8 +715,11 @@ function Radiology(){
              <div><strong>{o.examType.name}</strong><small>Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</small><small>Status: {STATUS[o.status]?.label||o.status}</small></div>
              <div className="patient-order-actions">
                {o.study?.status==="READY"?<button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy({...o.study,examType:o.examType})}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":"Abrir exame"}</button>:
-               o.status==="EXAME_REALIZADO"?<button className="primary compact" onClick={()=>choosePatientExam({kind:"order",id:o.id,examTypeId:o.examType.id})}>+ Adicionar exame</button>:
-               <span className="muted">Aguardando etapa clínica</span>}
+               o.status==="AGENDADO"?<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Confirmar chegada"}</button>:
+               o.status==="PACIENTE_CHEGOU"?<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Marcar exame realizado"}</button>:
+               o.status==="EXAME_REALIZADO"?<button className="primary compact" onClick={()=>choosePatientExam({kind:"order",id:o.id,examTypeId:o.examType.id})}>＋ Adicionar exame</button>:
+               o.status==="IMAGENS_RECEBIDAS"?<span className="done">✓ Imagens recebidas</span>:
+               <span className="muted">{STATUS[o.status]?.label||o.status}</span>}
              </div>
            </div>)}
            {patientDetail.studies.filter(s=>!s.orderId).map(s=><div className="patient-order-card local-study" key={s.id}>
