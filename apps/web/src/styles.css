@@ -937,3 +937,21 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 @media(max-width:760px){
   .viewer3d-interaction{grid-template-columns:1fr 1fr}
 }
+
+.viewer2-brand-home{
+  appearance:none;
+  -webkit-appearance:none;
+  border:0!important;
+  background:transparent!important;
+  padding:0!important;
+  margin:0!important;
+  font:inherit;
+  font-size:24px!important;
+  font-weight:800!important;
+  letter-spacing:-.04em!important;
+  color:inherit;
+  cursor:pointer;
+  text-align:left;
+}
+.viewer2-brand-home:hover{opacity:.86}
+.viewer2-brand-home:focus-visible{outline:2px solid #31d7d2;outline-offset:4px;border-radius:4px}

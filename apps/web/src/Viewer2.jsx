@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
-import {useNavigate} from "react-router-dom";
+import {useNavigate,useSearchParams} from "react-router-dom";
 import {jsPDF} from "jspdf";
 import Viewer3DPanel from "./Viewer3DPanel.jsx";
 import {implantAxisVector} from "./implantLibrary.js";
@@ -104,8 +104,15 @@ function interpolateNervePath(points){
 }
 
 export default function Viewer2(){
-  const nav=useNavigate();
+  const nav=useNavigate(),[query]=useSearchParams();
   const session=useMemo(()=>getViewerSession(),[]);
+  const storedRole=localStorage.getItem("odontoview_role")||"";
+  const fallbackHome=storedRole==="UNIT_USER"?"/radiologia":storedRole==="DENTIST"?"/dentista":"/";
+  const origin=query.get("from")||(storedRole==="UNIT_USER"?"radiology":storedRole==="DENTIST"?"dentist":"shared");
+  const requestedReturn=query.get("returnTo")||"";
+  const returnTo=(requestedReturn.startsWith("/dentista")||requestedReturn.startsWith("/radiologia"))?requestedReturn:fallbackHome;
+  const returnLabel=origin==="dentist"?"Voltar aos meus exames":origin==="radiology"?"Voltar à radiologia":"Ir para o início";
+  const profileHome=fallbackHome;
   const volumeRef=useRef(null);
   const metaRef=useRef(null);
   const defaultWindowRef=useRef({wc:400,ww:2000});
@@ -1267,14 +1274,14 @@ export default function Viewer2(){
   }
 
   if(loading)return <main className="viewer2-loading"><div><div className="brand">OdontoView</div><h1>Montando Viewer 2.0…</h1><p>Decodificando o volume DICOM localmente.</p></div></main>;
-  if(error)return <main className="page centered"><section className="card auth"><div className="brand">OdontoView</div><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>nav("/radiologia")}>Voltar</button></section></main>;
+  if(error)return <main className="page centered"><section className="card auth"><button type="button" className="brand viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}}>OdontoView</button><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>{clearViewerSession();nav(returnTo)}}>{returnLabel}</button></section></main>;
 
   const toolName={navigate:"Cruzeta",pan:"Pan",measure:"Medir",curve:"Curva da arcada",nerve:"Nervo",foramen:"Forame"}[tool];
   return <main className="viewer2">
     <header className="viewer2-top">
-      <div><div className="brand light">OdontoView</div><span className="viewer2-beta">VIEWER 2.0 BETA</span></div>
+      <div><button type="button" className="brand light viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}} title="Ir para a página inicial">OdontoView</button><span className="viewer2-beta">VIEWER 2.0 BETA</span></div>
       <div className="viewer2-study"><strong>{session?.order?.patient?.name||"Exame local"}</strong><span>{session?.order?.examType?.name||session?.result?.series?.[meta.seriesIndex]?.description} • {meta.manufacturer}{meta.model?" "+meta.model:""}</span></div>
-      <button className="viewer2-exit" onClick={()=>{clearViewerSession();nav("/radiologia")}}>Voltar à radiologia</button>
+      <button className="viewer2-exit" onClick={()=>{clearViewerSession();nav(returnTo)}}>← {returnLabel}</button>
     </header>
     <section className="viewer2-toolbar">
       {[

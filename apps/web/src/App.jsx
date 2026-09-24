@@ -7,6 +7,7 @@ import Viewer2 from "./Viewer2.jsx";
 import {setViewerSession} from "./viewerSession.js";
 
 function routeForRole(role){return role==="UNIT_USER"?"/radiologia":"/dentista"}
+function viewerRoute(origin,returnTo){const params=new URLSearchParams({from:origin,returnTo});return "/viewer2?"+params.toString()}
 function logout(){localStorage.removeItem("odontoview_token");localStorage.removeItem("odontoview_role");location.href="/"}
 function formatBytes(value){if(!value)return "0 MB";return (value/1024/1024).toFixed(value>10*1024*1024?1:2)+" MB"}
 function BrandLockup({role="NETWORK",light=false}){
@@ -58,8 +59,10 @@ function Login({initialMode="login"}){
 }
 
 function DentistDashboard(){
- const nav=useNavigate();
- const [data,setData]=useState(null),[types,setTypes]=useState([]),[tab,setTab]=useState("home"),[err,setErr]=useState(""),[busy,setBusy]=useState(false),[openingStudy,setOpeningStudy]=useState("");
+ const nav=useNavigate(),[q]=useSearchParams();
+ const requestedTab=q.get("tab");
+ const initialTab=["home","new","patients","exams","import"].includes(requestedTab)?requestedTab:"home";
+ const [data,setData]=useState(null),[types,setTypes]=useState([]),[tab,setTab]=useState(initialTab),[err,setErr]=useState(""),[busy,setBusy]=useState(false),[openingStudy,setOpeningStudy]=useState("");
  const [patientMode,setPatientMode]=useState("existing"),[selectedPatient,setSelectedPatient]=useState(""),[type,setType]=useState("");
  const [p,setP]=useState({name:"",birthDate:"",phone:"",email:""}),[out,setOut]=useState(null);
  const dentistFileInput=useRef(null);
@@ -152,7 +155,7 @@ function DentistDashboard(){
      await Promise.all(Array.from({length:Math.min(6,manifest.files.length)},()=>worker()));
      const result=await importExam(files);
      setViewerSession({result,order:{...order,patient:manifest.order.patient,examType:manifest.order.examType,unit:manifest.order.unit}});
-     nav("/viewer2");
+     nav(viewerRoute("dentist","/dentista?tab="+tab));
    }catch(e){setErr(e.message||"Não foi possível abrir o exame.");}
    finally{setOpeningStudy("")}
  }
@@ -204,7 +207,7 @@ function DentistDashboard(){
            <label><span>Tipo de exame</span><select value={dentistImportType} onChange={e=>setDentistImportType(e.target.value)}>{types.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
            <button className="primary" onClick={()=>{setDentistIngest(null);dentistFileInput.current?.click()}}>Selecionar ZIP / DICOM</button>
          </div>
-         {dentistIngest&&<IngestResult state={dentistIngest} onClear={()=>setDentistIngest(null)} onOpenViewer={()=>{setViewerSession({result:dentistIngest.result,order:{patient:data.patients.find(p=>p.id===dentistImportPatient),examType:types.find(t=>t.id===dentistImportType)||{name:"Exame DICOM"}}});nav("/viewer2")}} onSend={sendDentistImport} sendLabel="Salvar em Meus exames"/>}
+         {dentistIngest&&<IngestResult state={dentistIngest} onClear={()=>setDentistIngest(null)} onOpenViewer={()=>{setViewerSession({result:dentistIngest.result,order:{patient:data.patients.find(p=>p.id===dentistImportPatient),examType:types.find(t=>t.id===dentistImportType)||{name:"Exame DICOM"}}});nav(viewerRoute("dentist","/dentista?tab=import"))}} onSend={sendDentistImport} sendLabel="Salvar em Meus exames"/>}
        </>}
      </section>}
      {tab==="exams"&&<section className="card">
@@ -274,8 +277,10 @@ function IngestResult({state,onClear,onOpenViewer,onSend,sendLabel="Enviar exame
 }
 
 function Radiology(){
- const nav=useNavigate();
- const [tab,setTab]=useState("agenda"),[date,setDate]=useState(localDateValue()),[data,setData]=useState(null),[patients,setPatients]=useState(null),[patientSearch,setPatientSearch]=useState(""),[err,setErr]=useState(""),[busy,setBusy]=useState(""),[ingest,setIngest]=useState(null);
+ const nav=useNavigate(),[q]=useSearchParams();
+ const requestedTab=q.get("tab");
+ const initialTab=["agenda","patients"].includes(requestedTab)?requestedTab:"agenda";
+ const [tab,setTab]=useState(initialTab),[date,setDate]=useState(localDateValue()),[data,setData]=useState(null),[patients,setPatients]=useState(null),[patientSearch,setPatientSearch]=useState(""),[err,setErr]=useState(""),[busy,setBusy]=useState(""),[ingest,setIngest]=useState(null);
  const [patientForm,setPatientForm]=useState({name:"",birthDate:"",phone:"",email:""}),[patientSaving,setPatientSaving]=useState(false);
  const [selectedPatient,setSelectedPatient]=useState(null),[patientDetail,setPatientDetail]=useState(null),[patientDetailBusy,setPatientDetailBusy]=useState(false);
  const [patientIngest,setPatientIngest]=useState(null),[patientTarget,setPatientTarget]=useState(null),[patientExamType,setPatientExamType]=useState("");
@@ -431,7 +436,7 @@ function Radiology(){
      await Promise.all(Array.from({length:Math.min(6,manifest.files.length)},()=>worker()));
      const result=await importExam(files);
      setViewerSession({result,order:{patient:manifest.patient,examType:manifest.examType||{name:"Exame DICOM"},unit:data?.unit||null}});
-     nav("/viewer2");
+     nav(viewerRoute("radiology","/radiologia?tab="+tab));
    }catch(e){setErr(e.message||"Não foi possível abrir o exame.");}
    finally{setOpeningUnitStudy("")}
  }
@@ -471,7 +476,7 @@ function Radiology(){
            {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Exame recebido pelo OdontoView</span>}
          </div>
        </div>
-       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{setViewerSession({result:ingest.result,order:o});nav("/viewer2")}} onSend={()=>sendExamToDentist(o)}/>}
+       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=agenda"))}} onSend={()=>sendExamToDentist(o)}/>}
      </article>
    })}</div>)}
    {tab==="patients"&&<div className={"radiology-patient-layout"+(selectedPatient?" has-detail":"")}>
@@ -521,7 +526,7 @@ function Radiology(){
            <div><p className="eyebrow">NOVO EXAME LOCAL</p><h3>Adicionar DICOM ao paciente</h3></div>
            <div className="patient-local-exam-actions"><select value={patientExamType} onChange={e=>setPatientExamType(e.target.value)}>{patientDetail.examTypes.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button className="primary" onClick={()=>choosePatientExam({kind:"patient",id:patientDetail.patient.id})}>Selecionar exame</button></div>
          </section>}
-         {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{setViewerSession({result:patientIngest.result,order:{patient:patientDetail.patient,examType:patientDetail.examTypes.find(t=>t.id===(patientTarget?.examTypeId||patientExamType))||{name:"Exame DICOM"},unit:data?.unit}});nav("/viewer2")}} onSend={sendPatientExam}/>}
+         {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{setViewerSession({result:patientIngest.result,order:{patient:patientDetail.patient,examType:patientDetail.examTypes.find(t=>t.id===(patientTarget?.examTypeId||patientExamType))||{name:"Exame DICOM"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab=patients"))}} onSend={sendPatientExam}/>}
        </>}
      </section>}
    </div>}
