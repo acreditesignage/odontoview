@@ -278,7 +278,7 @@ function Radiology(){
  const [patientForm,setPatientForm]=useState({name:"",birthDate:"",phone:"",email:""}),[patientSaving,setPatientSaving]=useState(false);
  const [selectedPatient,setSelectedPatient]=useState(null),[patientDetail,setPatientDetail]=useState(null),[patientDetailBusy,setPatientDetailBusy]=useState(false);
  const [patientIngest,setPatientIngest]=useState(null),[patientTarget,setPatientTarget]=useState(null),[patientExamType,setPatientExamType]=useState("");
- const [openingUnitStudy,setOpeningUnitStudy]=useState("");
+ const [openingUnitStudy,setOpeningUnitStudy]=useState(""),[shareInvite,setShareInvite]=useState(null);
  const fileInput=useRef(null),orderForFile=useRef(null),patientFileInput=useRef(null);
  const range=useMemo(()=>dayRange(date),[date]);
 
@@ -291,7 +291,7 @@ function Radiology(){
    try{setPatients(await api("/api/unit/patients"+(q?"?q="+encodeURIComponent(q):"")))}catch(e){setErr(e.message)}
  }
  async function openPatient(p){
-   setSelectedPatient(p);setPatientDetail(null);setPatientIngest(null);setPatientDetailBusy(true);setErr("");
+   setSelectedPatient(p);setPatientDetail(null);setPatientIngest(null);setShareInvite(null);setPatientDetailBusy(true);setErr("");
    try{
      const detail=await api("/api/unit/patients/"+p.id);
      setPatientDetail(detail);
@@ -435,7 +435,16 @@ function Radiology(){
    finally{setOpeningUnitStudy("")}
  }
 
- const tomorrow=()=>{const x=new Date();x.setDate(x.getDate()+1);setDate(localDateValue(x))};
+ async function createRadiologyDentistInvite(){
+   if(!selectedPatient)return;
+   setErr("");
+   try{
+     const latestStudy=patientDetail?.studies?.find(s=>s.status==="READY");
+     const out=await api("/api/unit/patients/"+selectedPatient.id+"/dentist-invite",{method:"POST",body:JSON.stringify({studyId:latestStudy?.id||null})});
+     setShareInvite(out.inviteUrl);
+   }catch(e){setErr(e.message)}
+ }
+  const tomorrow=()=>{const x=new Date();x.setDate(x.getDate()+1);setDate(localDateValue(x))};
  return <main className="page radiology"><section className="wide">
    <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
    <input className="hidden-file" ref={patientFileInput} type="file" multiple onChange={handlePatientExamFiles}/>
@@ -483,13 +492,14 @@ function Radiology(){
        </button>)}</div>}
      </section>
      {selectedPatient&&<section className="card patient-detail-card">
-       <div className="patient-detail-head"><div><p className="eyebrow">FICHA DO PACIENTE</p><h2>{selectedPatient.name}</h2></div><button className="ghost compact" onClick={()=>{setSelectedPatient(null);setPatientDetail(null);setPatientIngest(null)}}>Fechar</button></div>
+       <div className="patient-detail-head"><div><p className="eyebrow">FICHA DO PACIENTE</p><h2>{selectedPatient.name}</h2></div><div className="patient-detail-head-actions"><button className="secondary compact" onClick={createRadiologyDentistInvite}>Compartilhar com dentista</button><button className="ghost compact" onClick={()=>{setSelectedPatient(null);setPatientDetail(null);setPatientIngest(null);setShareInvite(null)}}>Fechar</button></div></div>
        {patientDetailBusy||!patientDetail?<div className="empty">Abrindo ficha…</div>:<>
          <div className="patient-detail-meta">
            <span className={"source-badge "+(patientDetail.source==="ODONTOVIEW"?"odontoview":"radiology")}>{patientDetail.source==="ODONTOVIEW"?"OdontoView":"Radiologia"}</span>
            <span>{patientDetail.patient.phone||"Sem telefone"}</span>
            {patientDetail.patient.birthDate&&<span>{new Date(patientDetail.patient.birthDate).toLocaleDateString("pt-BR")}</span>}
          </div>
+         {shareInvite&&<div className="share-invite-box"><strong>Link seguro para o dentista</strong><code>{shareInvite}</code><div className="share-actions"><button className="secondary compact" onClick={()=>navigator.clipboard.writeText(shareInvite)}>Copiar link</button><a className="secondary compact" target="_blank" rel="noreferrer" href={"https://wa.me/?text="+encodeURIComponent("Olá! "+selectedPatient.name+" compartilhou um exame no OdontoView. Acesse ou crie seu cadastro: "+shareInvite)}>WhatsApp</a><a className="secondary compact" href={"mailto:?subject="+encodeURIComponent("Exame compartilhado no OdontoView")+"&body="+encodeURIComponent("Olá! "+selectedPatient.name+" compartilhou um exame com você no OdontoView. Acesse: "+shareInvite)}>Email</a></div><small>O convite expira em 7 dias e vincula o paciente ao cadastro do dentista que aceitar.</small></div>}
          <section className="patient-detail-section">
            <div className="section-title"><div><p className="eyebrow">PEDIDOS / EXAMES</p><h3>Histórico clínico da unidade</h3></div></div>
            {patientDetail.orders.length===0&&patientDetail.studies.length===0&&<div className="empty"><strong>Nenhum exame ainda.</strong><p>Você já pode adicionar o primeiro DICOM deste paciente.</p></div>}
@@ -525,11 +535,21 @@ function DentistInvitePage(){
 }
 
 function Patient(){
- const [q]=useSearchParams(),nav=useNavigate(),token=q.get("token"),[d,setD]=useState(null),[err,setErr]=useState("");
+ const [q]=useSearchParams(),nav=useNavigate(),token=q.get("token"),[d,setD]=useState(null),[err,setErr]=useState(""),[inviteUrl,setInviteUrl]=useState("");
  useEffect(()=>{if(token)api("/api/public/orders/access/"+token).then(setD).catch(e=>setErr(e.message));else setErr("Link incompleto.")},[token]);
+ async function shareWithDentist(){
+   try{
+     const out=await api("/api/public/orders/access/"+token+"/dentist-invite",{method:"POST",body:"{}"});
+     setInviteUrl(out.inviteUrl);
+   }catch(e){setErr(e.message)}
+ }
  if(err)return <main className="page centered"><section className="card"><h2>Link indisponível</h2><p>{err}</p></section></main>;
  if(!d)return <main className="page centered">Carregando…</main>;
- if(d.order.status!=="SOLICITADO")return <main className="page centered"><section className="card auth patient-card"><BrandLockup role="PACIENTE"/><p className="eyebrow">SEU EXAME</p><h1>{d.order.examType.name}</h1><p>Olá, {d.order.patient.name}. Status: <strong>{STATUS[d.order.status]?.label||d.order.status}</strong>.</p>{d.order.appointment&&<p>{new Date(d.order.appointment.availability.startAt).toLocaleString("pt-BR")}</p>}</section></main>;
+ if(d.order.status!=="SOLICITADO")return <main className="page centered"><section className="card auth patient-card"><BrandLockup role="PACIENTE"/><p className="eyebrow">SEU EXAME</p><h1>{d.order.examType.name}</h1><p>Olá, {d.order.patient.name}. Status: <strong>{STATUS[d.order.status]?.label||d.order.status}</strong>.</p>{d.order.appointment&&<p>{new Date(d.order.appointment.availability.startAt).toLocaleString("pt-BR")}</p>}
+   <section className="patient-documents-card"><p className="eyebrow">DOCUMENTOS DO EXAME</p><h3>Laudo e template</h3><p className="muted">Quando o laudo e os templates forem liberados pela radiologia/BR Laudos, eles aparecerão aqui para acesso do paciente.</p></section>
+   <button className="secondary" onClick={shareWithDentist}>Compartilhar com outro dentista</button>
+   {inviteUrl&&<div className="share-invite-box"><strong>Convite pronto</strong><code>{inviteUrl}</code><div className="share-actions"><button className="secondary compact" onClick={()=>navigator.clipboard.writeText(inviteUrl)}>Copiar</button><a className="secondary compact" target="_blank" rel="noreferrer" href={"https://wa.me/?text="+encodeURIComponent("Olá! Quero compartilhar meu exame no OdontoView com você. Acesse ou crie seu cadastro: "+inviteUrl)}>WhatsApp</a><a className="secondary compact" href={"mailto:?subject="+encodeURIComponent("Meu exame no OdontoView")+"&body="+encodeURIComponent("Olá! Quero compartilhar meu exame com você no OdontoView: "+inviteUrl)}>Email</a></div></div>}
+ </section></main>;
  return <main className="page centered"><section className="card auth patient-card"><BrandLockup role="PACIENTE"/><p className="eyebrow">EXAME SOLICITADO</p><h1>{d.order.examType.name}</h1><p>Olá, {d.order.patient.name}. Solicitação de {d.order.dentist.name} • CRO {d.order.dentist.cro}/{d.order.dentist.uf}.</p><button className="primary" onClick={()=>nav("/paciente/unidade?token="+encodeURIComponent(token))}>Escolher onde fazer</button></section></main>
 }
 
