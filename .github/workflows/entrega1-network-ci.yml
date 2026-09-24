@@ -1,7 +1,7 @@
 name: Entrega 1 - OdontoView Network
 on:
   push:
-    branches: [feat/entrega-1-odonto-view-network]
+    branches: [feat/entrega-1-odonto-view-network, feat/tooth-library-fdi-2-0]
   pull_request:
     branches: [main]
     paths: ["apps/api/**","apps/web/**",".github/workflows/entrega1-network-ci.yml"]
