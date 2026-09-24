@@ -676,3 +676,26 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .patient-local-exam-actions{grid-template-columns:1fr}
   .patient-open-hint{display:none}
 }
+
+
+/* Importação DICOM do dentista + compartilhamento seguro */
+.hero-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dentist-import-card{max-width:900px}
+.dentist-import-grid{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;margin-bottom:14px}
+.dentist-import-grid label{display:grid;gap:6px}
+.dentist-import-grid label>span{font-size:10px;font-weight:900;color:#63788d;letter-spacing:.04em}
+.patient-detail-head-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.share-invite-box{margin:10px 0 14px;padding:12px;border:1px solid #b8d9f7;border-radius:12px;background:#f6fbff}
+.share-invite-box strong{display:block;color:#0a5f9e;margin-bottom:7px}
+.share-invite-box code{display:block;padding:9px;border-radius:8px;background:#fff;border:1px solid #d9e7f3;overflow-wrap:anywhere;font-size:10px}
+.share-invite-box small{display:block;color:#6a8094;margin-top:8px;line-height:1.4}
+.share-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+.share-actions a{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+.patient-documents-card{margin:16px 0;padding:13px;border:1px dashed #b7d8f7;border-radius:12px;background:#f8fbfe}
+.patient-documents-card h3{margin:2px 0 6px}
+.invite-card{max-width:520px}
+@media(max-width:760px){
+  .dentist-import-grid{grid-template-columns:1fr}
+  .hero-actions{width:100%}
+  .hero-actions button{flex:1}
+}
