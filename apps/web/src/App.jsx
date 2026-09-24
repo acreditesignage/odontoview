@@ -611,7 +611,7 @@ function Radiology(){
        </button>
      </section>
      <section className="radiology-home-shortcuts">
-       <button type="button" className="radiology-shortcut" onClick={()=>goRadiologyTab("agenda")}><span>📅</span><div><strong>Agenda de hoje</strong><small>{operationalOrders.length} atendimento(s) em ${new Date(date+"T12:00:00").toLocaleDateString("pt-BR")}</small></div><b>→</b></button>
+       <button type="button" className="radiology-shortcut" onClick={()=>goRadiologyTab("agenda")}><span>📅</span><div><strong>Agenda de hoje</strong><small>{operationalOrders.length} atendimento(s) em {new Date(date+"T12:00:00").toLocaleDateString("pt-BR")}</small></div><b>→</b></button>
        <button type="button" className="radiology-shortcut" onClick={()=>goRadiologyTab("patients")}><span>👥</span><div><strong>Pacientes</strong><small>{patients?.patients?.length||0} na base visível</small></div><b>→</b></button>
      </section>
      <section className="card radiology-ops-card">
