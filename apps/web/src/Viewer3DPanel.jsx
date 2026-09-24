@@ -167,27 +167,46 @@ function createTubeActor(worldPoints,radius,color){
 }
 
 function createParametricImplantBundle(implant,active){
-  const segments=64;
+  const segments=72;
   const radius=Math.max(.4,Number(implant.diameter)||3.5)/2;
   const length=Math.max(4,Number(implant.length)||10);
-  const taper=Math.min(2.2,length*.22);
-  const rings=[
-    {z:length/2,r:radius},
-    {z:-length/2+taper,r:radius},
-    {z:-length/2+.35,r:radius*.42}
-  ];
+  const pitch=Math.max(.65,Math.min(1.05,(Number(implant.diameter)||3.5)*.22));
+  const threadHeight=Math.max(.10,Math.min(.22,radius*.13));
+  const collar=Math.min(1.15,length*.11);
+  const axialSteps=Math.max(44,Math.round(length/.18));
   const points=[];
-  rings.forEach(ring=>{
+  const rings=[];
+  for(let j=0;j<=axialSteps;j++){
+    const t=j/axialSteps;
+    const z=length/2-t*length;
+    const fromTop=t*length;
+    let bodyRadius=radius*.90;
+    if(fromTop<collar)bodyRadius=radius*(.98-.05*(fromTop/collar));
+    const apexStart=.78;
+    if(t>apexStart){
+      const q=(t-apexStart)/(1-apexStart);
+      bodyRadius*=1-q*.62;
+    }
+    const ringStart=points.length;
     for(let i=0;i<segments;i++){
       const a=i/segments*Math.PI*2;
-      points.push([Math.cos(a)*ring.r,Math.sin(a)*ring.r,ring.z]);
+      let ridge=0;
+      if(fromTop>collar*.82&&t<.985){
+        const phase=a-(fromTop/pitch)*Math.PI*2;
+        const crest=Math.max(0,Math.cos(phase));
+        ridge=Math.pow(crest,8)*threadHeight;
+      }
+      const micro=Math.sin(a*3+fromTop*.55)*threadHeight*.05;
+      const r=Math.max(radius*.24,bodyRadius+ridge+micro);
+      points.push([Math.cos(a)*r,Math.sin(a)*r,z]);
     }
-  });
+    rings.push(ringStart);
+  }
   const topCenter=points.length;points.push([0,0,length/2]);
   const tipCenter=points.length;points.push([0,0,-length/2]);
   const cells=[];
-  for(let r=0;r<rings.length-1;r++){
-    const a0=r*segments,b0=(r+1)*segments;
+  for(let j=0;j<rings.length-1;j++){
+    const a0=rings[j],b0=rings[j+1];
     for(let i=0;i<segments;i++){
       const n=(i+1)%segments;
       cells.push(3,a0+i,b0+i,b0+n,3,a0+i,b0+n,a0+n);
@@ -195,8 +214,8 @@ function createParametricImplantBundle(implant,active){
   }
   for(let i=0;i<segments;i++){
     const n=(i+1)%segments;
-    cells.push(3,topCenter,n,i);
-    const last=(rings.length-1)*segments;
+    cells.push(3,topCenter,rings[0]+n,rings[0]+i);
+    const last=rings[rings.length-1];
     cells.push(3,tipCenter,last+i,last+n);
   }
   const flat=new Float32Array(points.length*3);
@@ -210,8 +229,8 @@ function createParametricImplantBundle(implant,active){
   actor.setOrientation(implant.rx||0,implant.ry||0,implant.rz||0);
   const prop=actor.getProperty();
   prop.setColor(...(active?[.08,.92,.82]:[.88,.72,.34]));
-  prop.setOpacity(active ? .98 : .86);
-  prop.setAmbient(.35);prop.setDiffuse(.72);prop.setSpecular(.72);prop.setSpecularPower(32);
+  prop.setOpacity(active ? .98 : .90);
+  prop.setAmbient(.26);prop.setDiffuse(.80);prop.setSpecular(.86);prop.setSpecularPower(46);
   return {actor,mapper,poly,points:vtkPts};
 }
 
@@ -589,7 +608,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       </div>
       <div className="viewer3d-implant-planner">
         <div className="viewer3d-implant-head">
-          <div><strong>Planejamento de implante • Beta</strong><small>Neodent Grand Morse • envelope paramétrico por diâmetro/comprimento</small></div>
+          <div><strong>Planejamento de implante • Beta</strong><small>Neodent Grand Morse • corpo cônico + rosca helicoidal beta</small></div>
           <button type="button" className="viewer3d-add-implant" onClick={addImplant}>＋ Inserir no cursor</button>
         </div>
         <label className="viewer3d-implant-select">
@@ -600,7 +619,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
             </optgroup>)}
           </select>
         </label>
-        <div className="viewer3d-implant-warning">Geometria paramétrica de desenvolvimento: dimensões nominais preservadas, mas não representa rosca/superfície oficial e ainda não deve orientar cirurgia.</div>
+        <div className="viewer3d-implant-warning">Geometria beta procedural com corpo cônico e rosca helicoidal visual. Diâmetro/comprimento são nominais; rosca e superfície ainda não são a geometria oficial do fabricante e não devem orientar cirurgia.</div>
         {implants.length>0&&<div className="viewer3d-implant-list">
           {implants.map((item,index)=><button type="button" key={item.id} className={item.id===activeImplantId?"active":""} onClick={()=>onActiveImplantChange(item.id)}>
             <b>#{index+1}</b><span>{item.familyLabel} • {item.model}</span><small>Ø {item.diameter} × {item.length} mm</small>
