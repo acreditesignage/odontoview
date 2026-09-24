@@ -528,13 +528,98 @@ export function createApp(){
     }catch(e){next(e);}
   });
 
+  app.post("/api/dentist/patients/:id/studies",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      if(!storageReady()) return res.status(503).json({error:"Storage privado ainda não está disponível."});
+      const dentist=await dentistFor(req.auth.sub);
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
+      const patient=await prisma.patient.findFirst({where:dentistPatientWhere(dentist.id,req.params.id)});
+      if(!patient) return res.status(404).json({error:"Paciente não encontrado ou não compartilhado com você."});
+      const meta=req.body||{};
+      const examType=meta.examTypeId?await prisma.examType.findFirst({where:{id:String(meta.examTypeId),active:true}}):null;
+      const study=await prisma.examStudy.create({data:{
+        patientId:patient.id,
+        ownerDentistId:dentist.id,
+        examTypeId:examType?.id||null,
+        sourceType:String(meta.sourceType||"DICOM").slice(0,24),
+        modality:meta.modality?String(meta.modality).slice(0,32):null,
+        manufacturer:meta.manufacturer?String(meta.manufacturer).slice(0,120):null,
+        model:meta.model?String(meta.model).slice(0,120):null,
+        seriesCount:Math.max(0,Number(meta.seriesCount)||0)
+      }});
+      res.status(201).json({study});
+    }catch(e){next(e);}
+  });
+
+  app.put("/api/dentist/studies/:studyId/files/:index",auth,express.raw({type:"application/octet-stream",limit:"32mb"}),async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      if(!storageReady()) return res.status(503).json({error:"Storage privado ainda não está disponível."});
+      const dentist=await dentistFor(req.auth.sub);
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
+      const index=Number(req.params.index);
+      if(!Number.isInteger(index)||index<0||index>10000) return res.status(400).json({error:"Índice de arquivo inválido."});
+      const study=await prisma.examStudy.findFirst({where:{id:req.params.studyId,ownerDentistId:dentist.id,status:"UPLOADING"}});
+      if(!study) return res.status(404).json({error:"Estudo em envio não encontrado."});
+      if(!Buffer.isBuffer(req.body)||!req.body.length) return res.status(400).json({error:"Arquivo DICOM vazio."});
+      let fileName="dicom-"+String(index+1).padStart(4,"0")+".dcm";
+      try{
+        const raw=String(req.headers["x-file-name"]||"");
+        if(raw) fileName=decodeURIComponent(raw).replace(/[\\/]+/g,"_").slice(-180)||fileName;
+      }catch{}
+      const objectKey="studies/"+study.id+"/"+String(index).padStart(6,"0")+".dcm";
+      await putPrivateObject({key:objectKey,body:req.body,contentType:"application/dicom"});
+      const file=await prisma.studyFile.upsert({
+        where:{studyId_index:{studyId:study.id,index}},
+        create:{studyId:study.id,index,fileName,objectKey,sizeBytes:req.body.length,contentType:"application/dicom"},
+        update:{fileName,objectKey,sizeBytes:req.body.length,contentType:"application/dicom"}
+      });
+      res.status(201).json({file:{id:file.id,index:file.index,sizeBytes:file.sizeBytes}});
+    }catch(e){next(e);}
+  });
+
+  app.post("/api/dentist/studies/:studyId/complete",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      const dentist=await dentistFor(req.auth.sub);
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
+      const study=await prisma.examStudy.findFirst({
+        where:{id:req.params.studyId,ownerDentistId:dentist.id},
+        include:{files:true}
+      });
+      if(!study) return res.status(404).json({error:"Estudo não encontrado."});
+      if(study.status==="READY") return res.json({study});
+      if(!study.files.length) return res.status(409).json({error:"Nenhum arquivo foi enviado."});
+      const totalBytes=study.files.reduce((sum,f)=>sum+f.sizeBytes,0);
+      const completed=await prisma.examStudy.update({
+        where:{id:study.id},
+        data:{status:"READY",fileCount:study.files.length,totalBytes,completedAt:new Date()}
+      });
+      res.json({study:completed});
+    }catch(e){next(e);}
+  });
+
   app.get("/api/dentist/studies/:studyId",auth,async(req,res,next)=>{
     try{
       if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      const dentist=await dentistFor(req.auth.sub);
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
       const study=await prisma.examStudy.findFirst({
-        where:{id:req.params.studyId,status:"READY",order:{dentist:{userId:req.auth.sub}}},
+        where:{
+          id:req.params.studyId,
+          status:"READY",
+          OR:[
+            {ownerDentistId:dentist.id},
+            {order:{dentistId:dentist.id}},
+            {patient:{dentistAccess:{some:{dentistId:dentist.id}}}}
+          ]
+        },
         include:{
           files:{orderBy:{index:"asc"},select:{id:true,index:true,fileName:true,sizeBytes:true}},
+          patient:{select:{id:true,name:true}},
+          examType:true,
+          unit:true,
           order:{include:{patient:{select:{id:true,name:true}},examType:true,unit:true}}
         }
       });
@@ -546,7 +631,9 @@ export function createApp(){
           manufacturer:study.manufacturer,model:study.model,seriesCount:study.seriesCount,
           fileCount:study.fileCount,totalBytes:study.totalBytes,completedAt:study.completedAt
         },
-        order:{id:study.order.id,patient:study.order.patient,examType:study.order.examType,unit:study.order.unit},
+        order:study.order
+          ? {id:study.order.id,patient:study.order.patient,examType:study.order.examType,unit:study.order.unit}
+          : {id:null,patient:study.patient,examType:study.examType||{name:"Exame DICOM"},unit:study.unit},
         files:study.files
       });
     }catch(e){next(e);}
@@ -555,8 +642,21 @@ export function createApp(){
   app.get("/api/dentist/studies/:studyId/files/:fileId",auth,async(req,res,next)=>{
     try{
       if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      const dentist=await dentistFor(req.auth.sub);
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
       const file=await prisma.studyFile.findFirst({
-        where:{id:req.params.fileId,studyId:req.params.studyId,study:{status:"READY",order:{dentist:{userId:req.auth.sub}}}}
+        where:{
+          id:req.params.fileId,
+          studyId:req.params.studyId,
+          study:{
+            status:"READY",
+            OR:[
+              {ownerDentistId:dentist.id},
+              {order:{dentistId:dentist.id}},
+              {patient:{dentistAccess:{some:{dentistId:dentist.id}}}}
+            ]
+          }
+        }
       });
       if(!file) return res.status(404).json({error:"Arquivo não encontrado."});
       const object=await getPrivateObject(file.objectKey);
