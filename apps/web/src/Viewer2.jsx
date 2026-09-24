@@ -503,7 +503,82 @@ export default function Viewer2(){
     const m=metaRef.current;if(!m||!curve.length)return null;
     const c=curve[clamp(index,0,curve.length-1)],prev=curve[Math.max(0,index-1)],next=curve[Math.min(curve.length-1,index+1)];
     let tx=(next.x-prev.x)*m.spacingX,ty=(next.y-prev.y)*m.spacingY,len=Math.hypot(tx,ty)||1;tx/=len;ty/=len;
-    return {c,nx:-ty,ny:tx};
+    return {c,nx:-ty,ny:tx,tx,ty};
+  }
+
+  function paintProjectedImplant(ctx,map,tip,top,radiusMm,active,label=""){
+    const toScreen=p=>({x:map.ox+(p.a/map.pixelW)*map.dw,y:map.oy+(p.b/map.pixelH)*map.dh});
+    const p1=toScreen(tip),p2=toScreen(top);
+    const dx=p2.x-p1.x,dy=p2.y-p1.y,len=Math.hypot(dx,dy);
+    const pxPerMm=(map.dw/(map.pixelW*map.spacingA)+map.dh/(map.pixelH*map.spacingB))/2;
+    const rr=Math.max(2.5*map.dpr,radiusMm*pxPerMm);
+    const line=active?"rgba(48,255,223,.98)":"rgba(248,190,82,.94)";
+    const fill=active?"rgba(48,255,223,.30)":"rgba(248,190,82,.25)";
+    ctx.save();ctx.lineCap="round";ctx.lineJoin="round";
+    if(len<5*map.dpr){
+      const c={x:(p1.x+p2.x)/2,y:(p1.y+p2.y)/2};
+      ctx.fillStyle=fill;ctx.strokeStyle=line;ctx.lineWidth=Math.max(1.5,map.dpr);
+      ctx.beginPath();ctx.arc(c.x,c.y,rr,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.strokeStyle="#effffc";ctx.lineWidth=Math.max(1,map.dpr*.8);
+      ctx.beginPath();ctx.moveTo(c.x-rr*.7,c.y);ctx.lineTo(c.x+rr*.7,c.y);ctx.moveTo(c.x,c.y-rr*.7);ctx.lineTo(c.x,c.y+rr*.7);ctx.stroke();
+    }else{
+      const ux=dx/len,uy=dy/len,nx=-uy,ny=ux;
+      const tipR=Math.max(1.8*map.dpr,rr*.36),topR=rr;
+      ctx.fillStyle=fill;ctx.strokeStyle=line;ctx.lineWidth=Math.max(1.6,map.dpr);
+      ctx.beginPath();ctx.moveTo(p2.x+nx*topR,p2.y+ny*topR);ctx.lineTo(p2.x-nx*topR,p2.y-ny*topR);ctx.lineTo(p1.x-nx*tipR,p1.y-ny*tipR);ctx.lineTo(p1.x+nx*tipR,p1.y+ny*tipR);ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.strokeStyle="#effffc";ctx.lineWidth=Math.max(1,map.dpr*.8);ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();
+    }
+    if(active&&label){
+      const mid={x:(p1.x+p2.x)/2,y:(p1.y+p2.y)/2};
+      ctx.font=`${10*map.dpr}px -apple-system,sans-serif`;
+      const tw=ctx.measureText(label).width;
+      ctx.fillStyle="rgba(3,14,20,.88)";ctx.fillRect(mid.x-tw/2-5*map.dpr,mid.y-22*map.dpr,tw+10*map.dpr,16*map.dpr);
+      ctx.fillStyle="#eafffb";ctx.fillText(label,mid.x-tw/2,mid.y-20*map.dpr);
+    }
+    ctx.restore();
+  }
+
+  function drawTangentialImplants(ctx,map,frame,stepMm){
+    const m=metaRef.current;if(!m||!map||!frame)return;
+    implants.forEach(implant=>{
+      const axis=implantAxisVector(implant),half=implant.length/2,radius=implant.diameter/2;
+      const cx=frame.c.x*m.spacingX,cy=frame.c.y*m.spacingY;
+      const dx=implant.x-cx,dy=implant.y-cy;
+      const planeDistance=dx*frame.tx+dy*frame.ty;
+      const axisAcross=axis.x*frame.tx+axis.y*frame.ty;
+      if(Math.abs(planeDistance)>Math.abs(axisAcross)*half+radius+1.2)return;
+      const offset=dx*frame.nx+dy*frame.ny;
+      const axisIn=axis.x*frame.nx+axis.y*frame.ny;
+      const tip={a:map.pixelW/2+(offset-axisIn*half)/stepMm,b:m.d-1-(implant.z-axis.z*half)/m.spacingZ};
+      const top={a:map.pixelW/2+(offset+axisIn*half)/stepMm,b:m.d-1-(implant.z+axis.z*half)/m.spacingZ};
+      paintProjectedImplant(ctx,map,tip,top,radius,implant.id===activeImplantId,`${implant.model} • Ø${implant.diameter}×${implant.length}`);
+    });
+  }
+
+  function nearestCurveIndexWorld(xMm,yMm,start=0,end=curve.length-1){
+    const m=metaRef.current;if(!m||!curve.length)return null;
+    let bestIndex=start,bestDistance=Infinity;
+    for(let i=start;i<=end;i++){
+      const c=curve[i];if(!c)continue;
+      const distance=Math.hypot(xMm-c.x*m.spacingX,yMm-c.y*m.spacingY);
+      if(distance<bestDistance){bestDistance=distance;bestIndex=i}
+    }
+    return {index:bestIndex,distance:bestDistance};
+  }
+
+  function drawPanoramicImplants(ctx,map,start,end){
+    const m=metaRef.current;if(!m||!map)return;
+    implants.forEach(implant=>{
+      const axis=implantAxisVector(implant),half=implant.length/2,radius=implant.diameter/2;
+      const centerHit=nearestCurveIndexWorld(implant.x,implant.y,start,end);if(!centerHit)return;
+      if(centerHit.distance>Math.max(12,radius+PANORAMIC_BAND_HALF_MM*2))return;
+      const tipWorld={x:implant.x-axis.x*half,y:implant.y-axis.y*half,z:implant.z-axis.z*half};
+      const topWorld={x:implant.x+axis.x*half,y:implant.y+axis.y*half,z:implant.z+axis.z*half};
+      const tipHit=nearestCurveIndexWorld(tipWorld.x,tipWorld.y,start,end),topHit=nearestCurveIndexWorld(topWorld.x,topWorld.y,start,end);
+      const tip={a:tipHit.index-start,b:m.d-1-tipWorld.z/m.spacingZ};
+      const top={a:topHit.index-start,b:m.d-1-topWorld.z/m.spacingZ};
+      paintProjectedImplant(ctx,map,tip,top,radius,implant.id===activeImplantId,`${implant.model} • Ø${implant.diameter}×${implant.length}`);
+    });
   }
 
   function makeTangentialCanvas(index){
@@ -691,6 +766,7 @@ export default function Viewer2(){
         canvas._map=previousMap;
       }
 
+      drawTangentialImplants(ctx,map,frame,stepMm);
       const previousMap=canvas._map;canvas._map=map;
       drawMmScale(ctx,canvas,map);
       drawMeasurementOverlay(ctx,canvas,"tangential",idx);
@@ -726,6 +802,7 @@ export default function Viewer2(){
     const sorted=[...nerveDisplayPoints].filter(n=>n.curveIndex>=start&&n.curveIndex<=end).sort((a,b)=>a.curveIndex-b.curveIndex);
     if(sorted.length){ctx.strokeStyle="#ff2d2d";ctx.fillStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();sorted.forEach((n,i)=>{const local=n.curveIndex-start,x=map.ox+local/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();sorted.forEach(n=>{const local=n.curveIndex-start,x=map.ox+local/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.beginPath();ctx.arc(x,y,3*map.dpr,0,Math.PI*2);ctx.fill()})}
     foramina.filter(n=>n.curveIndex>=start&&n.curveIndex<=end).forEach(n=>{const local=n.curveIndex-start,x=map.ox+local/pixelW*map.dw,y=map.oy+(d-1-n.z)/pixelH*map.dh;ctx.strokeStyle="#ff2d2d";ctx.lineWidth=3*map.dpr;ctx.beginPath();ctx.arc(x,y,7*map.dpr,0,Math.PI*2);ctx.stroke()});
+    drawPanoramicImplants(ctx,map,start,end);
     if(crosshairVisible)drawCrosshair(ctx,canvas,curveIndex-start,d-1-cursor.z);
     drawMmScale(ctx,canvas);
     ctx.save();ctx.fillStyle="rgba(49,215,210,.88)";ctx.font=`${10*map.dpr}px -apple-system,sans-serif`;ctx.textAlign="right";ctx.textBaseline="top";ctx.fillText(`Faixa panorâmica ${PANORAMIC_BAND_HALF_MM*2} mm • ${archRange.label}`,map.ox+map.dw-6*map.dpr,map.oy+6*map.dpr);ctx.restore();

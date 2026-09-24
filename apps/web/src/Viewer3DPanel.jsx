@@ -63,6 +63,15 @@ const PRESETS={
     opacity:[["air",0],["soft",0],["trab",.002],["bone",.012],["cortical",.045],["dense",.58],["max",.84]],
     ambient:.40,diffuse:.72,specular:.36,specularPower:22
   },
+  implant:{
+    label:"Implante",bg:[.012,.022,.032],
+    colors:[
+      ["air",0,0,0],["soft",.04,.04,.04],["trab",.22,.18,.14],
+      ["bone",.55,.45,.34],["cortical",.80,.70,.58],["dense",.95,.91,.82],["max",1,.98,.92]
+    ],
+    opacity:[["air",0],["soft",0],["trab",.001],["bone",.003],["cortical",.012],["dense",.07],["max",.12]],
+    ambient:.50,diffuse:.62,specular:.35,specularPower:22
+  },
   clinical:{
     label:"Clínico",bg:[.035,.055,.075],
     colors:[
@@ -297,7 +306,13 @@ function createParametricImplantBundle(implant,active){
   prop.setAmbient(active?.92:.72);prop.setDiffuse(active?.46:.58);prop.setSpecular(.92);prop.setSpecularPower(54);
   prop.setEdgeVisibility?.(active);
   if(active)prop.setEdgeColor?.(.72,1,.96);
-  return {actor,mapper,poly,points:vtkPts,diameter:implant.diameter,length:implant.length};
+  const guide=createTubeActor([[0,0,-length/2-1.4],[0,0,length/2+1.4]],Math.max(.20,radius*.14),active?[.05,1,.84]:[1,.78,.24]);
+  if(guide){
+    guide.actor.setPosition(implant.x,implant.y,implant.z);
+    guide.actor.setOrientation(implant.rx||0,implant.ry||0,implant.rz||0);
+    const gp=guide.actor.getProperty();gp.setAmbient(1);gp.setDiffuse(.15);gp.setOpacity(1);
+  }
+  return {actor,mapper,poly,points:vtkPts,guide,diameter:implant.diameter,length:implant.length};
 }
 
 function updateImplantBundle(bundle,implant,active){
@@ -313,6 +328,12 @@ function updateImplantBundle(bundle,implant,active){
   prop.setSpecularPower(54);
   prop.setEdgeVisibility?.(active);
   if(active)prop.setEdgeColor?.(.72,1,.96);
+  if(bundle.guide?.actor){
+    bundle.guide.actor.setPosition(implant.x,implant.y,implant.z);
+    bundle.guide.actor.setOrientation(implant.rx||0,implant.ry||0,implant.rz||0);
+    const gp=bundle.guide.actor.getProperty();
+    gp.setColor(...(active?[.05,1,.84]:[1,.78,.24]));gp.setOpacity(1);gp.setAmbient(1);gp.setDiffuse(.15);
+  }
 }
 
 export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{},layoutMode="mosaic"}){
@@ -359,12 +380,21 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   const activeNerveClearance=useMemo(()=>implantNerveClearance(activeImplant,nerveWorldPoints),[activeImplant,nerveWorldPoints]);
   const nerveMarginDelta=activeNerveClearance?activeNerveClearance.clearance-nerveSafetyMargin:null;
 
+  useEffect(()=>{
+    if(!activeImplantId)return;
+    setPreset("implant");
+    setDenseBoost(false);
+    setBoneOpacityScale(v=>Math.min(v,.45));
+  },[activeImplantId]);
+
   function renderNow(){renderWindowRef.current?.render?.()}
 
   function disposeImplantBundle(bundle){
     const renderer=rendererRef.current;
     if(bundle?.actor&&renderer)renderer.removeActor(bundle.actor);
+    if(bundle?.guide?.actor&&renderer)renderer.removeActor(bundle.guide.actor);
     bundle?.actor?.delete?.();bundle?.mapper?.delete?.();bundle?.poly?.delete?.();bundle?.points?.delete?.();
+    bundle?.guide?.actor?.delete?.();bundle?.guide?.tube?.delete?.();bundle?.guide?.mapper?.delete?.();bundle?.guide?.poly?.delete?.();bundle?.guide?.pts?.delete?.();bundle?.guide?.lines?.delete?.();
   }
 
   function disposeImplants(){
@@ -683,6 +713,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
         if(bundle)disposeImplantBundle(bundle);
         bundle=createParametricImplantBundle(implant,active);
         renderer.addActor(bundle.actor);
+        if(bundle.guide?.actor)renderer.addActor(bundle.guide.actor);
         implantActorsRef.current.set(implant.id,bundle);
       }else{
         updateImplantBundle(bundle,implant,active);
