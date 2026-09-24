@@ -72,6 +72,7 @@ model Patient {
   createdByDentist Dentist? @relation(fields: [createdByDentistId], references: [id], onDelete: Restrict)
   createdByUnit    Unit?    @relation(fields: [createdByUnitId], references: [id], onDelete: Restrict)
   orders           Order[]
+  studies          ExamStudy[]
 
   @@index([createdByDentistId])
   @@index([createdByUnitId])
@@ -234,8 +235,10 @@ model StatusHistory {
 
 model ExamStudy {
   id              String      @id @default(cuid())
-  orderId         String      @unique
+  orderId         String?     @unique
+  patientId       String
   unitId          String
+  examTypeId      String?
   status          StudyStatus @default(UPLOADING)
   sourceType      String?
   sourceName      String?
@@ -248,10 +251,13 @@ model ExamStudy {
   createdAt       DateTime    @default(now())
   completedAt     DateTime?
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  unit  Unit  @relation(fields: [unitId], references: [id], onDelete: Restrict)
-  files StudyFile[]
+  order    Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  patient  Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  unit     Unit      @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  examType ExamType? @relation(fields: [examTypeId], references: [id], onDelete: SetNull)
+  files    StudyFile[]
 
+  @@index([patientId, createdAt])
   @@index([unitId, status, createdAt])
 }
 
