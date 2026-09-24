@@ -955,3 +955,92 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 }
 .viewer2-brand-home:hover{opacity:.86}
 .viewer2-brand-home:focus-visible{outline:2px solid #31d7d2;outline-offset:4px;border-radius:4px}
+
+
+/* Dentist home — action-first responsive workspace */
+.dentist-home{display:grid;gap:16px}
+.dentist-home-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.dentist-action-card{
+  min-width:0;
+  min-height:138px;
+  border:1px solid #d9e5ef;
+  border-radius:20px;
+  padding:22px;
+  background:linear-gradient(145deg,#ffffff,#f6f9fc);
+  box-shadow:0 14px 34px rgba(18,42,66,.08);
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center;
+  gap:16px;
+  text-align:left;
+  color:#12263a;
+}
+.dentist-action-card.is-primary{
+  background:linear-gradient(145deg,#0a84ff,#086acb);
+  border-color:#0a84ff;
+  color:#fff;
+  box-shadow:0 16px 38px rgba(10,132,255,.22);
+}
+.dentist-action-card:hover{transform:translateY(-1px)}
+.dentist-action-icon{
+  width:50px;height:50px;border-radius:15px;
+  display:grid;place-items:center;
+  background:rgba(10,132,255,.09);
+  font-size:26px;font-weight:800;flex:none;
+}
+.dentist-action-card.is-primary .dentist-action-icon{background:rgba(255,255,255,.16)}
+.dentist-action-copy{min-width:0;display:grid;gap:5px}
+.dentist-action-copy strong{font-size:19px;line-height:1.1;overflow-wrap:anywhere}
+.dentist-action-copy small{font-size:12px;line-height:1.45;color:#667b90;overflow-wrap:anywhere}
+.dentist-action-card.is-primary .dentist-action-copy small{color:rgba(255,255,255,.78)}
+.dentist-action-arrow{font-size:22px;font-weight:700;opacity:.72}
+.dentist-home-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.dentist-shortcut-card{
+  min-width:0;border:1px solid #dfe7ef;border-radius:16px;background:#fff;padding:15px 17px;
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;color:#1d3246;
+}
+.dentist-shortcut-card>span{font-size:22px}
+.dentist-shortcut-card>div{min-width:0;display:grid;gap:3px}
+.dentist-shortcut-card strong{font-size:14px;overflow-wrap:anywhere}
+.dentist-shortcut-card small{font-size:11px;color:#718396;overflow-wrap:anywhere}
+.dentist-shortcut-card>b{color:#0a84ff;font-size:18px}
+.dentist-recent-card{padding:22px}
+.dentist-recent-title{margin-bottom:14px}
+.dentist-recent-title h2{font-size:24px}
+.dentist-recent-list{display:grid;gap:9px}
+.dentist-recent-row{
+  min-width:0;display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:13px 14px;border:1px solid #e0e7ef;border-radius:13px;background:#fff;
+}
+.dentist-recent-main{min-width:0;display:grid;gap:3px}
+.dentist-recent-name{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.dentist-recent-name strong{
+  min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.dentist-recent-main small{color:#6d7f91;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dentist-home-empty{text-align:center;padding:30px 18px;border:1px dashed #d6e1eb;border-radius:14px;background:#f9fbfd}
+.dentist-home-empty p{color:#718396;margin:.45rem 0 1rem}
+.dentist-hero-actions{display:flex;gap:9px;flex-wrap:wrap}
+.dentist-hero-actions button{white-space:nowrap}
+
+@media(max-width:900px){
+  .dentist-home-actions,.dentist-home-shortcuts{grid-template-columns:1fr 1fr}
+  .dentist-action-card{min-height:126px;padding:18px}
+}
+@media(max-width:620px){
+  .dentist-hero{align-items:stretch}
+  .dentist-hero-actions{display:grid;grid-template-columns:1fr}
+  .dentist-hero-actions button{width:100%;white-space:normal}
+  .dentist-home-actions,.dentist-home-shortcuts{grid-template-columns:1fr}
+  .dentist-action-card{min-height:112px;padding:16px;gap:12px}
+  .dentist-action-icon{width:44px;height:44px;border-radius:13px;font-size:22px}
+  .dentist-action-copy strong{font-size:17px}
+  .dentist-action-copy small{font-size:11px}
+  .dentist-shortcut-card{padding:14px}
+  .dentist-recent-card{padding:17px}
+  .dentist-recent-title{align-items:stretch}
+  .dentist-recent-title>button{width:100%}
+  .dentist-recent-row{align-items:stretch;flex-direction:column}
+  .dentist-recent-row>button{width:100%}
+  .dentist-recent-main small,.dentist-recent-name strong{white-space:normal;overflow:visible;text-overflow:clip}
+}
