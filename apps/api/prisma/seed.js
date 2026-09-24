@@ -6,8 +6,16 @@ const prisma = new PrismaClient();
 const addMinutes = (date, min) => new Date(date.getTime() + min * 60000);
 
 async function main() {
-  const panoramic = await prisma.examType.upsert({where:{name:"Panorâmica"},update:{active:true},create:{name:"Panorâmica"}});
-  const cbct = await prisma.examType.upsert({where:{name:"Tomografia CBCT"},update:{active:true},create:{name:"Tomografia CBCT"}});
+  const examTypes={};
+  for(const name of ["Panorâmica","Tomografia CBCT","Periapical","Fotos","Bite-wing","Escaneamento"]){
+    examTypes[name]=await prisma.examType.upsert({
+      where:{name},
+      update:{active:true},
+      create:{name}
+    });
+  }
+  const panoramic=examTypes["Panorâmica"];
+  const cbct=examTypes["Tomografia CBCT"];
 
   let org = await prisma.radiologyOrganization.findFirst({where:{name:"Radiologia Parceira Demo"}});
   if (!org) org = await prisma.radiologyOrganization.create({data:{name:"Radiologia Parceira Demo"}});
