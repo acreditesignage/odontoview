@@ -3,6 +3,7 @@ import {useEffect,useMemo,useRef,useState} from "react";
 import {Navigate,Route,Routes,useNavigate,useSearchParams} from "react-router-dom";
 import {api,apiBinary,apiBlob} from "./api.js";
 import {importExam} from "./ingest.js";
+import {DEMO_EXAM,checkDemoExamAvailability,loadDemoExam} from "./demoExam.js";
 import Viewer2 from "./Viewer2.jsx";
 import {setViewerSession} from "./viewerSession.js";
 import QRCode from "qrcode";
@@ -68,6 +69,7 @@ function DentistDashboard(){
  const [p,setP]=useState({name:"",birthDate:"",phone:"",email:""}),[out,setOut]=useState(null),[createdPatient,setCreatedPatient]=useState(null),[patientSaving,setPatientSaving]=useState(false),[orderQr,setOrderQr]=useState(""),[shareMessage,setShareMessage]=useState("");
  const dentistFileInput=useRef(null);
  const [dentistIngest,setDentistIngest]=useState(null),[dentistImportPatient,setDentistImportPatient]=useState(""),[dentistImportType,setDentistImportType]=useState("");
+ const [demoAvailable,setDemoAvailable]=useState(null),[demoOpening,setDemoOpening]=useState(false),[demoProgress,setDemoProgress]=useState("");
 
  async function load(){
    setErr("");
@@ -81,6 +83,11 @@ function DentistDashboard(){
    }catch(e){setErr(e.message)}
  }
  useEffect(()=>{load()},[]);
+ useEffect(()=>{
+   let alive=true;
+   checkDemoExamAvailability().then(ok=>{if(alive)setDemoAvailable(ok)}).catch(()=>{if(alive)setDemoAvailable(false)});
+   return()=>{alive=false};
+ },[]);
  useEffect(()=>{
    let alive=true;
    setOrderQr("");
@@ -173,6 +180,35 @@ function DentistDashboard(){
    }
  }
 
+ async function openDemoExam(){
+   if(demoOpening||demoAvailable===false)return;
+   setDemoOpening(true);setErr("");setDemoProgress("Preparando demonstração…");
+   try{
+     const result=await loadDemoExam({
+       onProgress:progress=>{
+         if(progress.phase==="download")setDemoProgress(progress.label||"Baixando exame demo…");
+         else if(progress.phase==="extract")setDemoProgress("Extraindo DICOM demo…");
+         else if(progress.phase==="metadata")setDemoProgress(`Lendo DICOM • ${progress.current||0}/${progress.total||"?"}`);
+       }
+     });
+     setViewerSession({
+       result,
+       isDemo:true,
+       demo:{id:DEMO_EXAM.id,label:DEMO_EXAM.label},
+       order:{
+         patient:{id:"demo-patient",name:DEMO_EXAM.patientName},
+         examType:{id:"demo-cbct",name:DEMO_EXAM.examType},
+         unit:{name:"OdontoView Demo"}
+       }
+     });
+     nav(viewerRoute("dentist","/dentista?tab=home")+"&demo=1");
+   }catch(e){
+     setErr(e.message||"Não foi possível abrir o exame de demonstração.");
+   }finally{
+     setDemoOpening(false);setDemoProgress("");
+   }
+ }
+
  async function openStudy(order){
    if(!order?.study?.id)return;
    setOpeningStudy(order.study.id);setErr("");
@@ -253,6 +289,27 @@ function DentistDashboard(){
            <span className="dentist-action-copy"><strong>Importar DICOM</strong><small>Associe um ZIP/DICOM a um paciente.</small></span>
            <span className="dentist-action-arrow">→</span>
          </button>
+       </section>
+
+       <section className="dentist-demo-card" aria-label="Demonstração do OdontoView">
+         <div className="dentist-demo-visual" aria-hidden="true">
+           <div className="dentist-demo-orbit dentist-demo-orbit-a"/>
+           <div className="dentist-demo-orbit dentist-demo-orbit-b"/>
+           <div className="dentist-demo-scan"/>
+           <div className="dentist-demo-mark">3D</div>
+         </div>
+         <div className="dentist-demo-copy">
+           <div className="dentist-demo-kicker"><span>✨ PACIENTE DEMO</span><b>CBCT</b></div>
+           <h2>Clique e explore o mundo do OdontoView.</h2>
+           <p>Abra um exame completo sem enviar nenhum arquivo. Explore MPR, reconstrução panorâmica, 3D, nervo, implantes, dentes e planejamento.</p>
+           <div className="dentist-demo-features"><span>MPR</span><span>3D</span><span>Nervo</span><span>Implantes</span><span>FDI 11–48</span></div>
+         </div>
+         <div className="dentist-demo-action">
+           <button type="button" className="primary dentist-demo-button" disabled={demoOpening||demoAvailable!==true} onClick={openDemoExam}>
+             {demoOpening?(demoProgress||"Abrindo demo…"):demoAvailable===true?"Abrir paciente demo":demoAvailable===false?"Demo sendo preparado":"Verificando demo…"}
+           </button>
+           <small>{demoAvailable===true?"Ambiente de demonstração. Nada altera seus pacientes reais.":"O exame demo será ativado assim que o arquivo DICOM desidentificado for publicado."}</small>
+         </div>
        </section>
 
        <section className="dentist-home-shortcuts" aria-label="Atalhos">
