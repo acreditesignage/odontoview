@@ -16,7 +16,8 @@ import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
 import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
 import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
 import vtkSTLReader from "@kitware/vtk.js/IO/Geometry/STLReader";
-import vtkPLYReader from "@kitware/vtk.js/IO/Geometry/PLYReader";\nimport {NEODENT_GM_LIBRARY} from "./implantLibrary.js";
+import vtkPLYReader from "@kitware/vtk.js/IO/Geometry/PLYReader";
+import {NEODENT_GM_LIBRARY} from "./implantLibrary.js";
 
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 
