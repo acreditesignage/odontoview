@@ -28,6 +28,11 @@ enum AvailabilityStatus {
   BLOCKED
 }
 
+enum StudyStatus {
+  UPLOADING
+  READY
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -98,6 +103,7 @@ model Unit {
   orders       Order[]
   members      UnitMembership[]
   patients     Patient[]
+  studies      ExamStudy[]
 
   @@index([city, state])
 }
@@ -180,6 +186,7 @@ model Order {
   appointment  Appointment?
   accessTokens PatientAccessToken[]
   history      StatusHistory[]
+  study        ExamStudy?
 
   @@index([dentistId, status])
   @@index([unitId, status])
@@ -222,4 +229,44 @@ model StatusHistory {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId, createdAt])
+}
+
+
+model ExamStudy {
+  id              String      @id @default(cuid())
+  orderId         String      @unique
+  unitId          String
+  status          StudyStatus @default(UPLOADING)
+  sourceType      String?
+  sourceName      String?
+  modality        String?
+  manufacturer    String?
+  model           String?
+  seriesCount     Int         @default(0)
+  fileCount       Int         @default(0)
+  totalBytes      BigInt      @default(0)
+  createdAt       DateTime    @default(now())
+  completedAt     DateTime?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  unit  Unit  @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  files StudyFile[]
+
+  @@index([unitId, status, createdAt])
+}
+
+model StudyFile {
+  id          String   @id @default(cuid())
+  studyId     String
+  index       Int
+  fileName    String
+  objectKey   String   @unique
+  sizeBytes   Int
+  contentType String   @default("application/dicom")
+  createdAt   DateTime @default(now())
+
+  study ExamStudy @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  @@unique([studyId, index])
+  @@index([studyId, index])
 }
