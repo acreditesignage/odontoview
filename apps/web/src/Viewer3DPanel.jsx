@@ -234,7 +234,7 @@ function createParametricImplantBundle(implant,active){
   return {actor,mapper,poly,points:vtkPts};
 }
 
-export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{}}){
+export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{},layoutMode="mosaic"}){
   const hostRef=useRef(null);
   const genericRef=useRef(null);
   const rendererRef=useRef(null);
@@ -522,6 +522,23 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   },[volume,meta]);
 
   useEffect(()=>{applyPreset(preset)},[preset,boneOpacityScale,denseBoost,lighting]);
+
+  useEffect(()=>{
+    const generic=genericRef.current,renderer=rendererRef.current,window=renderWindowRef.current;
+    if(!generic||!renderer||!window)return;
+    let raf1=0,raf2=0,timer=0;
+    const resize=()=>{
+      generic.resize();
+      renderer.resetCameraClippingRange();
+      window.render();
+    };
+    raf1=requestAnimationFrame(()=>{
+      resize();
+      raf2=requestAnimationFrame(resize);
+    });
+    timer=setTimeout(resize,180);
+    return()=>{cancelAnimationFrame(raf1);cancelAnimationFrame(raf2);clearTimeout(timer)};
+  },[layoutMode]);
 
   useEffect(()=>{
     if(volumeActorRef.current){volumeActorRef.current.setVisibility(volumeVisible);renderNow()}
