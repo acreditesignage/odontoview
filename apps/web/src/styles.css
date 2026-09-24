@@ -724,3 +724,71 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 .viewer3d-implant-angle-sliders input{min-width:90px;accent-color:#20d8c8}
 .viewer3d-implant-angle-sliders b{color:#e8fffc;min-width:28px;text-align:right}
 @media(max-width:720px){.viewer3d-implant-angle-sliders{grid-template-columns:1fr}}
+
+
+/* 3D viewport visibility hardening */
+/* Keep the GPU canvas visible even as implant-planning controls grow. */
+.viewer3d-v2 .viewer3d-stage{
+  inset:0 0 43% 0!important;
+  min-height:260px!important;
+  z-index:1!important;
+}
+.viewer3d-v2 .viewer3d-controls{
+  max-height:43%!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  scrollbar-width:thin;
+}
+.viewer3d-v2 .viewer3d-controls::-webkit-scrollbar{width:6px}
+.viewer3d-v2 .viewer3d-controls::-webkit-scrollbar-thumb{background:#29465a;border-radius:999px}
+
+/* When another cut is maximized, keep a live 3D thumbnail in the rail. */
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-stage{
+  inset:0!important;
+  min-height:0!important;
+  display:block!important;
+}
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-panel,
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-primary,
+.viewer2-grid.has-expanded:not(.expanded-3d) .viewer2-pane.panoramic:not(.is-expanded) .viewer3d-split{
+  min-height:0!important;
+  height:100%!important;
+}
+
+/* 3D maximize: GPU stage is the protagonist; controls become a scrollable right dock. */
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-stage{
+  inset:0 330px 0 0!important;
+  min-height:0!important;
+  display:block!important;
+  z-index:1!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-controls{
+  top:0!important;
+  right:0!important;
+  bottom:0!important;
+  left:auto!important;
+  width:322px!important;
+  height:auto!important;
+  max-height:none!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  z-index:5!important;
+}
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-primary,
+.viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-panel{
+  height:100%!important;
+  min-height:0!important;
+}
+@media(max-width:980px){
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-stage{inset:0 260px 0 0!important}
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-controls{width:252px!important}
+}
+@media(max-width:760px){
+  .viewer3d-v2 .viewer3d-stage{inset:0 0 48% 0!important;min-height:220px!important}
+  .viewer3d-v2 .viewer3d-controls{max-height:48%!important}
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-stage{inset:0 0 210px 0!important}
+  .viewer2-grid.expanded-3d .viewer2-pane.panoramic.is-expanded .viewer3d-controls{
+    top:auto!important;left:0!important;right:0!important;bottom:0!important;
+    width:auto!important;height:204px!important;max-height:204px!important;
+  }
+}
