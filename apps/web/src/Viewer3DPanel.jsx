@@ -1,4 +1,4 @@
-import React,{useEffect,useRef,useState} from "react";
+import React,{useEffect,useMemo,useRef,useState} from "react";
 import "@kitware/vtk.js/Rendering/Profiles/Volume";
 
 import vtkGenericRenderWindow from "@kitware/vtk.js/Rendering/Misc/GenericRenderWindow";
@@ -16,7 +16,7 @@ import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
 import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
 import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
 import vtkSTLReader from "@kitware/vtk.js/IO/Geometry/STLReader";
-import vtkPLYReader from "@kitware/vtk.js/IO/Geometry/PLYReader";
+import vtkPLYReader from "@kitware/vtk.js/IO/Geometry/PLYReader";\nimport {NEODENT_GM_LIBRARY} from "./implantLibrary.js";
 
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 
@@ -165,7 +165,56 @@ function createTubeActor(worldPoints,radius,color){
   return {actor,tube,mapper,poly,pts,lines};
 }
 
-export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
+function createParametricImplantBundle(implant,active){
+  const segments=64;
+  const radius=Math.max(.4,Number(implant.diameter)||3.5)/2;
+  const length=Math.max(4,Number(implant.length)||10);
+  const taper=Math.min(2.2,length*.22);
+  const rings=[
+    {z:length/2,r:radius},
+    {z:-length/2+taper,r:radius},
+    {z:-length/2+.35,r:radius*.42}
+  ];
+  const points=[];
+  rings.forEach(ring=>{
+    for(let i=0;i<segments;i++){
+      const a=i/segments*Math.PI*2;
+      points.push([Math.cos(a)*ring.r,Math.sin(a)*ring.r,ring.z]);
+    }
+  });
+  const topCenter=points.length;points.push([0,0,length/2]);
+  const tipCenter=points.length;points.push([0,0,-length/2]);
+  const cells=[];
+  for(let r=0;r<rings.length-1;r++){
+    const a0=r*segments,b0=(r+1)*segments;
+    for(let i=0;i<segments;i++){
+      const n=(i+1)%segments;
+      cells.push(3,a0+i,b0+i,b0+n,3,a0+i,b0+n,a0+n);
+    }
+  }
+  for(let i=0;i<segments;i++){
+    const n=(i+1)%segments;
+    cells.push(3,topCenter,n,i);
+    const last=(rings.length-1)*segments;
+    cells.push(3,tipCenter,last+i,last+n);
+  }
+  const flat=new Float32Array(points.length*3);
+  points.forEach((p,i)=>{flat[i*3]=p[0];flat[i*3+1]=p[1];flat[i*3+2]=p[2]});
+  const poly=vtkPolyData.newInstance();
+  const vtkPts=vtkPoints.newInstance();vtkPts.setData(flat,3);poly.setPoints(vtkPts);
+  poly.setPolys(vtkCellArray.newInstance({values:new Uint32Array(cells)}));
+  const mapper=vtkMapper.newInstance();mapper.setInputData(poly);
+  const actor=vtkActor.newInstance();actor.setMapper(mapper);
+  actor.setPosition(implant.x,implant.y,implant.z);
+  actor.setOrientation(implant.rx||0,implant.ry||0,implant.rz||0);
+  const prop=actor.getProperty();
+  prop.setColor(...(active?[.08,.92,.82]:[.88,.72,.34]));
+  prop.setOpacity(active?.98:.86);
+  prop.setAmbient(.35);prop.setDiffuse(.72);prop.setSpecular(.72);prop.setSpecularPower(32);
+  return {actor,mapper,poly,points:vtkPts};
+}
+
+export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{}}){
   const hostRef=useRef(null);
   const genericRef=useRef(null);
   const rendererRef=useRef(null);
@@ -192,8 +241,29 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
   const [scanVisible,setScanVisible]=useState(true);
   const [scanOpacity,setScanOpacity]=useState(.96);
   const [scanTransform,setScanTransform]=useState({x:0,y:0,z:0,rx:0,ry:0,rz:0,scale:1});
+  const implantActorsRef=useRef([]);
+  const [implantCatalogId,setImplantCatalogId]=useState(NEODENT_GM_LIBRARY[0]?.id||"");
+  const selectedCatalogImplant=useMemo(()=>NEODENT_GM_LIBRARY.find(x=>x.id===implantCatalogId)||NEODENT_GM_LIBRARY[0],[implantCatalogId]);
+  const implantGroups=useMemo(()=>{
+    const map=new Map();
+    NEODENT_GM_LIBRARY.forEach(item=>{
+      if(!map.has(item.familyLabel))map.set(item.familyLabel,[]);
+      map.get(item.familyLabel).push(item);
+    });
+    return [...map.entries()];
+  },[]);
+  const activeImplant=implants.find(x=>x.id===activeImplantId)||null;
 
   function renderNow(){renderWindowRef.current?.render?.()}
+
+  function disposeImplants(){
+    const renderer=rendererRef.current;
+    implantActorsRef.current.forEach(bundle=>{
+      if(bundle?.actor&&renderer)renderer.removeActor(bundle.actor);
+      bundle?.actor?.delete?.();bundle?.mapper?.delete?.();bundle?.poly?.delete?.();bundle?.points?.delete?.();
+    });
+    implantActorsRef.current=[];
+  }
 
   function disposeScan(){
     const renderer=rendererRef.current,bundle=scanActorRef.current;
@@ -286,6 +356,34 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
     if(scanInitialRef.current)setScanTransform({...scanInitialRef.current});
   }
 
+  function addImplant(){
+    const item=selectedCatalogImplant,m=metaRefFallback();
+    if(!item||!m)return;
+    const c=cursor||{x:m.w/2,y:m.h/2,z:m.d/2};
+    const next={
+      id:(globalThis.crypto?.randomUUID?.()||("implant-"+Date.now()+"-"+Math.random().toString(36).slice(2))),
+      catalogId:item.id,manufacturer:item.manufacturer,connection:item.connection,
+      family:item.family,familyLabel:item.familyLabel,model:item.model,
+      diameter:item.diameter,length:item.length,geometry:item.geometry,geometryValidated:false,
+      x:c.x*m.spacingX,y:c.y*m.spacingY,z:c.z*m.spacingZ,rx:0,ry:0,rz:0
+    };
+    onImplantsChange([...implants,next]);
+    onActiveImplantChange(next.id);
+  }
+
+  function metaRefFallback(){return meta}
+
+  function updateActiveImplant(patch){
+    if(!activeImplantId)return;
+    onImplantsChange(implants.map(item=>item.id===activeImplantId?{...item,...(typeof patch==="function"?patch(item):patch)}:item));
+  }
+  function moveImplant(axis,delta){updateActiveImplant(item=>({[axis]:(item[axis]||0)+delta}))}
+  function rotateImplant(axis,delta){const key="r"+axis;updateActiveImplant(item=>({[key]:(item[key]||0)+delta}))}
+  function removeActiveImplant(){
+    if(!activeImplantId)return;
+    const next=implants.filter(item=>item.id!==activeImplantId);
+    onImplantsChange(next);onActiveImplantChange(next[0]?.id||null);
+  }
 
   function choosePreset(name){
     setPreset(name);
@@ -438,6 +536,20 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
     renderNow();
   },[scanVisible,scanOpacity,scanTransform]);
 
+  useEffect(()=>{
+    const renderer=rendererRef.current;
+    if(!renderer)return;
+    disposeImplants();
+    implantActorsRef.current=implants.map(implant=>{
+      const bundle=createParametricImplantBundle(implant,implant.id===activeImplantId);
+      renderer.addActor(bundle.actor);
+      return bundle;
+    });
+    renderer.resetCameraClippingRange();
+    renderNow();
+    return()=>disposeImplants();
+  },[implants,activeImplantId,ready]);
+
   return <div className="viewer3d-panel viewer3d-v2">
     <div className="viewer3d-stage" ref={hostRef}>
       {!ready&&<div className="viewer3d-loading"><span className="viewer3d-orbit">◌</span><strong>OdontoView 3D Engine v2</strong><small>{status}</small></div>}
@@ -473,6 +585,34 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[]}){
         <button onClick={()=>setView("side")}>Lateral</button>
         <button onClick={()=>setView("front")}>Frontal</button>
         <button onClick={()=>setView("top")}>Superior</button>
+      </div>
+      <div className="viewer3d-implant-planner">
+        <div className="viewer3d-implant-head">
+          <div><strong>Planejamento de implante • Beta</strong><small>Neodent Grand Morse • envelope paramétrico por diâmetro/comprimento</small></div>
+          <button type="button" className="viewer3d-add-implant" onClick={addImplant}>＋ Inserir no cursor</button>
+        </div>
+        <label className="viewer3d-implant-select">
+          <span>Implante</span>
+          <select value={implantCatalogId} onChange={e=>setImplantCatalogId(e.target.value)}>
+            {implantGroups.map(([label,items])=><optgroup key={label} label={label}>
+              {items.map(item=><option value={item.id} key={item.id}>{item.model} • Ø {item.diameter} × {item.length} mm</option>)}
+            </optgroup>)}
+          </select>
+        </label>
+        <div className="viewer3d-implant-warning">Geometria paramétrica de desenvolvimento: dimensões nominais preservadas, mas não representa rosca/superfície oficial e ainda não deve orientar cirurgia.</div>
+        {implants.length>0&&<div className="viewer3d-implant-list">
+          {implants.map((item,index)=><button type="button" key={item.id} className={item.id===activeImplantId?"active":""} onClick={()=>onActiveImplantChange(item.id)}>
+            <b>#{index+1}</b><span>{item.familyLabel} • {item.model}</span><small>Ø {item.diameter} × {item.length} mm</small>
+          </button>)}
+        </div>}
+        {activeImplant&&<div className="viewer3d-implant-tools">
+          <div className="viewer3d-implant-summary"><strong>{activeImplant.model}</strong><span>Ø {activeImplant.diameter} × {activeImplant.length} mm</span></div>
+          <span>Mover 1 mm</span>
+          <div><button onClick={()=>moveImplant("x",-1)}>X−</button><button onClick={()=>moveImplant("x",1)}>X+</button><button onClick={()=>moveImplant("y",-1)}>Y−</button><button onClick={()=>moveImplant("y",1)}>Y+</button><button onClick={()=>moveImplant("z",-1)}>Z−</button><button onClick={()=>moveImplant("z",1)}>Z+</button></div>
+          <span>Inclinar 2°</span>
+          <div><button onClick={()=>rotateImplant("x",-2)}>RX−</button><button onClick={()=>rotateImplant("x",2)}>RX+</button><button onClick={()=>rotateImplant("y",-2)}>RY−</button><button onClick={()=>rotateImplant("y",2)}>RY+</button><button onClick={()=>rotateImplant("z",-2)}>RZ−</button><button onClick={()=>rotateImplant("z",2)}>RZ+</button></div>
+          <button type="button" className="viewer3d-remove-implant" onClick={removeActiveImplant}>Remover implante</button>
+        </div>}
       </div>
       <div className="viewer3d-fusion">
         <input ref={scanInputRef} type="file" accept=".stl,.ply" hidden onChange={e=>{const file=e.target.files?.[0];if(file)importIntraoralScan(file);e.target.value=""}}/>
