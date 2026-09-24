@@ -15,6 +15,7 @@ import vtkCellArray from "@kitware/vtk.js/Common/Core/CellArray";
 import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
 import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
 import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
+import vtkRenderer from "@kitware/vtk.js/Rendering/Core/Renderer";
 import vtkSTLReader from "@kitware/vtk.js/IO/Geometry/STLReader";
 import vtkPLYReader from "@kitware/vtk.js/IO/Geometry/PLYReader";
 import {NEODENT_GM_LIBRARY,implantAxisVector} from "./implantLibrary.js";
@@ -340,6 +341,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   const hostRef=useRef(null);
   const genericRef=useRef(null);
   const rendererRef=useRef(null);
+  const overlayRendererRef=useRef(null);
   const renderWindowRef=useRef(null);
   const imageDataRef=useRef(null);
   const volumeActorRef=useRef(null);
@@ -390,7 +392,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   function renderNow(){renderWindowRef.current?.render?.()}
 
   function disposeImplantBundle(bundle){
-    const renderer=rendererRef.current;
+    const renderer=overlayRendererRef.current||rendererRef.current;
     if(bundle?.actor&&renderer)renderer.removeActor(bundle.actor);
     if(bundle?.guide?.actor&&renderer)renderer.removeActor(bundle.guide.actor);
     bundle?.actor?.delete?.();bundle?.mapper?.delete?.();bundle?.poly?.delete?.();bundle?.points?.delete?.();
@@ -586,6 +588,16 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     const renderer=generic.getRenderer();
     const renderWindow=generic.getRenderWindow();
 
+    // Clinical overlay: implant + mandibular nerve must remain visible through the volume.
+    renderWindow.setNumberOfLayers(2);
+    const overlayRenderer=vtkRenderer.newInstance();
+    overlayRenderer.setLayer(1);
+    overlayRenderer.setInteractive(false);
+    overlayRenderer.setPreserveColorBuffer(true);
+    overlayRenderer.setPreserveDepthBuffer(false);
+    overlayRenderer.setActiveCamera(renderer.getActiveCamera());
+    renderWindow.addRenderer(overlayRenderer);
+
     const imageData=vtkImageData.newInstance();
     imageData.setDimensions(meta.w,meta.h,meta.d);
     imageData.setSpacing(meta.spacingX,meta.spacingY,meta.spacingZ);
@@ -608,6 +620,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
 
     genericRef.current=generic;
     rendererRef.current=renderer;
+    overlayRendererRef.current=overlayRenderer;
     renderWindowRef.current=renderWindow;
     imageDataRef.current=imageData;
     volumeActorRef.current=actor;
@@ -633,11 +646,14 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     return()=>{
       cancelled=true;
       ro.disconnect();
-      if(nerveActorRef.current?.actor)renderer.removeActor(nerveActorRef.current.actor);
+      if(nerveActorRef.current?.actor)overlayRenderer.removeActor(nerveActorRef.current.actor);
       disposeScan();
       disposeImplants();
       renderer.removeVolume(actor);
       nerveActorRef.current=null;
+      renderWindow.removeRenderer(overlayRenderer);
+      overlayRenderer.delete();
+      overlayRendererRef.current=null;
       generic.delete();
       genericRef.current=null;rendererRef.current=null;renderWindowRef.current=null;
       imageDataRef.current=null;volumeActorRef.current=null;mapperRef.current=null;statsRef.current=null;
@@ -652,6 +668,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     let raf1=0,raf2=0,timer=0;
     const resize=()=>{
       generic.resize();
+      overlayRendererRef.current?.setActiveCamera?.(renderer.getActiveCamera());
       renderer.resetCameraClippingRange();
       window.render();
     };
@@ -668,21 +685,23 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   },[volumeVisible]);
 
   useEffect(()=>{
-    const renderer=rendererRef.current;if(!renderer||!meta)return;
+    const renderer=overlayRendererRef.current;if(!renderer||!meta)return;
     if(nerveActorRef.current?.actor){
       renderer.removeActor(nerveActorRef.current.actor);
       nerveActorRef.current=null;
     }
     if(!nerveVisible||nervePoints.length<2||curve.length<2){renderNow();return}
     const pts=nerveWorldPoints;
-    const radius=Math.max(1.05,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*5.8);
-    const bundle=createTubeActor(pts,radius,[1,.08,.08]);
+    const radius=Math.max(1.25,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*6.2);
+    const bundle=createTubeActor(pts,radius,[1,0,0]);
     if(bundle){
+      const prop=bundle.actor.getProperty();
+      prop.setOpacity(1);prop.setAmbient(1);prop.setDiffuse(.08);prop.setSpecular(.15);
       renderer.addActor(bundle.actor);
       nerveActorRef.current=bundle;
       renderNow();
     }
-  },[nerveWorldPoints,meta,nerveVisible]);
+  },[nerveWorldPoints,meta,nerveVisible,ready]);
 
   useEffect(()=>{
     const actor=scanActorRef.current?.actor;
@@ -697,7 +716,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   },[scanVisible,scanOpacity,scanTransform]);
 
   useEffect(()=>{
-    const renderer=rendererRef.current;
+    const renderer=overlayRendererRef.current;
     if(!renderer||!ready)return;
     const liveIds=new Set(implants.map(implant=>implant.id));
     implantActorsRef.current.forEach((bundle,id)=>{
