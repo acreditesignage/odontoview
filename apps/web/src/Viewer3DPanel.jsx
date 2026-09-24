@@ -17,7 +17,6 @@ import vtkTubeFilter from "@kitware/vtk.js/Filters/General/TubeFilter";
 import vtkMapper from "@kitware/vtk.js/Rendering/Core/Mapper";
 import vtkActor from "@kitware/vtk.js/Rendering/Core/Actor";
 import vtkRenderer from "@kitware/vtk.js/Rendering/Core/Renderer";
-import vtkCellPicker from "@kitware/vtk.js/Rendering/Core/CellPicker";
 import vtkSTLReader from "@kitware/vtk.js/IO/Geometry/STLReader";
 import vtkPLYReader from "@kitware/vtk.js/IO/Geometry/PLYReader";
 import {NEODENT_GM_LIBRARY,implantAxisVector} from "./implantLibrary.js";
@@ -353,7 +352,7 @@ function updateImplantBundle(bundle,implant,active){
   }
 }
 
-export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,crosshairVisible=true,onCrosshairVisibleChange=()=>{},onCursorChange=()=>{},implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{},layoutMode="mosaic"}){
+export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,crosshairVisible=true,onCrosshairVisibleChange=()=>{},onCursorChange=()=>{},globalTool="navigate",implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{},layoutMode="mosaic"}){
   const hostRef=useRef(null);
   const genericRef=useRef(null);
   const rendererRef=useRef(null);
@@ -410,6 +409,16 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     setBoneOpacityScale(.18);
   },[activeImplantId]);
 
+  useEffect(()=>{
+    if(globalTool==="navigate"){
+      setInteractionMode("cursor");
+      setPickMessage("Cruzeta 3D ativa • clique ou arraste sobre o osso.");
+    }else{
+      setInteractionMode(current=>current==="cursor"?"camera":current);
+      setPickMessage(current=>interactionMode==="cursor"?"":current);
+    }
+  },[globalTool]);
+
   function renderNow(){renderWindowRef.current?.render?.()}
 
   function disposeCrosshair(){
@@ -422,27 +431,61 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   }
 
   function pickWorldAtEvent(event){
-    const host=hostRef.current,renderer=rendererRef.current,actor=volumeActorRef.current,generic=genericRef.current;
-    if(!host||!renderer||!actor||!generic||!meta)return null;
+    const host=hostRef.current,renderer=rendererRef.current,generic=genericRef.current;
+    if(!host||!renderer||!generic||!meta||!volume?.length)return null;
     const rect=host.getBoundingClientRect();
     if(rect.width<2||rect.height<2)return null;
+
     const gl=generic.getOpenGLRenderWindow?.();
-    const size=gl?.getSize?.()||[Math.round(rect.width),Math.round(rect.height)];
+    if(!gl?.displayToWorld)return null;
+    const size=gl.getSize?.()||[Math.round(rect.width),Math.round(rect.height)];
     const px=(event.clientX-rect.left)/rect.width*size[0];
     const py=(rect.bottom-event.clientY)/rect.height*size[1];
-    const picker=vtkCellPicker.newInstance({tolerance:.001});
-    picker.setPickFromList(true);
-    picker.addPickList(actor);
-    picker.setOpacityThreshold?.(.015);
-    const hit=picker.pick([px,py,0],renderer);
-    const pos=picker.getPickPosition?.();
-    picker.delete();
-    if(!hit||!pos||pos.length<3||pos.some(n=>!Number.isFinite(n)))return null;
-    return [
-      clamp(pos[0],0,(meta.w-1)*meta.spacingX),
-      clamp(pos[1],0,(meta.h-1)*meta.spacingY),
-      clamp(pos[2],0,(meta.d-1)*meta.spacingZ)
+    const near=gl.displayToWorld(px,py,0,renderer);
+    const far=gl.displayToWorld(px,py,1,renderer);
+    if(!near||!far||near.length<3||far.length<3)return null;
+
+    const origin=[near[0],near[1],near[2]];
+    let dir=[far[0]-near[0],far[1]-near[1],far[2]-near[2]];
+    const len=Math.hypot(dir[0],dir[1],dir[2]);
+    if(!Number.isFinite(len)||len<1e-6)return null;
+    dir=dir.map(v=>v/len);
+
+    const bounds=[
+      [0,(meta.w-1)*meta.spacingX],
+      [0,(meta.h-1)*meta.spacingY],
+      [0,(meta.d-1)*meta.spacingZ]
     ];
+    let tMin=-Infinity,tMax=Infinity;
+    for(let axis=0;axis<3;axis++){
+      if(Math.abs(dir[axis])<1e-9){
+        if(origin[axis]<bounds[axis][0]||origin[axis]>bounds[axis][1])return null;
+        continue;
+      }
+      let t1=(bounds[axis][0]-origin[axis])/dir[axis];
+      let t2=(bounds[axis][1]-origin[axis])/dir[axis];
+      if(t1>t2)[t1,t2]=[t2,t1];
+      tMin=Math.max(tMin,t1);tMax=Math.min(tMax,t2);
+      if(tMax<tMin)return null;
+    }
+    if(tMax<0)return null;
+    tMin=Math.max(0,tMin);
+
+    const stats=statsRef.current;
+    const threshold=stats?.bone??stats?.trab??0;
+    const fallbackThreshold=stats?.trab??threshold;
+    const step=Math.max(.10,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*.55);
+    let best=null,bestValue=-Infinity;
+    for(let t=tMin;t<=tMax;t+=step){
+      const wx=origin[0]+dir[0]*t,wy=origin[1]+dir[1]*t,wz=origin[2]+dir[2]*t;
+      const ix=clamp(Math.round(wx/meta.spacingX),0,meta.w-1);
+      const iy=clamp(Math.round(wy/meta.spacingY),0,meta.h-1);
+      const iz=clamp(Math.round(wz/meta.spacingZ),0,meta.d-1);
+      const value=volume[iz*meta.w*meta.h+iy*meta.w+ix];
+      if(value>bestValue){bestValue=value;best=[wx,wy,wz]}
+      if(value>=threshold)return [wx,wy,wz];
+    }
+    return bestValue>=fallbackThreshold?best:null;
   }
 
   function applyPickedWorld(world){

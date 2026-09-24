@@ -1222,6 +1222,7 @@ export default function Viewer2(){
               crosshairVisible={crosshairVisible}
               onCrosshairVisibleChange={setCrosshairVisible}
               onCursorChange={updateCursorFrom3D}
+              globalTool={tool}
               implants={implants}
               activeImplantId={activeImplantId}
               onImplantsChange={setImplants}
