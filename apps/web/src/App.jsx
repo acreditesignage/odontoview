@@ -18,13 +18,16 @@ function BrandLockup({role="NETWORK",light=false}){
 }
 
 function Login({initialMode="login"}){
- const nav=useNavigate(),[mode,setMode]=useState(initialMode),[err,setErr]=useState(""),[f,setF]=useState({name:"",email:"",password:"",phone:"",cro:"",uf:"RJ"});
+ const nav=useNavigate(),[q]=useSearchParams(),invite=q.get("invite"),[mode,setMode]=useState(initialMode),[err,setErr]=useState(""),[f,setF]=useState({name:"",email:"",password:"",phone:"",cro:"",uf:"RJ"});
  async function submit(e){
    e.preventDefault();setErr("");
    try{
      const d=await api(mode==="login"?"/api/auth/login":"/api/auth/register-dentist",{method:"POST",body:JSON.stringify(f)});
      localStorage.setItem("odontoview_token",d.token);
      localStorage.setItem("odontoview_role",d.user.role);
+     if(invite&&d.user.role==="DENTIST"){
+       try{await api("/api/dentist/invites/"+encodeURIComponent(invite)+"/claim",{method:"POST",body:"{}"});}catch(claimErr){setErr(claimErr.message);return}
+     }
      nav(routeForRole(d.user.role));
    }catch(x){setErr(x.message)}
  }
@@ -59,6 +62,8 @@ function DentistDashboard(){
  const [data,setData]=useState(null),[types,setTypes]=useState([]),[tab,setTab]=useState("home"),[err,setErr]=useState(""),[busy,setBusy]=useState(false),[openingStudy,setOpeningStudy]=useState("");
  const [patientMode,setPatientMode]=useState("existing"),[selectedPatient,setSelectedPatient]=useState(""),[type,setType]=useState("");
  const [p,setP]=useState({name:"",birthDate:"",phone:"",email:""}),[out,setOut]=useState(null);
+ const dentistFileInput=useRef(null);
+ const [dentistIngest,setDentistIngest]=useState(null),[dentistImportPatient,setDentistImportPatient]=useState(""),[dentistImportType,setDentistImportType]=useState("");
 
  async function load(){
    setErr("");
@@ -67,6 +72,8 @@ function DentistDashboard(){
      setData(dashboard);setTypes(examTypes);
      if(!type&&examTypes[0])setType(examTypes[0].id);
      if(!selectedPatient&&dashboard.patients[0])setSelectedPatient(dashboard.patients[0].id);
+     if(!dentistImportPatient&&dashboard.patients[0])setDentistImportPatient(dashboard.patients[0].id);
+     if(!dentistImportType&&examTypes[0])setDentistImportType(examTypes[0].id);
    }catch(e){setErr(e.message)}
  }
  useEffect(()=>{load()},[]);
@@ -84,6 +91,46 @@ function DentistDashboard(){
      await load();
    }catch(e){setErr(e.message)}finally{setBusy(false)}
  }
+ async function handleDentistImportFiles(event){
+   const files=Array.from(event.target.files||[]);
+   if(!files.length)return;
+   setDentistIngest({status:"reading",progress:{phase:"start"}});
+   try{
+     const result=await importExam(files,{onProgress:progress=>setDentistIngest({status:"reading",progress})});
+     setDentistIngest({status:"ready",result});
+   }catch(e){setDentistIngest({status:"error",message:e.message||"Falha ao abrir exame."})}
+ }
+ async function sendDentistImport(){
+   if(!dentistIngest?.result||!dentistImportPatient)return;
+   const r=dentistIngest.result,firstValid=r.series.find(s=>s.valid)||r.series[0]||{};
+   try{
+     setDentistIngest(prev=>({...prev,send:{status:"uploading",done:0,total:r.files.length}}));
+     const created=await api("/api/dentist/patients/"+dentistImportPatient+"/studies",{method:"POST",body:JSON.stringify({
+       examTypeId:dentistImportType||null,sourceType:r.sourceType,modality:firstValid.modality,
+       manufacturer:firstValid.manufacturer,model:firstValid.model,seriesCount:r.seriesCount
+     })});
+     let next=0,done=0;
+     const worker=async()=>{
+       while(true){
+         const index=next++;
+         if(index>=r.files.length)return;
+         const file=r.files[index];
+         await apiBinary("/api/dentist/studies/"+created.study.id+"/files/"+index,file,{
+           "Content-Type":"application/octet-stream",
+           "X-File-Name":encodeURIComponent(file.name||("dicom-"+(index+1)+".dcm"))
+         });
+         done++;setDentistIngest(prev=>({...prev,send:{status:"uploading",done,total:r.files.length}}));
+       }
+     };
+     await Promise.all(Array.from({length:Math.min(4,r.files.length)},()=>worker()));
+     await api("/api/dentist/studies/"+created.study.id+"/complete",{method:"POST",body:"{}"});
+     setDentistIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId:created.study.id}}));
+     await load();
+   }catch(e){
+     setDentistIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha no envio."}}));
+   }
+ }
+
  async function openStudy(order){
    if(!order?.study?.id)return;
    setOpeningStudy(order.study.id);setErr("");
@@ -111,12 +158,14 @@ function DentistDashboard(){
  }
  const statusLabel=s=>STATUS[s]?.label||s;
  return <main className="page dentist-dashboard"><section className="wide">
+   <input className="hidden-file" ref={dentistFileInput} type="file" multiple onChange={handleDentistImportFiles}/>
    <header className="topbar"><BrandLockup role="DENTISTA"/><div className="topbar-actions"><a className="ghost compact" href="/cadastro-dentista" target="_blank" rel="noreferrer">Link de cadastro</a><button className="ghost" onClick={logout}>Sair</button></div></header>
-   <div className="hero-row dentist-hero"><div><p className="eyebrow">ODONTOVIEW NETWORK</p><h1>{data?.dentist?.user?.name||"Seu painel clínico"}</h1><p className="muted">{data?.dentist?("CRO "+data.dentist.cro+"/"+data.dentist.uf+" • pacientes, pedidos e exames em um só lugar."):"Carregando perfil…"}</p></div><button className="primary" onClick={()=>setTab("new")}>+ Novo pedido</button></div>
+   <div className="hero-row dentist-hero"><div><p className="eyebrow">ODONTOVIEW NETWORK</p><h1>{data?.dentist?.user?.name||"Seu painel clínico"}</h1><p className="muted">{data?.dentist?("CRO "+data.dentist.cro+"/"+data.dentist.uf+" • pacientes, pedidos e exames em um só lugar."):"Carregando perfil…"}</p></div><div className="hero-actions"><button className="secondary" onClick={()=>setTab("import")}>Importar DICOM</button><button className="primary" onClick={()=>setTab("new")}>+ Novo pedido</button></div></div>
    <nav className="workspace-tabs">
      <button className={tab==="home"?"active":""} onClick={()=>setTab("home")}>Visão geral</button>
      <button className={tab==="new"?"active":""} onClick={()=>setTab("new")}>Novo pedido</button>
      <button className={tab==="patients"?"active":""} onClick={()=>setTab("patients")}>Pacientes</button>\n     <button className={tab==="exams"?"active":""} onClick={()=>setTab("exams")}>Meus exames</button>
+     <button className={tab==="import"?"active":""} onClick={()=>setTab("import")}>Importar DICOM</button>
    </nav>
    {err&&<div className="error">{err}</div>}
    {!data?<section className="card">Carregando painel…</section>:<>
@@ -146,12 +195,27 @@ function DentistDashboard(){
        </form>
        {out&&<section className="success order-link-box"><strong>Pedido criado ✓</strong><p>Envie este link seguro ao paciente para escolher a radiologia e o horário:</p><code>{out.patientAccessUrl}</code><button className="secondary" onClick={()=>navigator.clipboard.writeText(out.patientAccessUrl)}>Copiar link</button></section>}
      </section>}
+     {tab==="import"&&<section className="card dentist-import-card">
+       <div className="section-title"><div><p className="eyebrow">IMPORTAR DICOM</p><h2>Abra qualquer exame no OdontoView.</h2><p className="muted">Escolha um paciente e envie ZIP/DICOM para salvar de forma privada na sua biblioteca.</p></div></div>
+       {data.patients.length===0?<div className="empty"><strong>Cadastre um paciente primeiro.</strong><p>Depois você poderá associar qualquer DICOM a ele.</p></div>:<>
+         <div className="dentist-import-grid">
+           <label><span>Paciente</span><select value={dentistImportPatient} onChange={e=>setDentistImportPatient(e.target.value)}>{data.patients.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label>
+           <label><span>Tipo de exame</span><select value={dentistImportType} onChange={e=>setDentistImportType(e.target.value)}>{types.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
+           <button className="primary" onClick={()=>{setDentistIngest(null);dentistFileInput.current?.click()}}>Selecionar ZIP / DICOM</button>
+         </div>
+         {dentistIngest&&<IngestResult state={dentistIngest} onClear={()=>setDentistIngest(null)} onOpenViewer={()=>{setViewerSession({result:dentistIngest.result,order:{patient:data.patients.find(p=>p.id===dentistImportPatient),examType:types.find(t=>t.id===dentistImportType)||{name:"Exame DICOM"}}});nav("/viewer2")}} onSend={sendDentistImport} sendLabel="Salvar em Meus exames"/>}
+       </>}
+     </section>}
      {tab==="exams"&&<section className="card">
        <div className="section-title"><div><p className="eyebrow">MEUS EXAMES</p><h2>Exames recebidos.</h2><p className="muted">Estudos enviados pela radiologia ficam disponíveis aqui para abrir no Viewer.</p></div></div>
-       {data.orders.filter(o=>o.study?.status==="READY").length===0?<div className="empty"><strong>Nenhum exame recebido ainda.</strong><p>Quando a radiologia enviar as imagens, elas aparecerão aqui.</p></div>:
+       {data.orders.filter(o=>o.study?.status==="READY").length===0&&(!data.directStudies||data.directStudies.length===0)?<div className="empty"><strong>Nenhum exame ainda.</strong><p>Você pode receber da radiologia ou importar seu próprio DICOM.</p></div>:
        <div className="patient-registry">{data.orders.filter(o=>o.study?.status==="READY").map(o=><div className="patient-registry-row is-network" key={o.study.id}>
          <div className="patient-registry-main"><div className="patient-name-line"><strong>{o.patient.name}</strong><span className="source-badge odontoview">Exame disponível</span></div><small>{o.examType.name}{o.unit?" • "+o.unit.name:""}</small><small>{o.study.fileCount} arquivo(s) • {formatBytes(o.study.totalBytes)}{o.study.manufacturer?" • "+o.study.manufacturer:""}</small></div>
          <button className="primary compact" disabled={openingStudy.startsWith(o.study.id)} onClick={()=>openStudy(o)}>{openingStudy.startsWith(o.study.id)?("Abrindo "+(openingStudy.split(":")[1]||"…")):"Abrir Viewer"}</button>
+       </div>)}
+       {(data.directStudies||[]).map(s=><div className="patient-registry-row is-local" key={s.id}>
+         <div className="patient-registry-main"><div className="patient-name-line"><strong>{s.patient.name}</strong><span className="source-badge radiology">Importado por você</span></div><small>{s.examType?.name||s.modality||"Exame DICOM"}</small><small>{s.fileCount} arquivo(s) • {formatBytes(s.totalBytes)}</small></div>
+         <button className="primary compact" disabled={openingStudy.startsWith(s.id)} onClick={()=>openStudy({study:s,patient:s.patient,examType:s.examType||{name:"Exame DICOM"},unit:null})}>{openingStudy.startsWith(s.id)?("Abrindo "+(openingStudy.split(":")[1]||"…")):"Abrir Viewer"}</button>
        </div>)}</div>}
      </section>}
      {tab==="patients"&&<section className="card">
@@ -452,6 +516,14 @@ function Radiology(){
    </div>}
  </section></main>
 }
+function DentistInvitePage(){
+ const [q]=useSearchParams(),nav=useNavigate(),token=q.get("token"),[d,setD]=useState(null),[err,setErr]=useState("");
+ useEffect(()=>{if(token)api("/api/public/dentist-invites/"+encodeURIComponent(token)).then(setD).catch(e=>setErr(e.message));else setErr("Convite incompleto.")},[token]);
+ if(err)return <main className="page centered"><section className="card auth"><BrandLockup role="COMPARTILHAMENTO"/><h2>Convite indisponível</h2><p>{err}</p></section></main>;
+ if(!d)return <main className="page centered">Carregando convite…</main>;
+ return <main className="page centered"><section className="card auth invite-card"><BrandLockup role="ACESSO DO DENTISTA"/><p className="eyebrow">PACIENTE COMPARTILHADO</p><h1>{d.invite.patient.name}</h1><p>{d.invite.unit?"Compartilhado por "+d.invite.unit.organization+" • "+d.invite.unit.name:"O paciente compartilhou este acesso com você."}</p>{d.invite.study&&<p className="muted">{d.invite.study.examType?.name||"Exame DICOM"} • {d.invite.study.fileCount} arquivo(s)</p>}<div className="stack"><button className="primary" onClick={()=>nav("/cadastro-dentista?invite="+encodeURIComponent(token))}>Criar cadastro e acessar</button><button className="secondary" onClick={()=>nav("/?invite="+encodeURIComponent(token))}>Já tenho cadastro</button></div></section></main>
+}
+
 function Patient(){
  const [q]=useSearchParams(),nav=useNavigate(),token=q.get("token"),[d,setD]=useState(null),[err,setErr]=useState("");
  useEffect(()=>{if(token)api("/api/public/orders/access/"+token).then(setD).catch(e=>setErr(e.message));else setErr("Link incompleto.")},[token]);
@@ -478,6 +550,7 @@ function Schedule(){
 export default function App(){return <Routes>
  <Route path="/" element={<Login/>}/>
  <Route path="/cadastro-dentista" element={<Login initialMode="register"/>}/>
+ <Route path="/convite-dentista" element={<DentistInvitePage/>}/>
  <Route path="/dentista" element={<DentistDashboard/>}/>
  <Route path="/novo-pedido" element={<Navigate to="/dentista"/>}/>
  <Route path="/radiologia" element={<Radiology/>}/>
