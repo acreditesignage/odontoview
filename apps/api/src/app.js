@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "./prisma.js";
 import { createAccessToken, resolveAccessToken } from "./token.js";
+import { getPrivateObject, putPrivateObject, storageReady } from "./storage.js";
 
 const auth=(req,res,next)=>{
   const h=req.headers.authorization||"", token=h.startsWith("Bearer ")?h.slice(7):null;
@@ -108,7 +109,8 @@ export function createApp(){
             patient:{select:{id:true,name:true,phone:true,birthDate:true}},
             examType:true,
             unit:{include:{organization:true}},
-            appointment:{include:{availability:true}}
+            appointment:{include:{availability:true}},
+            study:{select:{id:true,status:true,modality:true,manufacturer:true,model:true,seriesCount:true,fileCount:true,totalBytes:true,completedAt:true}}
           },
           orderBy:{requestedAt:"desc"},
           take:100
@@ -283,6 +285,146 @@ export function createApp(){
         return updated;
       });
       res.json({order:result});
+    }catch(e){next(e);}
+  });
+
+  app.post("/api/unit/orders/:id/study",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      if(!storageReady()) return res.status(503).json({error:"Storage privado ainda não está disponível."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const order=await prisma.order.findFirst({
+        where:{id:req.params.id,unitId:membership.unitId},
+        include:{study:true}
+      });
+      if(!order) return res.status(404).json({error:"Pedido não encontrado nesta unidade."});
+      if(!["EXAME_REALIZADO","IMAGENS_RECEBIDAS"].includes(order.status)) return res.status(409).json({error:"O exame precisa estar marcado como realizado antes do envio."});
+      if(order.study?.status==="READY") return res.status(409).json({error:"Este pedido já possui um exame enviado."});
+
+      const meta=req.body||{};
+      const study=order.study
+        ? await prisma.examStudy.update({where:{id:order.study.id},data:{
+            sourceType:String(meta.sourceType||"DICOM").slice(0,24),
+            modality:meta.modality?String(meta.modality).slice(0,32):null,
+            manufacturer:meta.manufacturer?String(meta.manufacturer).slice(0,120):null,
+            model:meta.model?String(meta.model).slice(0,120):null,
+            seriesCount:Math.max(0,Number(meta.seriesCount)||0),
+            status:"UPLOADING"
+          }})
+        : await prisma.examStudy.create({data:{
+            orderId:order.id,
+            unitId:membership.unitId,
+            sourceType:String(meta.sourceType||"DICOM").slice(0,24),
+            modality:meta.modality?String(meta.modality).slice(0,32):null,
+            manufacturer:meta.manufacturer?String(meta.manufacturer).slice(0,120):null,
+            model:meta.model?String(meta.model).slice(0,120):null,
+            seriesCount:Math.max(0,Number(meta.seriesCount)||0)
+          }});
+      res.status(order.study?200:201).json({study});
+    }catch(e){next(e);}
+  });
+
+  app.put("/api/unit/studies/:studyId/files/:index",auth,express.raw({type:"application/octet-stream",limit:"32mb"}),async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      if(!storageReady()) return res.status(503).json({error:"Storage privado ainda não está disponível."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const index=Number(req.params.index);
+      if(!Number.isInteger(index)||index<0||index>10000) return res.status(400).json({error:"Índice de arquivo inválido."});
+      const study=await prisma.examStudy.findFirst({where:{id:req.params.studyId,unitId:membership.unitId,status:"UPLOADING"}});
+      if(!study) return res.status(404).json({error:"Estudo em envio não encontrado."});
+      if(!Buffer.isBuffer(req.body)||!req.body.length) return res.status(400).json({error:"Arquivo DICOM vazio."});
+      let fileName="dicom-"+String(index+1).padStart(4,"0")+".dcm";
+      try{
+        const raw=String(req.headers["x-file-name"]||"");
+        if(raw) fileName=decodeURIComponent(raw).replace(/[\\/]+/g,"_").slice(-180)||fileName;
+      }catch{}
+      const objectKey="studies/"+study.id+"/"+String(index).padStart(6,"0")+".dcm";
+      await putPrivateObject({key:objectKey,body:req.body,contentType:"application/dicom"});
+      const file=await prisma.studyFile.upsert({
+        where:{studyId_index:{studyId:study.id,index}},
+        create:{studyId:study.id,index,fileName,objectKey,sizeBytes:req.body.length,contentType:"application/dicom"},
+        update:{fileName,objectKey,sizeBytes:req.body.length,contentType:"application/dicom"}
+      });
+      res.status(201).json({file:{id:file.id,index:file.index,sizeBytes:file.sizeBytes}});
+    }catch(e){next(e);}
+  });
+
+  app.post("/api/unit/studies/:studyId/complete",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const study=await prisma.examStudy.findFirst({
+        where:{id:req.params.studyId,unitId:membership.unitId},
+        include:{files:true,order:true}
+      });
+      if(!study) return res.status(404).json({error:"Estudo não encontrado."});
+      if(study.status==="READY") return res.json({study});
+      if(study.order.status!=="EXAME_REALIZADO") return res.status(409).json({error:"O pedido não está pronto para receber imagens."});
+      if(!study.files.length) return res.status(409).json({error:"Nenhum arquivo foi enviado."});
+      const totalBytes=study.files.reduce((sum,f)=>sum+f.sizeBytes,0);
+      const completed=await prisma.$transaction(async tx=>{
+        const updated=await tx.examStudy.update({
+          where:{id:study.id},
+          data:{status:"READY",fileCount:study.files.length,totalBytes,completedAt:new Date()}
+        });
+        await tx.order.update({where:{id:study.orderId},data:{status:"IMAGENS_RECEBIDAS"}});
+        await tx.statusHistory.create({
+          data:{orderId:study.orderId,status:"IMAGENS_RECEBIDAS",actorType:"UNIT_USER",actorId:req.auth.sub,note:"Exame enviado ao storage privado do OdontoView."}
+        });
+        return updated;
+      });
+      res.json({study:completed});
+    }catch(e){next(e);}
+  });
+
+  app.get("/api/dentist/studies/:studyId",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      const study=await prisma.examStudy.findFirst({
+        where:{id:req.params.studyId,status:"READY",order:{dentist:{userId:req.auth.sub}}},
+        include:{
+          files:{orderBy:{index:"asc"},select:{id:true,index:true,fileName:true,sizeBytes:true}},
+          order:{include:{patient:{select:{id:true,name:true}},examType:true,unit:true}}
+        }
+      });
+      if(!study) return res.status(404).json({error:"Exame não encontrado."});
+      res.set("Cache-Control","no-store");
+      res.json({
+        study:{
+          id:study.id,status:study.status,sourceType:study.sourceType,modality:study.modality,
+          manufacturer:study.manufacturer,model:study.model,seriesCount:study.seriesCount,
+          fileCount:study.fileCount,totalBytes:study.totalBytes,completedAt:study.completedAt
+        },
+        order:{id:study.order.id,patient:study.order.patient,examType:study.order.examType,unit:study.order.unit},
+        files:study.files
+      });
+    }catch(e){next(e);}
+  });
+
+  app.get("/api/dentist/studies/:studyId/files/:fileId",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      const file=await prisma.studyFile.findFirst({
+        where:{id:req.params.fileId,studyId:req.params.studyId,study:{status:"READY",order:{dentist:{userId:req.auth.sub}}}}
+      });
+      if(!file) return res.status(404).json({error:"Arquivo não encontrado."});
+      const object=await getPrivateObject(file.objectKey);
+      let bytes;
+      if(object.Body?.transformToByteArray) bytes=await object.Body.transformToByteArray();
+      else{
+        const chunks=[];
+        for await (const chunk of object.Body||[]) chunks.push(Buffer.from(chunk));
+        bytes=Buffer.concat(chunks);
+      }
+      res.set("Content-Type",file.contentType||"application/dicom");
+      res.set("Content-Length",String(file.sizeBytes));
+      res.set("Cache-Control","private, no-store");
+      res.set("X-Content-Type-Options","nosniff");
+      res.send(Buffer.from(bytes));
     }catch(e){next(e);}
   });
 
