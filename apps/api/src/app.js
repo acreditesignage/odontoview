@@ -455,6 +455,61 @@ export function createApp(){
     }catch(e){next(e);}
   });
 
+  app.get("/api/unit/studies/:studyId",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const study=await prisma.examStudy.findFirst({
+        where:{id:req.params.studyId,unitId:membership.unitId,status:"READY"},
+        include:{
+          files:{orderBy:{index:"asc"},select:{id:true,index:true,fileName:true,sizeBytes:true}},
+          patient:{select:{id:true,name:true}},
+          examType:true,
+          order:{select:{id:true,status:true}}
+        }
+      });
+      if(!study) return res.status(404).json({error:"Exame não encontrado nesta unidade."});
+      res.set("Cache-Control","no-store");
+      res.json({
+        study:{
+          id:study.id,status:study.status,sourceType:study.sourceType,modality:study.modality,
+          manufacturer:study.manufacturer,model:study.model,seriesCount:study.seriesCount,
+          fileCount:study.fileCount,totalBytes:study.totalBytes,completedAt:study.completedAt
+        },
+        patient:study.patient,
+        examType:study.examType,
+        order:study.order,
+        files:study.files
+      });
+    }catch(e){next(e);}
+  });
+
+  app.get("/api/unit/studies/:studyId/files/:fileId",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const file=await prisma.studyFile.findFirst({
+        where:{id:req.params.fileId,studyId:req.params.studyId,study:{unitId:membership.unitId,status:"READY"}}
+      });
+      if(!file) return res.status(404).json({error:"Arquivo não encontrado."});
+      const object=await getPrivateObject(file.objectKey);
+      let bytes;
+      if(object.Body?.transformToByteArray) bytes=await object.Body.transformToByteArray();
+      else{
+        const chunks=[];
+        for await (const chunk of object.Body||[]) chunks.push(Buffer.from(chunk));
+        bytes=Buffer.concat(chunks);
+      }
+      res.set("Content-Type",file.contentType||"application/dicom");
+      res.set("Content-Length",String(file.sizeBytes));
+      res.set("Cache-Control","private, no-store");
+      res.set("X-Content-Type-Options","nosniff");
+      res.send(Buffer.from(bytes));
+    }catch(e){next(e);}
+  });
+
   app.get("/api/dentist/studies/:studyId",auth,async(req,res,next)=>{
     try{
       if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
