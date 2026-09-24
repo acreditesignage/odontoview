@@ -205,8 +205,12 @@ function Radiology(){
  const nav=useNavigate();
  const [tab,setTab]=useState("agenda"),[date,setDate]=useState(localDateValue()),[data,setData]=useState(null),[patients,setPatients]=useState(null),[patientSearch,setPatientSearch]=useState(""),[err,setErr]=useState(""),[busy,setBusy]=useState(""),[ingest,setIngest]=useState(null);
  const [patientForm,setPatientForm]=useState({name:"",birthDate:"",phone:"",email:""}),[patientSaving,setPatientSaving]=useState(false);
- const fileInput=useRef(null),orderForFile=useRef(null);
+ const [selectedPatient,setSelectedPatient]=useState(null),[patientDetail,setPatientDetail]=useState(null),[patientDetailBusy,setPatientDetailBusy]=useState(false);
+ const [patientIngest,setPatientIngest]=useState(null),[patientTarget,setPatientTarget]=useState(null),[patientExamType,setPatientExamType]=useState("");
+ const [openingUnitStudy,setOpeningUnitStudy]=useState("");
+ const fileInput=useRef(null),orderForFile=useRef(null),patientFileInput=useRef(null);
  const range=useMemo(()=>dayRange(date),[date]);
+
  async function load(){
    setErr("");
    try{setData(await api("/api/unit/agenda?from="+encodeURIComponent(range.from)+"&to="+encodeURIComponent(range.to)))}catch(e){setErr(e.message)}
@@ -215,22 +219,39 @@ function Radiology(){
    setErr("");
    try{setPatients(await api("/api/unit/patients"+(q?"?q="+encodeURIComponent(q):"")))}catch(e){setErr(e.message)}
  }
+ async function openPatient(p){
+   setSelectedPatient(p);setPatientDetail(null);setPatientIngest(null);setPatientDetailBusy(true);setErr("");
+   try{
+     const detail=await api("/api/unit/patients/"+p.id);
+     setPatientDetail(detail);
+     if(!patientExamType&&detail.examTypes?.[0])setPatientExamType(detail.examTypes[0].id);
+   }catch(e){setErr(e.message)}finally{setPatientDetailBusy(false)}
+ }
+ async function refreshPatientDetail(){
+   if(!selectedPatient)return;
+   const detail=await api("/api/unit/patients/"+selectedPatient.id);
+   setPatientDetail(detail);
+   return detail;
+ }
  useEffect(()=>{load()},[date]);
  useEffect(()=>{if(tab==="patients")loadPatients()},[tab]);
+
  async function savePatient(e){
    e.preventDefault();setPatientSaving(true);setErr("");
    try{
-     await api("/api/unit/patients",{method:"POST",body:JSON.stringify(patientForm)});
+     const created=await api("/api/unit/patients",{method:"POST",body:JSON.stringify(patientForm)});
      setPatientForm({name:"",birthDate:"",phone:"",email:""});
      await loadPatients("");
+     await openPatient(created);
    }catch(e){setErr(e.message)}finally{setPatientSaving(false)}
  }
  async function advance(order){
    const next=order.status==="AGENDADO"?"PACIENTE_CHEGOU":order.status==="PACIENTE_CHEGOU"?"EXAME_REALIZADO":null;
    if(!next)return;
    setBusy(order.id);setErr("");
-   try{await api("/api/unit/orders/"+order.id+"/status",{method:"PATCH",body:JSON.stringify({status:next})});await load()}catch(e){setErr(e.message)}finally{setBusy("")}
+   try{await api("/api/unit/orders/"+order.id+"/status",{method:"PATCH",body:JSON.stringify({status:next})});await load();if(selectedPatient)await refreshPatientDetail()}catch(e){setErr(e.message)}finally{setBusy("")}
  }
+
  function pickExam(order){
    orderForFile.current=order;
    setIngest(null);
@@ -248,45 +269,105 @@ function Radiology(){
      setIngest({orderId:order.id,status:"error",message:e.message||"Falha ao abrir exame."});
    }
  }
+
+ async function uploadStudyFiles(studyId,result,setState){
+   let next=0,done=0;
+   const worker=async()=>{
+     while(true){
+       const index=next++;
+       if(index>=result.files.length)return;
+       const file=result.files[index];
+       await apiBinary("/api/unit/studies/"+studyId+"/files/"+index,file,{
+         "Content-Type":"application/octet-stream",
+         "X-File-Name":encodeURIComponent(file.name||("dicom-"+(index+1)+".dcm"))
+       });
+       done++;
+       setState(prev=>({...prev,send:{status:"uploading",done,total:result.files.length}}));
+     }
+   };
+   await Promise.all(Array.from({length:Math.min(4,result.files.length)},()=>worker()));
+ }
+
  async function sendExamToDentist(order){
    if(!ingest?.result||ingest.orderId!==order.id)return;
-   const r=ingest.result;
-   const firstValid=r.series.find(s=>s.valid)||r.series[0]||{};
+   const r=ingest.result,firstValid=r.series.find(s=>s.valid)||r.series[0]||{};
    try{
      setIngest(prev=>({...prev,send:{status:"uploading",done:0,total:r.files.length}}));
      const created=await api("/api/unit/orders/"+order.id+"/study",{method:"POST",body:JSON.stringify({
-       sourceType:r.sourceType,
-       modality:firstValid.modality,
-       manufacturer:firstValid.manufacturer,
-       model:firstValid.model,
-       seriesCount:r.seriesCount
+       sourceType:r.sourceType,modality:firstValid.modality,manufacturer:firstValid.manufacturer,model:firstValid.model,seriesCount:r.seriesCount
      })});
-     const studyId=created.study.id;
-     let next=0,done=0;
-     const worker=async()=>{
-       while(true){
-         const index=next++;
-         if(index>=r.files.length)return;
-         const file=r.files[index];
-         await apiBinary("/api/unit/studies/"+studyId+"/files/"+index,file,{
-           "Content-Type":"application/octet-stream",
-           "X-File-Name":encodeURIComponent(file.name||("dicom-"+(index+1)+".dcm"))
-         });
-         done++;
-         setIngest(prev=>({...prev,send:{status:"uploading",done,total:r.files.length}}));
-       }
-     };
-     await Promise.all(Array.from({length:Math.min(4,r.files.length)},()=>worker()));
-     await api("/api/unit/studies/"+studyId+"/complete",{method:"POST",body:"{}"});
-     setIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId}}));
-     await load();
+     await uploadStudyFiles(created.study.id,r,setIngest);
+     await api("/api/unit/studies/"+created.study.id+"/complete",{method:"POST",body:"{}"});
+     setIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId:created.study.id}}));
+     await load();await loadPatients("");
    }catch(e){
      setIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha no envio."}}));
    }
  }
+
+ function choosePatientExam(target){
+   setPatientTarget(target);setPatientIngest(null);
+   if(patientFileInput.current){patientFileInput.current.value="";patientFileInput.current.click()}
+ }
+ async function handlePatientExamFiles(event){
+   const files=Array.from(event.target.files||[]);
+   if(!patientTarget||!files.length)return;
+   setPatientIngest({status:"reading",progress:{phase:"start"}});
+   try{
+     const result=await importExam(files,{onProgress:progress=>setPatientIngest({status:"reading",progress})});
+     setPatientIngest({status:"ready",result});
+   }catch(e){setPatientIngest({status:"error",message:e.message||"Falha ao abrir exame."})}
+ }
+ async function sendPatientExam(){
+   if(!patientIngest?.result||!patientTarget)return;
+   const r=patientIngest.result,firstValid=r.series.find(s=>s.valid)||r.series[0]||{};
+   try{
+     setPatientIngest(prev=>({...prev,send:{status:"uploading",done:0,total:r.files.length}}));
+     const body={
+       sourceType:r.sourceType,modality:firstValid.modality,manufacturer:firstValid.manufacturer,model:firstValid.model,seriesCount:r.seriesCount
+     };
+     let created;
+     if(patientTarget.kind==="order"){
+       created=await api("/api/unit/orders/"+patientTarget.id+"/study",{method:"POST",body:JSON.stringify(body)});
+     }else{
+       created=await api("/api/unit/patients/"+patientTarget.id+"/studies",{method:"POST",body:JSON.stringify({...body,examTypeId:patientExamType||null})});
+     }
+     await uploadStudyFiles(created.study.id,r,setPatientIngest);
+     await api("/api/unit/studies/"+created.study.id+"/complete",{method:"POST",body:"{}"});
+     setPatientIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId:created.study.id}}));
+     await Promise.all([refreshPatientDetail(),load(),loadPatients("")]);
+   }catch(e){
+     setPatientIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha no envio."}}));
+   }
+ }
+ async function openUnitStudy(study){
+   setOpeningUnitStudy(study.id);setErr("");
+   try{
+     const manifest=await api("/api/unit/studies/"+study.id);
+     const files=new Array(manifest.files.length);
+     let cursor=0,done=0;
+     const worker=async()=>{
+       while(true){
+         const i=cursor++;
+         if(i>=manifest.files.length)return;
+         const meta=manifest.files[i];
+         const blob=await apiBlob("/api/unit/studies/"+study.id+"/files/"+meta.id);
+         files[i]=new File([blob],meta.fileName||("dicom-"+String(i+1).padStart(4,"0")+".dcm"),{type:"application/dicom"});
+         done++;setOpeningUnitStudy(study.id+":"+done+"/"+manifest.files.length);
+       }
+     };
+     await Promise.all(Array.from({length:Math.min(6,manifest.files.length)},()=>worker()));
+     const result=await importExam(files);
+     setViewerSession({result,order:{patient:manifest.patient,examType:manifest.examType||{name:"Exame DICOM"},unit:data?.unit||null}});
+     nav("/viewer2");
+   }catch(e){setErr(e.message||"Não foi possível abrir o exame.");}
+   finally{setOpeningUnitStudy("")}
+ }
+
  const tomorrow=()=>{const x=new Date();x.setDate(x.getDate()+1);setDate(localDateValue(x))};
  return <main className="page radiology"><section className="wide">
    <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
+   <input className="hidden-file" ref={patientFileInput} type="file" multiple onChange={handlePatientExamFiles}/>
    <header className="topbar"><BrandLockup role="RADIOLOGIA"/><button className="ghost" onClick={logout}>Sair</button></header>
    <div className="hero-row"><div><p className="eyebrow">AQUISIÇÃO + ENVIO</p><h1>{tab==="agenda"?"Agenda da unidade.":"Pacientes da unidade."}</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:patients?.unit?patients.unit.organization.name+" • "+patients.unit.name:"Carregando unidade…"}</p></div>{tab==="agenda"?<div className="date-actions"><input aria-label="Data da agenda" type="date" value={date} onChange={e=>setDate(e.target.value)}/><button className="secondary compact" onClick={tomorrow}>Amanhã</button></div>:<button className="primary compact" onClick={()=>document.getElementById("radio-patient-name")?.focus()}>+ Novo paciente</button>}</div>
    <nav className="workspace-tabs radiology-tabs">
@@ -312,8 +393,8 @@ function Radiology(){
        {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{setViewerSession({result:ingest.result,order:o});nav("/viewer2")}} onSend={()=>sendExamToDentist(o)}/>}
      </article>
    })}</div>)}
-   {tab==="patients"&&<div className="radiology-patient-layout">
-     <section className="card patient-create-card">
+   {tab==="patients"&&<div className={"radiology-patient-layout"+(selectedPatient?" has-detail":"")}>
+     {!selectedPatient&&<section className="card patient-create-card">
        <p className="eyebrow">CADASTRO LOCAL</p><h2>Novo paciente</h2><p className="muted">Cadastre pacientes atendidos diretamente pela radiologia. Eles ficam identificados como “Radiologia”.</p>
        <form className="stack" onSubmit={savePatient}>
          <input id="radio-patient-name" required placeholder="Nome completo" value={patientForm.name} onChange={e=>setPatientForm({...patientForm,name:e.target.value})}/>
@@ -321,14 +402,46 @@ function Radiology(){
          <input type="email" placeholder="Email (opcional)" value={patientForm.email} onChange={e=>setPatientForm({...patientForm,email:e.target.value})}/>
          <button className="primary" disabled={patientSaving}>{patientSaving?"Salvando…":"Cadastrar paciente"}</button>
        </form>
-     </section>
+     </section>}
      <section className="card patient-list-card">
        <div className="section-title"><div><p className="eyebrow">BASE DA UNIDADE</p><h2>Pacientes</h2></div><form className="patient-search" onSubmit={e=>{e.preventDefault();loadPatients(patientSearch)}}><input placeholder="Buscar por nome" value={patientSearch} onChange={e=>setPatientSearch(e.target.value)}/><button className="secondary compact">Buscar</button></form></div>
        {!patients?<div className="empty">Carregando pacientes…</div>:patients.patients.length===0?<div className="empty"><strong>Nenhum paciente encontrado.</strong></div>:
-       <div className="patient-registry">{patients.patients.map(p=><div className={"patient-registry-row "+(p.source==="ODONTOVIEW"?"is-network":"is-local")} key={p.id}>
+       <div className="patient-registry">{patients.patients.map(p=><button type="button" className={"patient-registry-row patient-row-button "+(p.source==="ODONTOVIEW"?"is-network":"is-local")+(selectedPatient?.id===p.id?" selected":"")} key={p.id} onClick={()=>openPatient(p)}>
          <div className="patient-registry-main"><div className="patient-name-line"><strong>{p.name}</strong><span className={"source-badge "+(p.source==="ODONTOVIEW"?"odontoview":"radiology")}>{p.sourceLabel}</span></div><small>{p.phone||"Sem telefone"}{p.birthDate?" • "+new Date(p.birthDate).toLocaleDateString("pt-BR"):""}</small>{p.dentist&&<small>Solicitante: {p.dentist.name} • CRO {p.dentist.cro}/{p.dentist.uf}</small>}</div>
-       </div>)}</div>}
+         <span className="patient-open-hint">Abrir ›</span>
+       </button>)}</div>}
      </section>
+     {selectedPatient&&<section className="card patient-detail-card">
+       <div className="patient-detail-head"><div><p className="eyebrow">FICHA DO PACIENTE</p><h2>{selectedPatient.name}</h2></div><button className="ghost compact" onClick={()=>{setSelectedPatient(null);setPatientDetail(null);setPatientIngest(null)}}>Fechar</button></div>
+       {patientDetailBusy||!patientDetail?<div className="empty">Abrindo ficha…</div>:<>
+         <div className="patient-detail-meta">
+           <span className={"source-badge "+(patientDetail.source==="ODONTOVIEW"?"odontoview":"radiology")}>{patientDetail.source==="ODONTOVIEW"?"OdontoView":"Radiologia"}</span>
+           <span>{patientDetail.patient.phone||"Sem telefone"}</span>
+           {patientDetail.patient.birthDate&&<span>{new Date(patientDetail.patient.birthDate).toLocaleDateString("pt-BR")}</span>}
+         </div>
+         <section className="patient-detail-section">
+           <div className="section-title"><div><p className="eyebrow">PEDIDOS / EXAMES</p><h3>Histórico clínico da unidade</h3></div></div>
+           {patientDetail.orders.length===0&&patientDetail.studies.length===0&&<div className="empty"><strong>Nenhum exame ainda.</strong><p>Você já pode adicionar o primeiro DICOM deste paciente.</p></div>}
+           {patientDetail.orders.map(o=><div className="patient-order-card" key={o.id}>
+             <div><strong>{o.examType.name}</strong><small>Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</small><small>Status: {STATUS[o.status]?.label||o.status}</small></div>
+             <div className="patient-order-actions">
+               {o.study?.status==="READY"?<button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy({...o.study,examType:o.examType})}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":"Abrir exame"}</button>:
+               o.status==="EXAME_REALIZADO"?<button className="primary compact" onClick={()=>choosePatientExam({kind:"order",id:o.id,examTypeId:o.examType.id})}>+ Adicionar exame</button>:
+               <span className="muted">Aguardando etapa clínica</span>}
+             </div>
+           </div>)}
+           {patientDetail.studies.filter(s=>!s.orderId).map(s=><div className="patient-order-card local-study" key={s.id}>
+             <div><strong>{s.examType?.name||s.modality||"Exame DICOM"}</strong><small>{s.fileCount} arquivo(s) • {formatBytes(s.totalBytes)}</small><small>{s.completedAt?new Date(s.completedAt).toLocaleString("pt-BR"):""}</small></div>
+             <button className="secondary compact" disabled={openingUnitStudy.startsWith(s.id)} onClick={()=>openUnitStudy(s)}>{openingUnitStudy.startsWith(s.id)?"Abrindo…":"Abrir exame"}</button>
+           </div>)}
+         </section>
+         {patientDetail.source==="RADIOLOGIA"&&<section className="patient-detail-section add-local-exam">
+           <div><p className="eyebrow">NOVO EXAME LOCAL</p><h3>Adicionar DICOM ao paciente</h3></div>
+           <div className="patient-local-exam-actions"><select value={patientExamType} onChange={e=>setPatientExamType(e.target.value)}>{patientDetail.examTypes.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button className="primary" onClick={()=>choosePatientExam({kind:"patient",id:patientDetail.patient.id})}>Selecionar exame</button></div>
+         </section>}
+         {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{setViewerSession({result:patientIngest.result,order:{patient:patientDetail.patient,examType:patientDetail.examTypes.find(t=>t.id===(patientTarget?.examTypeId||patientExamType))||{name:"Exame DICOM"},unit:data?.unit}});nav("/viewer2")}} onSend={sendPatientExam}/>}
+       </>}
+     </section>}
    </div>}
  </section></main>
 }
