@@ -1084,7 +1084,7 @@ export default function Viewer2(){
         <div className="viewer2-pane-head"><strong>Modelo 3D • Planejamento</strong><div className="viewer2-pane-actions"><span className="viewer3d-badge">3D PROFISSIONAL</span>{expandButton("3d","3D")}</div></div>
         <div className="viewer3d-split">
           <div className="viewer3d-primary">
-            <Viewer3DPanel volume={volumeRef.current} meta={meta} nervePoints={nerveDisplayPoints} curve={curve} cursor={cursor} implants={implants} activeImplantId={activeImplantId} onImplantsChange={setImplants} onActiveImplantChange={setActiveImplantId}/>
+            <Viewer3DPanel volume={volumeRef.current} meta={meta} nervePoints={nerveDisplayPoints} curve={curve} cursor={cursor} implants={implants} activeImplantId={activeImplantId} onImplantsChange={setImplants} onActiveImplantChange={setActiveImplantId} layoutMode={expandedPanel||"mosaic"}/>
           </div>
           <div className={"viewer3d-mini-pano"+(expandedPanel==="panoramic"?" is-expanded":"")}>
             <div className="viewer3d-mini-head"><strong>Panorâmica reconstruída</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane("panoramic")}>1:1</button>{expandButton("panoramic","Panorâmica")}</div></div>
