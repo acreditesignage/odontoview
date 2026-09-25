@@ -122,6 +122,7 @@ function DentistDashboard(){
  const dentistFileInput=useRef(null);
  const [dentistIngest,setDentistIngest]=useState(null),[dentistImportPatient,setDentistImportPatient]=useState(""),[dentistImportType,setDentistImportType]=useState("");
  const [demoAvailable,setDemoAvailable]=useState(null),[demoOpening,setDemoOpening]=useState(false),[demoProgress,setDemoProgress]=useState("");
+ const [dentistDocumentation,setDentistDocumentation]=useState(null);
 
  async function load(){
    setErr("");
@@ -266,16 +267,38 @@ function DentistDashboard(){
    }
  }
 
+ function closeDentistDocumentation(){
+   setDentistDocumentation(prev=>{
+     prev?.items?.forEach(item=>item.url&&URL.revokeObjectURL(item.url));
+     return null;
+   });
+ }
+ async function openDentistDocumentation(manifest){
+   const items=await Promise.all((manifest.files||[]).map(async meta=>{
+     const blob=await apiBlob("/api/dentist/studies/"+manifest.study.id+"/files/"+meta.id);
+     const typed=new Blob([blob],{type:meta.contentType||blob.type||"application/octet-stream"});
+     return {
+       ...meta,blob:typed,contentType:typed.type||meta.contentType||"application/octet-stream",
+       url:URL.createObjectURL(typed),
+       previewKind:(typed.type||"").startsWith("image/")?"image":typed.type==="application/pdf"?"pdf":"file"
+     };
+   }));
+   setDentistDocumentation({
+     study:manifest.study,
+     patient:manifest.order?.patient,
+     examType:manifest.order?.examType,
+     items,
+     activeIndex:0
+   });
+ }
  async function openStudy(order){
    if(!order?.study?.id)return;
    setOpeningStudy(order.study.id);setErr("");
    try{
      const manifest=await api("/api/dentist/studies/"+order.study.id);
      if(!isDicomStudySource(manifest.study?.sourceType)){
-       const meta=manifest.files?.[0];
-       if(!meta)throw new Error("Arquivo do exame não encontrado.");
-       const blob=await apiBlob("/api/dentist/studies/"+order.study.id+"/files/"+meta.id);
-       openBlobFile(new Blob([blob],{type:meta.contentType||blob.type||"application/octet-stream"}),meta.fileName||"exame");
+       if(!manifest.files?.length)throw new Error("Arquivo do exame não encontrado.");
+       await openDentistDocumentation(manifest);
        return;
      }
      const files=new Array(manifest.files.length);
@@ -332,6 +355,29 @@ function DentistDashboard(){
  const dentistUploadPolicy=examUploadPolicy(selectedDentistImportType);
  return <main className="page dentist-dashboard"><section className="wide">
    <input className="hidden-file" ref={dentistFileInput} type="file" accept={dentistUploadPolicy.accept} multiple={dentistUploadPolicy.multiple} onChange={handleDentistImportFiles}/>
+   {dentistDocumentation&&<div className="documentation-gallery-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)closeDentistDocumentation()}}>
+     <section className="documentation-gallery" role="dialog" aria-modal="true">
+       <header className="documentation-gallery-head">
+         <div><p className="eyebrow">DOCUMENTAÇÃO / IMAGENS</p><h2>{dentistDocumentation.examType?.name||"Documentação"}</h2><p>{dentistDocumentation.patient?.name||"Paciente"} • {dentistDocumentation.items.length} arquivo(s)</p></div>
+         <button className="ghost compact" onClick={closeDentistDocumentation}>Fechar</button>
+       </header>
+       <div className="documentation-gallery-stage">
+         {(()=>{
+           const item=dentistDocumentation.items[dentistDocumentation.activeIndex];
+           if(!item)return <div className="empty">Nenhum arquivo.</div>;
+           if(item.previewKind==="image")return <img src={item.url} alt={item.fileName}/>;
+           if(item.previewKind==="pdf")return <iframe src={item.url} title={item.fileName}/>;
+           return <div className="documentation-gallery-file"><span>3D</span><strong>{item.fileName}</strong><button className="secondary compact" onClick={()=>openBlobFile(item.blob,item.fileName)}>Baixar / abrir modelo 3D</button></div>;
+         })()}
+       </div>
+       <div className="documentation-gallery-grid">
+         {dentistDocumentation.items.map((item,index)=><button type="button" key={item.id||index} className={"documentation-thumb "+(index===dentistDocumentation.activeIndex?"active":"")} onClick={()=>setDentistDocumentation(prev=>({...prev,activeIndex:index}))}>
+           {item.previewKind==="image"?<img src={item.url} alt=""/>:<span>{item.previewKind==="pdf"?"PDF":"3D"}</span>}
+           <small title={item.fileName}>{item.fileName}</small>
+         </button>)}
+       </div>
+     </section>
+   </div>}
    <header className="topbar"><BrandLockup role="DENTISTA"/><div className="topbar-actions"><a className="ghost compact" href="/cadastro-dentista" target="_blank" rel="noreferrer">Link de cadastro</a><button className="ghost" onClick={logout}>Sair</button></div></header>
    <div className="hero-row dentist-hero"><div><p className="eyebrow">ODONTOVIEW NETWORK</p><h1>{data?.dentist?.user?.name||"Seu painel clínico"}</h1><p className="muted">{data?.dentist?("CRO "+data.dentist.cro+"/"+data.dentist.uf+" • pacientes, pedidos e exames em um só lugar."):"Carregando perfil…"}</p></div><div className="hero-actions dentist-hero-actions"><button className="primary" onClick={startNewPatient}>＋ Novo paciente</button><button className="secondary" onClick={()=>goDentistTab("import")}>⬆ Importar exame</button></div></div>
    <nav className="workspace-tabs">
@@ -352,7 +398,7 @@ function DentistDashboard(){
          </button>
          <button type="button" className="dentist-action-card" onClick={()=>goDentistTab("import")}>
            <span className="dentist-action-icon">⬆</span>
-           <span className="dentist-action-copy"><strong>Importar exame</strong><small>CBCT em DICOM; demais exames em arquivo único.</small></span>
+           <span className="dentist-action-copy"><strong>Importar exame</strong><small>CBCT em DICOM; demais exames em documentação com múltiplos arquivos.</small></span>
            <span className="dentist-action-arrow">→</span>
          </button>
        </section>
