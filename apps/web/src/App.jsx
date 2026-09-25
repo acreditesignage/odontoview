@@ -28,6 +28,31 @@ function previewLocalExam(result){
   const file=result?.files?.[0];
   if(file)openBlobFile(file,file.name||result?.sourceName||"exame");
 }
+function LocalFileStrip({result}){
+  const [items,setItems]=useState([]);
+  useEffect(()=>{
+    const files=Array.from(result?.files||[]);
+    const metas=result?.fileItems||[];
+    const next=files.map((file,index)=>{
+      const meta=metas[index]||{};
+      const contentType=meta.contentType||file.type||"application/octet-stream";
+      return {
+        index,
+        name:file.name||meta.fileName||("Arquivo "+(index+1)),
+        contentType,
+        previewKind:meta.previewKind||(contentType.startsWith("image/")?"image":contentType==="application/pdf"?"pdf":"file"),
+        url:contentType.startsWith("image/")?URL.createObjectURL(file):null
+      };
+    });
+    setItems(next);
+    return()=>next.forEach(item=>item.url&&URL.revokeObjectURL(item.url));
+  },[result]);
+  if(!items.length)return null;
+  return <div className="local-document-strip">{items.map(item=><button type="button" key={item.index} className="local-document-thumb" onClick={()=>previewLocalExam({files:[result.files[item.index]]})}>
+    {item.previewKind==="image"?<img src={item.url} alt={item.name}/>:<span className="local-document-fileicon">{item.previewKind==="pdf"?"PDF":"3D"}</span>}
+    <small title={item.name}>{item.name}</small>
+  </button>)}</div>;
+}
 function uploadMetaFromResult(result){
   const firstValid=result?.series?.find(s=>s.valid)||result?.series?.[0]||{};
   return {
@@ -194,7 +219,7 @@ function DentistDashboard(){
          const index=next++;
          if(index>=r.files.length)return;
          const file=r.files[index];
-         const contentType=r.kind==="single"?(r.singleFile?.contentType||file.type||"application/octet-stream"):"application/dicom";
+         const contentType=r.kind==="collection"?(r.fileItems?.[index]?.contentType||file.type||"application/octet-stream"):"application/dicom";
          await apiBinary("/api/dentist/studies/"+created.study.id+"/files/"+index,file,{
            "Content-Type":"application/octet-stream",
            "X-File-Name":encodeURIComponent(file.name||("arquivo-"+(index+1))),
@@ -419,7 +444,7 @@ function DentistDashboard(){
            <button className="primary" onClick={()=>{setDentistIngest(null);dentistFileInput.current?.click()}}>{dentistUploadPolicy.buttonLabel}</button>
          </div>
          <p className="muted upload-policy-note">{dentistUploadPolicy.help}</p>
-         {dentistIngest&&<IngestResult state={dentistIngest} onClear={()=>setDentistIngest(null)} onOpenViewer={()=>{if(dentistIngest.result?.kind==="single"){previewLocalExam(dentistIngest.result);return}setViewerSession({result:dentistIngest.result,order:{patient:data.patients.find(p=>p.id===dentistImportPatient),examType:types.find(t=>t.id===dentistImportType)||{name:"Tomografia CBCT"}}});nav(viewerRoute("dentist","/dentista?tab=import"))}} onSend={sendDentistImport} sendLabel="Salvar em Meus exames"/>}
+         {dentistIngest&&<IngestResult state={dentistIngest} onClear={()=>setDentistIngest(null)} onOpenViewer={()=>{if(dentistIngest.result?.kind==="collection"){previewLocalExam(dentistIngest.result);return}setViewerSession({result:dentistIngest.result,order:{patient:data.patients.find(p=>p.id===dentistImportPatient),examType:types.find(t=>t.id===dentistImportType)||{name:"Tomografia CBCT"}}});nav(viewerRoute("dentist","/dentista?tab=import"))}} onSend={sendDentistImport} sendLabel="Salvar em Meus exames"/>}
        </>}
      </section>}
      {tab==="exams"&&<section className="card">
@@ -463,29 +488,29 @@ function IngestResult({state,onClear,onOpenViewer,onSend,sendLabel="Enviar exame
  if(!state)return null;
  if(state.status==="reading"){
    const p=state.progress||{};
-   const label=p.phase==="metadata"?`Lendo metadados DICOM • ${p.current||0}/${p.total||"?"}`:p.phase==="single"?"Validando arquivo…":"Abrindo arquivo…";
+   const label=p.phase==="metadata"?`Lendo metadados DICOM • ${p.current||0}/${p.total||"?"}`:p.phase==="single"?"Validando documentação…":"Abrindo arquivo…";
    return <div className="ingest-panel"><strong>OdontoView Ingest</strong><p className="muted">{label}</p><div className="ingest-bar"><span/></div></div>;
  }
  if(state.status==="error")return <div className="ingest-panel ingest-error"><strong>Não foi possível abrir este exame.</strong><p>{state.message}</p><button className="ghost compact" onClick={onClear}>Fechar</button></div>;
  if(state.status!=="ready")return null;
- const r=state.result,single=r.kind==="single";
+ const r=state.result,collection=r.kind==="collection",dicom=r.kind==="dicom"||isDicomStudySource(r.sourceType);
  const sending=state.send?.status==="uploading",sent=state.send?.status==="done";
  return <div className="ingest-panel">
-   <div className="ingest-head"><div><strong>{single?"Arquivo reconhecido ✓":"Exame DICOM reconhecido ✓"}</strong><p className="muted">{single
-     ?`${r.singleFile?.fileName||r.sourceName} • ${r.singleFile?.contentType||"arquivo"} • ${formatBytes(r.totalBytes)}`
+   <div className="ingest-head"><div><strong>{collection?"Documentação reconhecida ✓":"Exame DICOM reconhecido ✓"}</strong><p className="muted">{collection
+     ?`${r.totalFiles} arquivo(s) • ${formatBytes(r.totalBytes)} • ${r.sourceType==="SCAN"?"modelos 3D":"imagens/documentos"}`
      :`${r.sourceType} • ${r.totalFiles} DICOM • ${formatBytes(r.totalBytes)} • ${r.seriesCount} série(s)`}</p></div><button className="ghost compact" onClick={onClear} disabled={sending}>Descartar</button></div>
-   {!single&&r.failedFiles.length>0&&<div className="warn">{r.failedFiles.length} arquivo(s) não puderam ser lidos e foram ignorados.</div>}
-   {!single&&<div className="series-list">{r.series.map(s=><div className="series-card" key={s.index}>
+   {dicom&&r.failedFiles?.length>0&&<div className="warn">{r.failedFiles.length} arquivo(s) não puderam ser lidos e foram ignorados.</div>}
+   {dicom&&<div className="series-list">{(r.series||[]).map(s=><div className="series-card" key={s.index}>
      <div><strong>{s.description}</strong><small>{s.modality} • {s.files} corte(s){s.dimensions?" • "+s.dimensions:""}</small><small>{s.manufacturer}{s.model?" • "+s.model:""}</small></div>
      <span className={"series-status "+(s.valid?"ok":"bad")}>{s.valid?"Série válida":"Revisar"}</span>
    </div>)}</div>}
-   {single&&<div className="single-file-summary"><strong>{r.sourceType==="SCAN"?"Arquivo 3D":"Arquivo único"}</strong><small>{r.singleFile?.fileName}</small></div>}
+   {collection&&<LocalFileStrip result={r}/>}
    {sending&&<div className="cloud-send-progress"><strong>Enviando com segurança… {state.send.done}/{state.send.total}</strong><div className="ingest-bar"><span style={{width:Math.round((state.send.done/Math.max(1,state.send.total))*100)+"%"}}/></div><small>Gravando no storage privado do OdontoView.</small></div>}
    {sent&&<div className="success cloud-send-done"><strong>Exame enviado ✓</strong><p>O exame foi associado ao paciente/pedido e já pode ser acessado conforme as permissões do fluxo.</p></div>}
    {state.send?.status==="error"&&<div className="error">Falha no envio: {state.send.message}</div>}
-   {!state.send&&<p className="privacy-note">{single?"Arquivo validado localmente.":"Leitura DICOM local concluída."} Clique em “{sendLabel}” para gravar no storage privado e associar ao paciente/pedido.</p>}
+   {!state.send&&<p className="privacy-note">{collection?"Arquivos validados localmente.":"Leitura DICOM local concluída."} Clique em “{sendLabel}” para gravar no storage privado e associar ao paciente/pedido.</p>}
    <div className="ingest-actions">
-     {onOpenViewer&&<button className="primary" onClick={onOpenViewer} disabled={sending}>{single?"Abrir arquivo":"Abrir Viewer 2.0"}</button>}
+     {onOpenViewer&&<button className="primary" onClick={onOpenViewer} disabled={sending}>{collection?"Pré-visualizar":"Abrir Viewer 2.0"}</button>}
      <button className="secondary" onClick={onSend} disabled={sending||sent||!onSend}>{sent?"Enviado ✓":sending?"Enviando…":sendLabel}</button>
    </div>
  </div>;
@@ -585,7 +610,7 @@ function Radiology(){
        const index=next++;
        if(index>=result.files.length)return;
        const file=result.files[index];
-       const contentType=result.kind==="single"?(result.singleFile?.contentType||file.type||"application/octet-stream"):"application/dicom";
+       const contentType=result.kind==="collection"?(result.fileItems?.[index]?.contentType||file.type||"application/octet-stream"):"application/dicom";
        await apiBinary("/api/unit/studies/"+studyId+"/files/"+index,file,{
          "Content-Type":"application/octet-stream",
          "X-File-Name":encodeURIComponent(file.name||("arquivo-"+(index+1))),
@@ -788,7 +813,7 @@ function Radiology(){
              {o.status==="EXAME_REALIZADO"&&<button className="primary compact" onClick={()=>pickExam(o)}>Importar exame</button>}
              {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Disponível no OdontoView</span>}
            </div>
-           {ingest?.orderId===o.id&&<div className="radiology-ops-ingest"><IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{if(ingest.result?.kind==="single"){previewLocalExam(ingest.result);return}setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=home"))}} onSend={()=>sendExamToDentist(o)}/></div>}
+           {ingest?.orderId===o.id&&<div className="radiology-ops-ingest"><IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{if(ingest.result?.kind==="collection"){previewLocalExam(ingest.result);return}setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=home"))}} onSend={()=>sendExamToDentist(o)}/></div>}
          </article>
        })}</div>}
      </section>
@@ -809,7 +834,7 @@ function Radiology(){
            {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Exame recebido pelo OdontoView</span>}
          </div>
        </div>
-       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{if(ingest.result?.kind==="single"){previewLocalExam(ingest.result);return}setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=agenda"))}} onSend={()=>sendExamToDentist(o)}/>}
+       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{if(ingest.result?.kind==="collection"){previewLocalExam(ingest.result);return}setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=agenda"))}} onSend={()=>sendExamToDentist(o)}/>}
      </article>
    })}</div>)}
    {tab==="exams"&&<section className="card radiology-exams-card">
@@ -825,7 +850,7 @@ function Radiology(){
            {o.status==="EXAME_REALIZADO"&&<button className="primary compact" onClick={()=>pickExam(o)}>Selecionar exame</button>}
            {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Imagens recebidas</span>}
          </div>
-         {ingest?.orderId===o.id&&<div className="radiology-exam-ingest"><IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{if(ingest.result?.kind==="single"){previewLocalExam(ingest.result);return}setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=exams"))}} onSend={()=>sendExamToDentist(o)}/></div>}
+         {ingest?.orderId===o.id&&<div className="radiology-exam-ingest"><IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{if(ingest.result?.kind==="collection"){previewLocalExam(ingest.result);return}setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=exams"))}} onSend={()=>sendExamToDentist(o)}/></div>}
        </article>
      })}</div>}
    </section>}
@@ -838,7 +863,7 @@ function Radiology(){
          <button className="primary" disabled={!importPatientId} onClick={()=>{setPatientExamType(importExamType);beginPatientExamFileSelection({kind:"patient",id:importPatientId,examTypeId:importExamType})}}>{selectedImportPolicy.buttonLabel}</button>
        </div>
        <p className="muted upload-policy-note">{selectedImportPolicy.help}</p>
-       {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{if(patientIngest.result?.kind==="single"){previewLocalExam(patientIngest.result);return}setViewerSession({result:patientIngest.result,order:{patient:selectedImportPatient,examType:selectedImportType||{name:"Tomografia CBCT"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab=import"))}} onSend={sendPatientExam} sendLabel="Salvar exame na radiologia"/>}
+       {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{if(patientIngest.result?.kind==="collection"){previewLocalExam(patientIngest.result);return}setViewerSession({result:patientIngest.result,order:{patient:selectedImportPatient,examType:selectedImportType||{name:"Tomografia CBCT"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab=import"))}} onSend={sendPatientExam} sendLabel="Salvar exame na radiologia"/>}
      </>}
    </section>}
    {tab==="patients"&&<div className={"radiology-patient-layout"+(selectedPatient?" has-detail":"")}>
@@ -891,7 +916,7 @@ function Radiology(){
            <div><p className="eyebrow">NOVO EXAME LOCAL</p><h3>Adicionar exame ao paciente</h3><p className="muted">{selectedPatientUploadPolicy.help}</p></div>
            <div className="patient-local-exam-actions"><select value={patientExamType} onChange={e=>{setPatientExamType(e.target.value);setPatientIngest(null)}}>{patientDetail.examTypes.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button className="primary" onClick={()=>beginPatientExamFileSelection({kind:"patient",id:patientDetail.patient.id,examTypeId:patientExamType})}>{selectedPatientUploadPolicy.buttonLabel}</button></div>
          </section>}
-         {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{if(patientIngest.result?.kind==="single"){previewLocalExam(patientIngest.result);return}setViewerSession({result:patientIngest.result,order:{patient:patientDetail.patient,examType:patientDetail.examTypes.find(t=>t.id===(patientTarget?.examTypeId||patientExamType))||{name:"Tomografia CBCT"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab="+tab))}} onSend={sendPatientExam}/>}
+         {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{if(patientIngest.result?.kind==="collection"){previewLocalExam(patientIngest.result);return}setViewerSession({result:patientIngest.result,order:{patient:patientDetail.patient,examType:patientDetail.examTypes.find(t=>t.id===(patientTarget?.examTypeId||patientExamType))||{name:"Tomografia CBCT"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab="+tab))}} onSend={sendPatientExam}/>}
        </>}
      </section>}
    </div>}
