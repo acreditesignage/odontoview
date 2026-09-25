@@ -170,20 +170,23 @@ function DentistDashboard(){
  async function handleDentistImportFiles(event){
    const files=Array.from(event.target.files||[]);
    if(!files.length)return;
-   setDentistIngest({status:"reading",progress:{phase:"start"}});
+   const examType=types.find(t=>t.id===dentistImportType)||null;
+   const policy=examUploadPolicy(examType);
+   setDentistIngest({status:"reading",progress:{phase:policy.kind==="dicom"?"start":"single"}});
    try{
-     const result=await importExam(files,{onProgress:progress=>setDentistIngest({status:"reading",progress})});
+     const result=policy.kind==="dicom"
+       ?await importExam(files,{onProgress:progress=>setDentistIngest({status:"reading",progress})})
+       :await importSingleFileExam(files,examType);
      setDentistIngest({status:"ready",result});
    }catch(e){setDentistIngest({status:"error",message:e.message||"Falha ao abrir exame."})}
  }
  async function sendDentistImport(){
    if(!dentistIngest?.result||!dentistImportPatient)return;
-   const r=dentistIngest.result,firstValid=r.series.find(s=>s.valid)||r.series[0]||{};
+   const r=dentistIngest.result,meta=uploadMetaFromResult(r);
    try{
      setDentistIngest(prev=>({...prev,send:{status:"uploading",done:0,total:r.files.length}}));
      const created=await api("/api/dentist/patients/"+dentistImportPatient+"/studies",{method:"POST",body:JSON.stringify({
-       examTypeId:dentistImportType||null,sourceType:r.sourceType,modality:firstValid.modality,
-       manufacturer:firstValid.manufacturer,model:firstValid.model,seriesCount:r.seriesCount
+       examTypeId:dentistImportType||null,...meta
      })});
      let next=0,done=0;
      const worker=async()=>{
@@ -191,9 +194,11 @@ function DentistDashboard(){
          const index=next++;
          if(index>=r.files.length)return;
          const file=r.files[index];
+         const contentType=r.kind==="single"?(r.singleFile?.contentType||file.type||"application/octet-stream"):"application/dicom";
          await apiBinary("/api/dentist/studies/"+created.study.id+"/files/"+index,file,{
            "Content-Type":"application/octet-stream",
-           "X-File-Name":encodeURIComponent(file.name||("dicom-"+(index+1)+".dcm"))
+           "X-File-Name":encodeURIComponent(file.name||("arquivo-"+(index+1))),
+           "X-File-Content-Type":contentType
          });
          done++;setDentistIngest(prev=>({...prev,send:{status:"uploading",done,total:r.files.length}}));
        }
@@ -241,6 +246,13 @@ function DentistDashboard(){
    setOpeningStudy(order.study.id);setErr("");
    try{
      const manifest=await api("/api/dentist/studies/"+order.study.id);
+     if(!isDicomStudySource(manifest.study?.sourceType)){
+       const meta=manifest.files?.[0];
+       if(!meta)throw new Error("Arquivo do exame não encontrado.");
+       const blob=await apiBlob("/api/dentist/studies/"+order.study.id+"/files/"+meta.id);
+       openBlobFile(new Blob([blob],{type:meta.contentType||blob.type||"application/octet-stream"}),meta.fileName||"exame");
+       return;
+     }
      const files=new Array(manifest.files.length);
      let cursor=0,done=0;
      const worker=async()=>{
