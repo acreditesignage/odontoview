@@ -460,6 +460,17 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const aiFindings=Array.isArray(aiAnalysis?.findings)?aiAnalysis.findings:[];
  const aiConfirmed=aiFindings.filter(item=>item.status==="CONFIRMED").length;
  const aiSuggested=aiFindings.filter(item=>item.status==="SUGGESTED").length;
+ const overviewAiByItem=useMemo(()=>{
+   const map=new Map();
+   for(const finding of aiFindings){
+     if(!finding?.fileId||String(finding?.status||"SUGGESTED").toUpperCase()==="REJECTED")continue;
+     const key=String(finding.fileId);
+     if(!map.has(key))map.set(key,[]);
+     map.get(key).push(finding);
+   }
+   return map;
+ },[aiAnalysis]);
+ const overviewAiImageCount=overviewAiByItem.size;
  const activeAiFindings=aiFindings.filter(item=>
    String(item.fileId)===String(active?.id)&&
    item.bbox&&
@@ -770,13 +781,39 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
          <div><strong>Veja o conjunto antes de aprofundar.</strong><span>O OdontoView prioriza a numeração detectada no nome do arquivo e mantém os demais itens em ordem natural. Clique em qualquer radiografia para abrir o Viewer.</span></div>
          <span className={"documentation-order-chip "+(sequenceInfo.reliable?"is-ok":"is-warn")}>{sequenceInfo.recognized}/{sequenceInfo.total} DO TEMPLATE{sequenceInfo.review?" · "+sequenceInfo.review+(sequenceInfo.reliable?" COMPLEMENTARES":" REVISAR"):""}</span>
        </div>
-       <div className="documentation-overview-grid">
-         {entries.map(entry=><button type="button" key={entry.key} className="documentation-overview-card" onClick={()=>openInViewer(entry)}>
-           <div className="documentation-overview-media">
-             {entry.item.previewKind==="image"?<img src={entry.item.url} alt={entry.item.fileName}/>:entry.item.previewKind==="pdf"?<span className="documentation-file-badge">PDF</span>:<span className="documentation-file-badge">3D</span>}
+
+       <section className={"documentation-overview-ai "+(aiAnalysis?.status==="COMPLETED"?"has-results":"")}>
+         <div className="documentation-overview-ai-copy">
+           <span className="documentation-overview-ai-icon">AI</span>
+           <div>
+             <strong>OdontoView AI</strong>
+             {aiAnalysis?.status==="COMPLETED"
+               ? <span>{aiFindings.length} achado(s) em {overviewAiImageCount} imagem(ns){aiAnalysis?.demo?" · DEMO visual":""}</span>
+               : <span>Analise as radiografias direto daqui, sem precisar entrar no Template.</span>}
            </div>
-           <div className="documentation-overview-meta"><strong>{sequenceBadge(entry)}</strong><small title={entry.item.fileName}>{entry.item.fileName}</small><span>Examinar →</span></div>
-         </button>)}
+         </div>
+         <div className="documentation-overview-ai-actions">
+           {canManageAi&&<button className="ai-primary compact" disabled={aiBusy==="run"} onClick={runAiAnalysis}>{aiBusy==="run"?"Analisando…":aiAnalysis?.status==="COMPLETED"?"✨ Analisar novamente":"✨ Analisar com OdontoView AI"}</button>}
+           {aiAnalysis?.status==="COMPLETED"&&<button className="secondary compact" onClick={()=>{setMode("template");if(!hasSavedLayout)setTemplateEditing(true)}}>Ir para template analisado →</button>}
+         </div>
+         {aiError&&<p className="documentation-overview-ai-error">{aiError}</p>}
+       </section>
+
+       <div className="documentation-overview-grid">
+         {entries.map(entry=>{
+           const findings=overviewAiByItem.get(String(entry.item.id))||[];
+           const top=findings[0];
+           return <button type="button" key={entry.key} className={"documentation-overview-card "+(findings.length?"has-ai-findings":"")} onClick={()=>openInViewer(entry)}>
+             <div className="documentation-overview-media">
+               {entry.item.previewKind==="image"?<img src={entry.item.url} alt={entry.item.fileName}/>:entry.item.previewKind==="pdf"?<span className="documentation-file-badge">PDF</span>:<span className="documentation-file-badge">3D</span>}
+               {findings.length>0&&<div className="documentation-overview-ai-badge">
+                 <span>{aiAnalysis?.demo?"DEMO · ":""}{findings.length} achado{findings.length>1?"s":""}</span>
+                 <strong>{top?.label||"Região para revisão"}</strong>
+               </div>}
+             </div>
+             <div className="documentation-overview-meta"><strong>{sequenceBadge(entry)}</strong><small title={entry.item.fileName}>{entry.item.fileName}</small><span>{findings.length?"Ver IA →":"Examinar →"}</span></div>
+           </button>;
+         })}
        </div>
      </div>}
 
