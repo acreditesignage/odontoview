@@ -1,4 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
+import html2canvas from "html2canvas";
 import {api} from "./api.js";
 
 const DOC_TEMPLATE_PRESETS={
@@ -572,6 +573,34 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  }
  function organizeByNumber(){setTemplateMap(autoMapFor(templateId));setTemplateDirty(true);setTemplateState("auto")}
  function clearTemplate(){setTemplateMap({});setTemplateDirty(true);setTemplateState("editing")}
+
+ async function captureDisplayedBoard(){
+   const shell=finalBoardRef.current;
+   const target=shell?.querySelector?.(".radiographic-final-board");
+   if(!target)throw new Error("A prancha final não está disponível para captura.");
+   const images=[...target.querySelectorAll("img")];
+   await Promise.all(images.map(img=>{
+     if(img.complete&&img.naturalWidth>0)return Promise.resolve();
+     return new Promise(resolve=>{
+       const done=()=>resolve();
+       img.addEventListener("load",done,{once:true});
+       img.addEventListener("error",done,{once:true});
+       setTimeout(done,5000);
+     });
+   }));
+   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+   const rect=target.getBoundingClientRect();
+   const scale=Math.max(2,Math.min(3,3200/Math.max(1,rect.width)));
+   return html2canvas(target,{
+     backgroundColor:"#03080c",
+     scale,
+     useCORS:true,
+     allowTaint:false,
+     logging:false,
+     imageTimeout:10000
+   });
+ }
+
  async function downloadTemplateBoard(){
    if(!templateComplete){
      alert("Complete as posições do template antes de gerar a prancha.");
@@ -583,7 +612,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    }
    setBusy("download");
    try{
-     const canvas=await renderRadiographicBoardCanvas({gallery,templateMap,itemByKey,aiAnalysis,showAiOverlays:boardAiVisible,showAiLabels:boardLabelsVisible});
+     const canvas=await captureDisplayedBoard();
      const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error("Falha ao gerar a imagem.")),"image/jpeg",0.96));
      const url=URL.createObjectURL(blob);
      const a=document.createElement("a");
@@ -616,7 +645,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    popup.document.write("<!doctype html><html><head><title>OdontoView</title><style>html,body{margin:0;background:#000;height:100%;display:grid;place-items:center}img{max-width:100%;max-height:100%;object-fit:contain}@media print{body{background:#fff}img{width:100%;max-height:none}}</style></head><body><p style='color:white;font-family:Arial'>Preparando prancha…</p></body></html>");
    setBusy("print");
    try{
-     const canvas=await renderRadiographicBoardCanvas({gallery,templateMap,itemByKey,aiAnalysis,showAiOverlays:boardAiVisible,showAiLabels:boardLabelsVisible});
+     const canvas=await captureDisplayedBoard();
      const dataUrl=canvas.toDataURL("image/jpeg",0.96);
      popup.document.body.innerHTML='<img src="'+dataUrl+'" alt="Prancha radiográfica">';
      const img=popup.document.querySelector("img");
@@ -735,7 +764,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
                <div>
                  <p className="eyebrow">TEMPLATE SALVO</p>
                  <strong>Template pronto para entrega</strong>
-                 <span>O mesmo layout exibido na tela será usado no download JPG e na impressão.</span>
+                 <span>Download obrigatório em um único JPG: todas as radiografias organizadas no mesmo layout exibido na tela.</span>
                </div>
              </div>
              <div className="documentation-template-ready-actions">
@@ -763,7 +792,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
                  <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} aiAnalysis={aiAnalysis} showAiOverlays={boardAiVisible} showAiLabels={boardLabelsVisible}/>
                </div>
              </div>
-             <div className="documentation-template-download-note"><span>i</span><p>O JPG será salvo <b>igual à prancha exibida</b>: {boardAiVisible?"com marcações da IA":"sem marcações da IA"}{boardAiVisible?boardLabelsVisible?" e com rótulos.":" e sem rótulos.":"."}</p></div>
+             <div className="documentation-template-download-note"><span>i</span><p>O download gera <b>um único JPG com toda a prancha montada</b>, exatamente como exibida: {boardAiVisible?"com marcações da IA":"sem marcações da IA"}{boardAiVisible?boardLabelsVisible?" e com rótulos.":" e sem rótulos.":"."}</p></div>
            </section>
 
            <section className="documentation-template-side-card">
