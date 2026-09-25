@@ -111,6 +111,81 @@ function aiAnalysisPayload({status,provider=null,model=null,findings=[],message=
     professionalReviewRequired:true
   };
 }
+function demoFileByCode(files,codes=[]){
+  const list=(files||[]).filter(file=>String(file.contentType||"").startsWith("image/"));
+  for(const code of codes){
+    const rx=new RegExp("(^|\\D)"+String(code)+"(\\D|$)");
+    const hit=list.find(file=>rx.test(String(file.fileName||"")));
+    if(hit)return hit;
+  }
+  return null;
+}
+function buildDemoAiFindings(study){
+  const files=(study.files||[]).filter(file=>String(file.contentType||"").startsWith("image/"));
+  if(!files.length)return [];
+
+  const byCode=(...codes)=>demoFileByCode(files,codes);
+  const fallback=index=>files[Math.max(0,Math.min(files.length-1,index))]||files[0];
+  const implantPosterior=byCode("38","48","47")||fallback(files.length-1);
+  const implantBitewing=byCode("04","03")||fallback(Math.max(0,files.length-3));
+  const restoration=byCode("01","02","17","28")||fallback(0);
+  const endo=byCode("21","32","13","33")||fallback(Math.min(2,files.length-1));
+
+  const raw=[
+    {
+      id:"demo-implant-posterior",
+      fileId:implantPosterior?.id,
+      label:"Implante dentário",
+      category:"IMPLANT",
+      summary:"DEMO: estrutura radiopaca compatível visualmente com implante. Exemplo de marcação, não é análise clínica.",
+      confidence:0.98,
+      bbox:{x:0.48,y:0.15,w:0.34,h:0.70},
+      status:"SUGGESTED",
+      demo:true
+    },
+    {
+      id:"demo-implant-bitewing",
+      fileId:implantBitewing?.id,
+      label:"Implante dentário",
+      category:"IMPLANT",
+      summary:"DEMO: exemplo de reconhecimento de implante em radiografia posterior.",
+      confidence:0.96,
+      bbox:{x:0.58,y:0.28,w:0.25,h:0.58},
+      status:"SUGGESTED",
+      demo:true
+    },
+    {
+      id:"demo-restoration",
+      fileId:restoration?.id,
+      label:"Restauração radiopaca",
+      category:"RESTORATION",
+      summary:"DEMO: material restaurador radiopaco destacado para demonstrar o fluxo de achados.",
+      confidence:0.91,
+      bbox:{x:0.18,y:0.20,w:0.34,h:0.27},
+      status:"SUGGESTED",
+      demo:true
+    },
+    {
+      id:"demo-endo",
+      fileId:endo?.id,
+      label:"Tratamento endodôntico",
+      category:"ENDO",
+      summary:"DEMO: região destacada apenas para demonstrar a experiência de revisão profissional.",
+      confidence:0.88,
+      bbox:{x:0.34,y:0.16,w:0.24,h:0.62},
+      status:"SUGGESTED",
+      demo:true
+    }
+  ];
+  const seen=new Set();
+  return raw.filter(item=>{
+    if(!item.fileId)return false;
+    const key=item.id+"::"+item.fileId;
+    if(seen.has(key))return false;
+    seen.add(key);return true;
+  });
+}
+
 async function requestExternalDentalAi(study){
   const endpoint=String(process.env.ODONTOVIEW_AI_ENDPOINT||"").trim();
   if(!endpoint)return {configured:false};
@@ -684,6 +759,21 @@ export function createApp(){
       try{
         const result=await requestExternalDentalAi(study);
         if(!result.configured){
+          const demoMode=String(process.env.ODONTOVIEW_AI_DEMO||"false").toLowerCase()==="true";
+          if(demoMode){
+            const analysis=aiAnalysisPayload({
+              status:"COMPLETED",
+              provider:"OdontoView AI Demo",
+              model:"demo-radiographic-markers-v1",
+              findings:buildDemoAiFindings(study),
+              requestedAt,
+              completedAt:new Date().toISOString(),
+              message:"DEMO visual: achados simulados para validar a experiência do OdontoView AI. Não usar como interpretação clínica."
+            });
+            analysis.demo=true;
+            await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:analysis}});
+            return res.json({analysis});
+          }
           const analysis=aiAnalysisPayload({
             status:"NOT_CONFIGURED",
             requestedAt,
@@ -963,6 +1053,21 @@ export function createApp(){
       try{
         const result=await requestExternalDentalAi(study);
         if(!result.configured){
+          const demoMode=String(process.env.ODONTOVIEW_AI_DEMO||"false").toLowerCase()==="true";
+          if(demoMode){
+            const analysis=aiAnalysisPayload({
+              status:"COMPLETED",
+              provider:"OdontoView AI Demo",
+              model:"demo-radiographic-markers-v1",
+              findings:buildDemoAiFindings(study),
+              requestedAt,
+              completedAt:new Date().toISOString(),
+              message:"DEMO visual: achados simulados para validar a experiência do OdontoView AI. Não usar como interpretação clínica."
+            });
+            analysis.demo=true;
+            await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:analysis}});
+            return res.json({analysis});
+          }
           const analysis=aiAnalysisPayload({
             status:"NOT_CONFIGURED",
             requestedAt,
