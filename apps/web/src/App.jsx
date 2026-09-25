@@ -694,7 +694,7 @@ function Radiology(){
  const [patientForm,setPatientForm]=useState({name:"",birthDate:"",phone:"",email:"",referringDentistName:"",referringDentistCro:"",referringDentistEmail:""}),[patientSaving,setPatientSaving]=useState(false);
  const [selectedPatient,setSelectedPatient]=useState(null),[patientDetail,setPatientDetail]=useState(null),[patientDetailBusy,setPatientDetailBusy]=useState(false);
  const [patientIngest,setPatientIngest]=useState(null),[patientTarget,setPatientTarget]=useState(null),[patientExamType,setPatientExamType]=useState(""),[examUploadConfirm,setExamUploadConfirm]=useState(null);
- const [openingUnitStudy,setOpeningUnitStudy]=useState(""),[shareInvite,setShareInvite]=useState(null);
+ const [openingUnitStudy,setOpeningUnitStudy]=useState(""),[shareInvite,setShareInvite]=useState(null),[dentistDelivery,setDentistDelivery]=useState(null);
  const [documentationGallery,setDocumentationGallery]=useState(null),[galleryBusy,setGalleryBusy]=useState(false);
  const fileInput=useRef(null),orderForFile=useRef(null),patientFileInput=useRef(null);
  const range=useMemo(()=>dayRange(date),[date]);
@@ -708,7 +708,7 @@ function Radiology(){
    try{setPatients(await api("/api/unit/patients"+(q?"?q="+encodeURIComponent(q):"")))}catch(e){setErr(e.message)}
  }
  async function openPatient(p){
-   setSelectedPatient(p);setPatientDetail(null);setPatientIngest(null);setExamUploadConfirm(null);setShareInvite(null);setPatientDetailBusy(true);setErr("");
+   setSelectedPatient(p);setPatientDetail(null);setPatientIngest(null);setExamUploadConfirm(null);setShareInvite(null);setDentistDelivery(null);setPatientDetailBusy(true);setErr("");
    try{
      const detail=await api("/api/unit/patients/"+p.id);
      setPatientDetail(detail);
@@ -800,7 +800,8 @@ function Radiology(){
      setIngest(prev=>({...prev,send:{status:"uploading",done:0,total:r.files.length}}));
      const created=await api("/api/unit/orders/"+order.id+"/study",{method:"POST",body:JSON.stringify(meta)});
      await uploadStudyFiles(created.study.id,r,setIngest);
-     await api("/api/unit/studies/"+created.study.id+"/complete",{method:"POST",body:"{}"});
+     const completed=await api("/api/unit/studies/"+created.study.id+"/complete",{method:"POST",body:"{}"});
+     if(completed?.delivery)setDentistDelivery({...completed.delivery,studyId:created.study.id});
      setIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId:created.study.id}}));
      await load();await loadPatients("");
    }catch(e){
@@ -871,7 +872,8 @@ function Radiology(){
        created=await api("/api/unit/patients/"+patientTarget.id+"/studies",{method:"POST",body:JSON.stringify({...body,examTypeId:patientTarget.examTypeId||patientExamType||null})});
      }
      await uploadStudyFiles(created.study.id,r,setPatientIngest);
-     await api("/api/unit/studies/"+created.study.id+"/complete",{method:"POST",body:"{}"});
+     const completed=await api("/api/unit/studies/"+created.study.id+"/complete",{method:"POST",body:"{}"});
+     if(completed?.delivery)setDentistDelivery({...completed.delivery,studyId:created.study.id});
      setPatientIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId:created.study.id}}));
      await Promise.all([refreshPatientDetail(),load(),loadPatients("")]);
    }catch(e){
@@ -973,6 +975,19 @@ function Radiology(){
    finally{setOpeningUnitStudy("")}
  }
 
+ async function deliverStudyToDentist(study){
+   const studyId=typeof study==="string"?study:study?.id;
+   if(!studyId)return;
+   setBusy("deliver:"+studyId);setErr("");
+   try{
+     const out=await api("/api/unit/studies/"+studyId+"/deliver-dentist",{method:"POST",body:JSON.stringify({sendEmail:true})});
+     setDentistDelivery({...out.delivery,studyId});
+     if(selectedPatient)await refreshPatientDetail();
+     await load();
+   }catch(e){setErr(e.message||"Não foi possível preparar o envio ao dentista.")}
+   finally{setBusy("")}
+ }
+
  async function createRadiologyDentistInvite(){
    if(!selectedPatient)return;
    setErr("");
@@ -1031,6 +1046,13 @@ function Radiology(){
      <button className={tab==="import"?"active":""} onClick={()=>goRadiologyTab("import")}>Importar exame</button>
    </nav>
    {err&&<div className="error">{err}</div>}
+   {dentistDelivery&&<section className={"dentist-delivery-banner status-"+String(dentistDelivery.status||"ready").toLowerCase()}>
+     <div className="dentist-delivery-copy"><span className="dentist-delivery-icon">↗</span><div><p className="eyebrow">ENTREGA AO DENTISTA</p><strong>{dentistDelivery.status==="SENT"?"Exame enviado por e-mail":dentistDelivery.status==="NO_EMAIL"?"Link pronto — falta e-mail do dentista":dentistDelivery.status==="FAILED"?"Link pronto — envio de e-mail falhou":"Link do Viewer pronto"}</strong><small>{dentistDelivery.target?.name||"Dentista solicitante"}{dentistDelivery.target?.cro?" • CRO "+dentistDelivery.target.cro:""}{dentistDelivery.target?.email?" • "+dentistDelivery.target.email:""}</small></div></div>
+     <div className="dentist-delivery-actions">
+       {dentistDelivery.qrDataUrl&&<img src={dentistDelivery.qrDataUrl} alt="QR Code do acesso ao Viewer"/>}
+       <div><a className="primary compact" target="_blank" rel="noreferrer" href={dentistDelivery.viewerUrl}>Abrir link do Viewer</a><button className="secondary compact" onClick={()=>navigator.clipboard.writeText(dentistDelivery.viewerUrl)}>Copiar link</button><button className="ghost compact" onClick={()=>setDentistDelivery(null)}>Fechar</button></div>
+     </div>
+   </section>}
    {tab==="home"&&<div className="radiology-home">
      <section className="radiology-home-actions">
        <button type="button" className="radiology-action-card is-primary" onClick={startRadiologyPatient}>
@@ -1096,6 +1118,7 @@ function Radiology(){
            {o.status==="EXAME_REALIZADO"&&<button className="primary compact" onClick={()=>pickExam(o)}>Selecionar exame</button>}
            {o.status==="IMAGENS_RECEBIDAS"&&o.study&&<>
              <button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy(o.study)}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":isDicomStudySource(o.study.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
+             <button className="ai-secondary compact" disabled={busy==="deliver:"+o.study.id} onClick={()=>deliverStudyToDentist(o.study)}>{busy==="deliver:"+o.study.id?"Preparando…":o.study.dentistDeliveryStatus==="SENT"?"Reenviar ao dentista":"Enviar ao dentista"}</button>
              <button className="danger-quiet compact" disabled={openingUnitStudy==="delete:"+o.study.id} onClick={()=>deleteUnitStudyFromList(o.study)}>{openingUnitStudy==="delete:"+o.study.id?"Excluindo…":"Excluir"}</button>
            </>}
            {o.status==="IMAGENS_RECEBIDAS"&&!o.study&&<span className="done">✓ Imagens recebidas</span>}
@@ -1150,6 +1173,10 @@ function Radiology(){
            <span>{patientDetail.patient.phone||"Sem telefone"}</span>
            {patientDetail.patient.birthDate&&<span>{new Date(patientDetail.patient.birthDate).toLocaleDateString("pt-BR")}</span>}
          </div>
+         {(patientDetail.patient.referringDentistName||patientDetail.patient.referringDentistCro||patientDetail.patient.referringDentistEmail)&&<section className="referring-dentist-card">
+           <span className="referring-dentist-card-icon">Dr</span>
+           <div><p className="eyebrow">DENTISTA SOLICITANTE</p><strong>{patientDetail.patient.referringDentistName||"Profissional informado"}</strong><small>{patientDetail.patient.referringDentistCro?"CRO "+patientDetail.patient.referringDentistCro:"CRO não informado"}{patientDetail.patient.referringDentistEmail?" • "+patientDetail.patient.referringDentistEmail:""}</small></div>
+         </section>}
          {shareInvite&&<div className="share-invite-box"><strong>Link seguro para o dentista</strong><code>{shareInvite}</code><div className="share-actions"><button className="secondary compact" onClick={()=>navigator.clipboard.writeText(shareInvite)}>Copiar link</button><a className="secondary compact" target="_blank" rel="noreferrer" href={"https://wa.me/?text="+encodeURIComponent("Olá! "+selectedPatient.name+" compartilhou um exame no OdontoView. Acesse ou crie seu cadastro: "+shareInvite)}>WhatsApp</a><a className="secondary compact" href={"mailto:?subject="+encodeURIComponent("Exame compartilhado no OdontoView")+"&body="+encodeURIComponent("Olá! "+selectedPatient.name+" compartilhou um exame com você no OdontoView. Acesse: "+shareInvite)}>Email</a></div><small>O convite expira em 7 dias e vincula o paciente ao cadastro do dentista que aceitar.</small></div>}
          <section className="patient-detail-section">
            <div className="section-title"><div><p className="eyebrow">PEDIDOS / EXAMES</p><h3>Histórico clínico da unidade</h3></div></div>
@@ -1159,6 +1186,7 @@ function Radiology(){
              <div className="patient-order-actions">
                {o.study?.status==="READY"?<>
                  <button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy({...o.study,examType:o.examType})}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":isDicomStudySource(o.study.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
+                 <button className="ai-secondary compact" disabled={busy==="deliver:"+o.study.id} onClick={()=>deliverStudyToDentist(o.study)}>{busy==="deliver:"+o.study.id?"Preparando…":o.study.dentistDeliveryStatus==="SENT"?"Reenviar ao dentista":"Enviar ao dentista"}</button>
                  <button className="danger-quiet compact" disabled={openingUnitStudy==="delete:"+o.study.id} onClick={()=>deleteUnitStudyFromList(o.study)}>{openingUnitStudy==="delete:"+o.study.id?"Excluindo…":"Excluir"}</button>
                </>:
                o.status==="AGENDADO"?<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Confirmar chegada"}</button>:
@@ -1172,6 +1200,7 @@ function Radiology(){
              <div><strong>{s.examType?.name||s.modality||"Exame DICOM"}</strong><small>{s.fileCount} arquivo(s) • {formatBytes(s.totalBytes)}</small><small>{s.completedAt?new Date(s.completedAt).toLocaleString("pt-BR"):""}</small></div>
              <div className="exam-row-actions">
                <button className="secondary compact" disabled={openingUnitStudy.startsWith(s.id)} onClick={()=>openUnitStudy(s)}>{openingUnitStudy.startsWith(s.id)?"Abrindo…":isDicomStudySource(s.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
+               <button className="ai-secondary compact" disabled={busy==="deliver:"+s.id} onClick={()=>deliverStudyToDentist(s)}>{busy==="deliver:"+s.id?"Preparando…":s.dentistDeliveryStatus==="SENT"?"Reenviar ao dentista":"Enviar ao dentista"}</button>
                <button className="danger-quiet compact" disabled={openingUnitStudy==="delete:"+s.id} onClick={()=>deleteUnitStudyFromList(s)}>{openingUnitStudy==="delete:"+s.id?"Excluindo…":"Excluir"}</button>
              </div>
            </div>)}
