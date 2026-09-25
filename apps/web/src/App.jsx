@@ -580,7 +580,7 @@ function IngestResult({state,onClear,onOpenViewer,onSend,sendLabel="Enviar exame
    </div>)}</div>}
    {collection&&<LocalFileStrip result={r}/>}
    {sending&&<div className="cloud-send-progress"><strong>Enviando com segurança… {state.send.done}/{state.send.total}</strong><div className="ingest-bar"><span style={{width:Math.round((state.send.done/Math.max(1,state.send.total))*100)+"%"}}/></div><small>Gravando no storage privado do OdontoView.</small></div>}
-   {sent&&<div className="success cloud-send-done"><strong>Exame enviado ✓</strong><p>O exame foi associado ao paciente/pedido e já pode ser acessado conforme as permissões do fluxo.</p></div>}
+   {sent&&<div className="success cloud-send-done"><strong>Exame enviado ✓</strong><p>Original salvo na nuvem privada. Ao abrir novamente, o OdontoView também pode usar cache local deste usuário para acelerar o carregamento.</p></div>}
    {state.send?.status==="error"&&<div className="error">Falha no envio: {state.send.message}</div>}
    {!state.send&&<p className="privacy-note">{collection?"Arquivos validados localmente.":"Leitura DICOM local concluída."} Clique em “{sendLabel}” para gravar no storage privado e associar ao paciente/pedido.</p>}
    <div className="ingest-actions">
@@ -913,7 +913,7 @@ function Radiology(){
        </div>
      </section>
    </div>}
-   <header className="topbar"><BrandLockup role="RADIOLOGIA"/><button className="ghost" onClick={logout}>Sair</button></header>
+   <header className="topbar"><BrandLockup role="RADIOLOGIA"/><div className="topbar-actions"><HybridStorageBadge/><button className="ghost" onClick={logout}>Sair</button></div></header>
    <div className="hero-row radiology-hero"><div><p className="eyebrow">OPERAÇÃO DA RADIOLOGIA</p><h1>{tab==="home"?"Visão geral da unidade.":tab==="agenda"?"Agenda da unidade.":tab==="patients"?"Pacientes da unidade.":tab==="exams"?"Exames em andamento.":"Importar exame."}</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:patients?.unit?patients.unit.organization.name+" • "+patients.unit.name:"Carregando unidade…"}</p></div><div className="radiology-hero-actions"><button className="primary" onClick={startRadiologyPatient}>＋ Novo paciente</button><button className="secondary" onClick={startLocalImport}>⬆ Importar exame</button></div></div>
    <nav className="workspace-tabs radiology-tabs">
      <button className={tab==="home"?"active":""} onClick={()=>goRadiologyTab("home")}>Visão geral</button>
