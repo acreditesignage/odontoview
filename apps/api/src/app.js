@@ -590,7 +590,7 @@ export function createApp(){
           include:{
             examType:true,
             dentist:{include:{user:{select:{name:true}}}},
-            study:{select:{id:true,status:true,sourceType:true,modality:true,fileCount:true,totalBytes:true,completedAt:true}}
+            study:{select:{id:true,status:true,sourceType:true,modality:true,fileCount:true,totalBytes:true,completedAt:true,dentistDeliveryStatus:true,dentistDeliveryEmail:true,dentistDeliverySentAt:true,dentistDeliveryError:true}}
           },
           orderBy:{requestedAt:"desc"}
         }),
@@ -684,7 +684,7 @@ export function createApp(){
           examType:true,
           dentist:{include:{user:{select:{name:true}}}},
           appointment:{include:{availability:true}},
-          study:{select:{id:true,status:true,sourceType:true,fileCount:true,totalBytes:true}}
+          study:{select:{id:true,status:true,sourceType:true,fileCount:true,totalBytes:true,dentistDeliveryStatus:true,dentistDeliveryEmail:true,dentistDeliverySentAt:true,dentistDeliveryError:true}}
         }
       });
       orders.sort((a,b)=>new Date(a.appointment.availability.startAt)-new Date(b.appointment.availability.startAt));
