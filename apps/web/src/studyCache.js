@@ -192,3 +192,22 @@ export async function clearCurrentUserStudyCache(){
   await deleteKeys(records.map(x=>x.key));
   return records.length;
 }
+
+
+export async function removeStudyFileFromCache(studyId,fileId){
+  const scope=currentStudyCacheScope();
+  if(!scope)return 0;
+  const records=await recordsForScope(scope);
+  const matches=records.filter(item=>item.studyId===studyId&&item.fileId===fileId);
+  await deleteKeys(matches.map(item=>item.key));
+  return matches.length;
+}
+
+export async function removeStudyFromCache(studyId){
+  const scope=currentStudyCacheScope();
+  if(!scope)return 0;
+  const records=await recordsForScope(scope);
+  const matches=records.filter(item=>item.studyId===studyId);
+  await deleteKeys(matches.map(item=>item.key));
+  return matches.length;
+}
