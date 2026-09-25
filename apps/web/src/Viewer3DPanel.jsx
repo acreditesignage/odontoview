@@ -23,6 +23,39 @@ import {NEODENT_GM_LIBRARY,implantAxisVector} from "./implantLibrary.js";
 
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 
+function prepareGpuVolume(volume,meta,profile="desktop"){
+  if(!volume||!meta)return {volume,meta,factor:1,optimized:false};
+  const voxels=(meta.w||0)*(meta.h||0)*(meta.d||0);
+  const target=profile==="phone"?8000000:profile==="tablet"?18000000:Infinity;
+  if(!Number.isFinite(target)||voxels<=target)return {volume,meta,factor:1,optimized:false};
+  let factor=2;
+  while(voxels/(factor*factor*factor)>target&&factor<6)factor++;
+  const w=Math.max(1,Math.ceil(meta.w/factor));
+  const h=Math.max(1,Math.ceil(meta.h/factor));
+  const d=Math.max(1,Math.ceil(meta.d/factor));
+  const reduced=new Int16Array(w*h*d);
+  let out=0;
+  for(let z=0;z<d;z++){
+    const srcZ=Math.min(meta.d-1,z*factor);
+    for(let y=0;y<h;y++){
+      const srcY=Math.min(meta.h-1,y*factor);
+      const row=srcZ*meta.w*meta.h+srcY*meta.w;
+      for(let x=0;x<w;x++)reduced[out++]=volume[row+Math.min(meta.w-1,x*factor)];
+    }
+  }
+  return {
+    volume:reduced,
+    meta:{
+      ...meta,w,h,d,
+      spacingX:meta.spacingX*factor,
+      spacingY:meta.spacingY*factor,
+      spacingZ:meta.spacingZ*factor
+    },
+    factor,
+    optimized:true
+  };
+}
+
 function sampledStats(volume){
   const values=[];
   const step=Math.max(1,Math.floor(volume.length/90000));
@@ -356,7 +389,7 @@ function updateImplantBundle(bundle,implant,active){
   }
 }
 
-export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,crosshairVisible=true,onCrosshairVisibleChange=()=>{},onCursorChange=()=>{},globalTool="navigate",implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{},layoutMode="mosaic"}){
+export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],cursor=null,crosshairVisible=true,onCrosshairVisibleChange=()=>{},onCursorChange=()=>{},globalTool="navigate",implants=[],activeImplantId=null,onImplantsChange=()=>{},onActiveImplantChange=()=>{},layoutMode="mosaic",performanceProfile="desktop"}){
   const hostRef=useRef(null);
   const genericRef=useRef(null);
   const rendererRef=useRef(null);
@@ -372,6 +405,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   const scanInputRef=useRef(null);
   const crosshairActorsRef=useRef([]);
   const placementDragRef=useRef(false);
+  const gpuPrepared=useMemo(()=>prepareGpuVolume(volume,meta,performanceProfile),[volume,meta,performanceProfile]);
 
   const [ready,setReady]=useState(false);
   const [status,setStatus]=useState("Preparando GPU Volume Rendering…");
@@ -747,7 +781,8 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     prop.setSpecular(cfg.specular);
     prop.setSpecularPower(cfg.specularPower);
 
-    const minSpacing=Math.max(.05,Math.min(meta?.spacingX||1,meta?.spacingY||1,meta?.spacingZ||1));
+    const renderMeta=gpuPrepared?.meta||meta;
+    const minSpacing=Math.max(.05,Math.min(renderMeta?.spacingX||1,renderMeta?.spacingY||1,renderMeta?.spacingZ||1));
     const mapper=mapperRef.current;
     if(mapper){
       const sampleFactor=cfg.sampleFactor||1.05;
@@ -793,10 +828,12 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   }
 
   useEffect(()=>{
-    if(!hostRef.current||!volume||!meta)return;
+    const renderVolume=gpuPrepared?.volume;
+    const renderMeta=gpuPrepared?.meta;
+    if(!hostRef.current||!renderVolume||!renderMeta)return;
     let cancelled=false;
     setReady(false);
-    setStatus("Carregando o volume CBCT completo na GPU…");
+    setStatus(gpuPrepared.optimized?"Otimizando o 3D para este dispositivo…":"Carregando o volume CBCT completo na GPU…");
 
     const host=hostRef.current;
     const generic=vtkGenericRenderWindow.newInstance({background:[.035,.055,.075]});
@@ -817,20 +854,20 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     renderWindow.addRenderer(overlayRenderer);
 
     const imageData=vtkImageData.newInstance();
-    imageData.setDimensions(meta.w,meta.h,meta.d);
-    imageData.setSpacing(meta.spacingX,meta.spacingY,meta.spacingZ);
+    imageData.setDimensions(renderMeta.w,renderMeta.h,renderMeta.d);
+    imageData.setSpacing(renderMeta.spacingX,renderMeta.spacingY,renderMeta.spacingZ);
     imageData.setOrigin(0,0,0);
     const scalars=vtkDataArray.newInstance({
       name:"CBCT",
       numberOfComponents:1,
-      values:volume
+      values:renderVolume
     });
     imageData.getPointData().setScalars(scalars);
 
     const mapper=vtkVolumeMapper.newInstance();
     mapper.setInputData(imageData);
     mapper.setAutoAdjustSampleDistances(true);
-    mapper.setSampleDistance(Math.max(.18,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*1.25));
+    mapper.setSampleDistance(Math.max(.18,Math.min(renderMeta.spacingX,renderMeta.spacingY,renderMeta.spacingZ)*1.25));
 
     const actor=vtkVolume.newInstance();
     actor.setMapper(mapper);
@@ -847,10 +884,10 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     imageDataRef.current=imageData;
     volumeActorRef.current=actor;
     mapperRef.current=mapper;
-    statsRef.current=sampledStats(volume);
+    statsRef.current=sampledStats(renderVolume);
 
     const prop=actor.getProperty();
-    prop.setScalarOpacityUnitDistance(0,Math.max(.4,Math.min(meta.spacingX,meta.spacingY,meta.spacingZ)*2.2));
+    prop.setScalarOpacityUnitDistance(0,Math.max(.4,Math.min(renderMeta.spacingX,renderMeta.spacingY,renderMeta.spacingZ)*2.2));
 
     applyPreset("planning");
     renderer.resetCamera();
@@ -867,7 +904,8 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
         generic.resize();
         const gl=generic.getOpenGLRenderWindow?.();
         if(gl?.setSize){
-          const dpr=Math.max(1,Math.min(window.devicePixelRatio||1,2));
+          const dprCap=performanceProfile==="desktop"?2:performanceProfile==="tablet"?1.1:1;
+          const dpr=Math.max(1,Math.min(window.devicePixelRatio||1,dprCap));
           gl.setSize(
             Math.max(1,Math.round(rect.width*dpr)),
             Math.max(1,Math.round(rect.height*dpr))
@@ -885,7 +923,9 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
 
     if(!cancelled){
       setReady(true);
-      setStatus("GPU Volume Rendering • CBCT completo • interação em tempo real");
+      setStatus(gpuPrepared.optimized
+        ?"Modo "+(performanceProfile==="tablet"?"tablet":"celular")+" • 3D otimizado "+gpuPrepared.factor+"× • MPR em resolução original"
+        :"GPU Volume Rendering • CBCT completo • interação em tempo real");
     }
 
     return()=>{
@@ -906,7 +946,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       genericRef.current=null;rendererRef.current=null;renderWindowRef.current=null;
       imageDataRef.current=null;volumeActorRef.current=null;mapperRef.current=null;statsRef.current=null;
     };
-  },[volume,meta]);
+  },[gpuPrepared,performanceProfile]);
 
   useEffect(()=>{applyPreset(preset)},[preset,boneOpacityScale,denseBoost,lighting]);
 
@@ -921,7 +961,8 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       generic.resize();
       const gl=generic.getOpenGLRenderWindow?.();
       if(gl?.setSize){
-        const dpr=Math.max(1,Math.min(window.devicePixelRatio||1,2));
+        const dprCap=performanceProfile==="desktop"?2:performanceProfile==="tablet"?1.1:1;
+        const dpr=Math.max(1,Math.min(window.devicePixelRatio||1,dprCap));
         gl.setSize(
           Math.max(1,Math.round(rect.width*dpr)),
           Math.max(1,Math.round(rect.height*dpr))
@@ -944,7 +985,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       cancelAnimationFrame(raf);
       timers.forEach(clearTimeout);
     };
-  },[layoutMode]);
+  },[layoutMode,performanceProfile]);
 
   useEffect(()=>{
     if(!meta||!cursor||!crosshairActorsRef.current.length)return;
@@ -1039,7 +1080,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       onPointerCancelCapture={onStagePointerUpCapture}>
       {!ready&&<div className="viewer3d-loading"><span className="viewer3d-orbit">◌</span><strong>OdontoView 3D Engine v2</strong><small>{status}</small></div>}
       {ready&&<div className="viewer3d-status">{status}</div>}
-      {ready&&<div className="viewer3d-engine-badge">VTK.js • GPU</div>}
+      {ready&&<div className="viewer3d-engine-badge">{gpuPrepared.optimized?"VTK.js • GPU • "+(performanceProfile==="tablet"?"TABLET":"MOBILE"):"VTK.js • GPU"}</div>}
     </div>
     <div className="viewer3d-controls">
       <div className="viewer3d-quickbar">
