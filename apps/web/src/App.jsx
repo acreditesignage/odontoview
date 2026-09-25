@@ -2,7 +2,7 @@ import React from "react";
 import {useEffect,useMemo,useRef,useState} from "react";
 import {Navigate,Route,Routes,useNavigate,useSearchParams} from "react-router-dom";
 import {api,apiBinary,apiBlob} from "./api.js";
-import {cachedStudyBlob,getStudyCacheStats,requestPersistentStudyStorage} from "./studyCache.js";
+import {cachedStudyBlob,getStudyCacheStats,removeStudyFileFromCache,removeStudyFromCache,requestPersistentStudyStorage} from "./studyCache.js";
 import {importExam,importSingleFileExam} from "./ingest.js";
 import {examUploadPolicy,isDicomStudySource} from "./examUpload.js";
 import {DEMO_EXAM,checkDemoExamAvailability,loadDemoExam} from "./demoExam.js";
@@ -557,6 +557,85 @@ const STATUS={
  EXAME_REALIZADO:{label:"Exame realizado",tone:"green"},
  IMAGENS_RECEBIDAS:{label:"Imagens recebidas",tone:"green"}
 };
+
+function DocumentationViewer({gallery,setGallery,onClose,onDeleteFile,onDeleteStudy}){
+ const [brightness,setBrightness]=useState(100);
+ const [contrast,setContrast]=useState(100);
+ const [zoom,setZoom]=useState(1);
+ const [pan,setPan]=useState({x:0,y:0});
+ const [busy,setBusy]=useState("");
+ const dragRef=useRef(null);
+ const active=gallery?.items?.[gallery.activeIndex]||null;
+ const isImage=active?.previewKind==="image";
+ const canDelete=Boolean(gallery?.study?.canDelete);
+
+ function resetView(){
+   setBrightness(100);setContrast(100);setZoom(1);setPan({x:0,y:0});dragRef.current=null;
+ }
+ useEffect(()=>{resetView()},[gallery?.activeIndex,gallery?.study?.id]);
+
+ function setActive(index){
+   setGallery(prev=>prev?({...prev,activeIndex:index}):prev);
+ }
+ function onPointerDown(e){
+   if(!isImage)return;
+   e.currentTarget.setPointerCapture?.(e.pointerId);
+   dragRef.current={x:e.clientX,y:e.clientY,panX:pan.x,panY:pan.y};
+ }
+ function onPointerMove(e){
+   if(!dragRef.current||!isImage)return;
+   setPan({x:dragRef.current.panX+(e.clientX-dragRef.current.x),y:dragRef.current.panY+(e.clientY-dragRef.current.y)});
+ }
+ function stopDrag(){dragRef.current=null}
+ async function deleteSelected(){
+   if(!active||!canDelete||!onDeleteFile)return;
+   if((gallery.items?.length||0)<=1){
+     alert("Esta é a última imagem. Para removê-la, exclua a documentação inteira.");
+     return;
+   }
+   if(!confirm("Excluir definitivamente esta imagem da documentação? Esta ação não pode ser desfeita."))return;
+   setBusy("file");
+   try{await onDeleteFile(active)}catch(e){alert(e.message||"Não foi possível excluir a imagem.")}finally{setBusy("")}
+ }
+ async function deleteWhole(){
+   if(!canDelete||!onDeleteStudy)return;
+   if(!confirm("Excluir definitivamente esta documentação/exame e todos os seus arquivos? Esta ação não pode ser desfeita."))return;
+   setBusy("study");
+   try{await onDeleteStudy()}catch(e){alert(e.message||"Não foi possível excluir a documentação.")}finally{setBusy("")}
+ }
+
+ return <div className="documentation-gallery-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+   <section className="documentation-gallery" role="dialog" aria-modal="true">
+     <header className="documentation-gallery-head">
+       <div><p className="eyebrow">DOCUMENTAÇÃO / IMAGENS</p><h2>{gallery.examType?.name||"Documentação"}</h2><p>{gallery.patient?.name||"Paciente"} • {gallery.items.length} arquivo(s)</p></div>
+       <div className="documentation-gallery-head-actions">
+         {canDelete&&<button className="danger-quiet compact" disabled={busy==="study"} onClick={deleteWhole}>{busy==="study"?"Excluindo…":"Excluir conjunto"}</button>}
+         <button className="ghost compact" onClick={onClose}>Fechar</button>
+       </div>
+     </header>
+     <div className="documentation-toolbar">
+       <div className="documentation-tool"><span>Brilho</span><button disabled={!isImage} onClick={()=>setBrightness(v=>Math.max(40,v-10))}>−</button><strong>{brightness}%</strong><button disabled={!isImage} onClick={()=>setBrightness(v=>Math.min(220,v+10))}>+</button></div>
+       <div className="documentation-tool"><span>Contraste</span><button disabled={!isImage} onClick={()=>setContrast(v=>Math.max(40,v-10))}>−</button><strong>{contrast}%</strong><button disabled={!isImage} onClick={()=>setContrast(v=>Math.min(220,v+10))}>+</button></div>
+       <div className="documentation-tool"><span>Zoom</span><button disabled={!isImage} onClick={()=>setZoom(v=>Math.max(.5,Number((v-.15).toFixed(2))))}>−</button><strong>{Math.round(zoom*100)}%</strong><button disabled={!isImage} onClick={()=>setZoom(v=>Math.min(5,Number((v+.15).toFixed(2))))}>+</button></div>
+       <button className="ghost compact" disabled={!isImage} onClick={resetView}>Restaurar</button>
+       {canDelete&&<button className="danger-quiet compact documentation-delete-image" disabled={!active||busy==="file"||gallery.items.length<=1} onClick={deleteSelected}>{busy==="file"?"Excluindo…":"Excluir imagem"}</button>}
+     </div>
+     <div className={"documentation-gallery-stage "+(isImage?"is-image":"")} onWheel={e=>{if(!isImage)return;e.preventDefault();setZoom(v=>Math.min(5,Math.max(.5,Number((v+(e.deltaY<0?.12:-.12)).toFixed(2)))))}}
+       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
+       {active?.previewKind==="image"?<img draggable="false" src={active.url} alt={active.fileName} style={{filter:`brightness(${brightness}%) contrast(${contrast}%)`,transform:`translate(${pan.x}px,${pan.y}px) scale(${zoom})`}}/>:
+        active?.previewKind==="pdf"?<iframe src={active.url} title={active.fileName}/>:
+        active?<div className="documentation-gallery-file"><span>3D</span><strong>{active.fileName}</strong><button className="secondary compact" onClick={()=>openBlobFile(active.blob,active.fileName)}>Baixar / abrir modelo 3D</button></div>:
+        <div className="empty">Nenhum arquivo.</div>}
+     </div>
+     <div className="documentation-gallery-grid">
+       {gallery.items.map((item,index)=><button type="button" key={item.id||index} className={"documentation-thumb "+(index===gallery.activeIndex?"active":"")} onClick={()=>setActive(index)}>
+         {item.previewKind==="image"?<img src={item.url} alt=""/>:<span>{item.previewKind==="pdf"?"PDF":"3D"}</span>}
+         <small title={item.fileName}>{item.fileName}</small>
+       </button>)}
+     </div>
+   </section>
+ </div>;
+}
 
 function IngestResult({state,onClear,onOpenViewer,onSend,sendLabel="Salvar exame"}){
  if(!state)return null;
