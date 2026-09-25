@@ -1385,6 +1385,72 @@ export function createApp(){
     }catch(e){next(e);}
   });
 
+  app.get("/api/public/dentist-invites/:token/study",async(req,res,next)=>{
+    try{
+      const invite=await prisma.dentistInvite.findUnique({
+        where:{tokenHash:hashToken(req.params.token)},
+        include:{
+          study:{
+            include:{
+              files:{orderBy:{index:"asc"},select:{id:true,index:true,fileName:true,sizeBytes:true,contentType:true}},
+              patient:{select:{id:true,name:true,birthDate:true}},
+              examType:true,
+              unit:{select:{id:true,name:true}},
+              order:{select:{id:true,status:true}}
+            }
+          }
+        }
+      });
+      if(!invite||invite.expiresAt<=new Date()) return res.status(401).json({error:"Link inválido ou expirado."});
+      const study=invite.study;
+      if(!study||study.status!=="READY") return res.status(404).json({error:"Exame ainda não está disponível."});
+      res.set("Cache-Control","no-store");
+      res.set("Referrer-Policy","no-referrer");
+      res.json({
+        study:{
+          id:study.id,status:study.status,sourceType:study.sourceType,modality:study.modality,
+          manufacturer:study.manufacturer,model:study.model,seriesCount:study.seriesCount,
+          fileCount:study.fileCount,totalBytes:study.totalBytes,completedAt:study.completedAt,
+          documentationLayout:study.documentationLayout||null,
+          aiAnalysis:study.aiAnalysis||null,
+          canDelete:false,canEditLayout:false,canManageAi:false
+        },
+        patient:study.patient,
+        examType:study.examType,
+        unit:study.unit,
+        order:study.order,
+        files:study.files
+      });
+    }catch(e){next(e);}
+  });
+
+  app.get("/api/public/dentist-invites/:token/study/files/:fileId",async(req,res,next)=>{
+    try{
+      const invite=await prisma.dentistInvite.findUnique({
+        where:{tokenHash:hashToken(req.params.token)},
+        include:{study:true}
+      });
+      if(!invite||invite.expiresAt<=new Date()) return res.status(401).json({error:"Link inválido ou expirado."});
+      if(!invite.study||invite.study.status!=="READY") return res.status(404).json({error:"Exame indisponível."});
+      const file=await prisma.studyFile.findFirst({where:{id:req.params.fileId,studyId:invite.study.id}});
+      if(!file) return res.status(404).json({error:"Arquivo não encontrado."});
+      const object=await getPrivateObject(file.objectKey);
+      let bytes;
+      if(object.Body?.transformToByteArray) bytes=await object.Body.transformToByteArray();
+      else{
+        const chunks=[];
+        for await (const chunk of object.Body||[]) chunks.push(Buffer.from(chunk));
+        bytes=Buffer.concat(chunks);
+      }
+      res.set("Content-Type",file.contentType||"application/octet-stream");
+      res.set("Content-Length",String(file.sizeBytes));
+      res.set("Cache-Control","private, no-store");
+      res.set("Referrer-Policy","no-referrer");
+      res.set("X-Content-Type-Options","nosniff");
+      res.send(Buffer.from(bytes));
+    }catch(e){next(e);}
+  });
+
   app.post("/api/dentist/invites/:token/claim",auth,async(req,res,next)=>{
     try{
       if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
