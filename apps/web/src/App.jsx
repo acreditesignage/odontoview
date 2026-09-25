@@ -554,15 +554,24 @@ function Radiology(){
  function pickExam(order){
    orderForFile.current=order;
    setIngest(null);
-   if(fileInput.current){fileInput.current.value="";fileInput.current.click()}
+   const policy=examUploadPolicy(order?.examType);
+   if(fileInput.current){
+     fileInput.current.value="";
+     fileInput.current.accept=policy.accept;
+     fileInput.current.multiple=policy.multiple;
+     fileInput.current.click();
+   }
  }
  async function handleExamFiles(event){
    const files=Array.from(event.target.files||[]);
    const order=orderForFile.current;
    if(!order||!files.length)return;
-   setIngest({orderId:order.id,status:"reading",progress:{phase:"start"}});
+   const policy=examUploadPolicy(order.examType);
+   setIngest({orderId:order.id,status:"reading",progress:{phase:policy.kind==="dicom"?"start":"single"}});
    try{
-     const result=await importExam(files,{onProgress:progress=>setIngest({orderId:order.id,status:"reading",progress})});
+     const result=policy.kind==="dicom"
+       ?await importExam(files,{onProgress:progress=>setIngest({orderId:order.id,status:"reading",progress})})
+       :await importSingleFileExam(files,order.examType);
      setIngest({orderId:order.id,status:"ready",result});
    }catch(e){
      setIngest({orderId:order.id,status:"error",message:e.message||"Falha ao abrir exame."});
@@ -576,9 +585,11 @@ function Radiology(){
        const index=next++;
        if(index>=result.files.length)return;
        const file=result.files[index];
+       const contentType=result.kind==="single"?(result.singleFile?.contentType||file.type||"application/octet-stream"):"application/dicom";
        await apiBinary("/api/unit/studies/"+studyId+"/files/"+index,file,{
          "Content-Type":"application/octet-stream",
-         "X-File-Name":encodeURIComponent(file.name||("dicom-"+(index+1)+".dcm"))
+         "X-File-Name":encodeURIComponent(file.name||("arquivo-"+(index+1))),
+         "X-File-Content-Type":contentType
        });
        done++;
        setState(prev=>({...prev,send:{status:"uploading",done,total:result.files.length}}));
@@ -589,12 +600,10 @@ function Radiology(){
 
  async function sendExamToDentist(order){
    if(!ingest?.result||ingest.orderId!==order.id)return;
-   const r=ingest.result,firstValid=r.series.find(s=>s.valid)||r.series[0]||{};
+   const r=ingest.result,meta=uploadMetaFromResult(r);
    try{
      setIngest(prev=>({...prev,send:{status:"uploading",done:0,total:r.files.length}}));
-     const created=await api("/api/unit/orders/"+order.id+"/study",{method:"POST",body:JSON.stringify({
-       sourceType:r.sourceType,modality:firstValid.modality,manufacturer:firstValid.manufacturer,model:firstValid.model,seriesCount:r.seriesCount
-     })});
+     const created=await api("/api/unit/orders/"+order.id+"/study",{method:"POST",body:JSON.stringify(meta)});
      await uploadStudyFiles(created.study.id,r,setIngest);
      await api("/api/unit/studies/"+created.study.id+"/complete",{method:"POST",body:"{}"});
      setIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId:created.study.id}}));
@@ -606,7 +615,14 @@ function Radiology(){
 
  function beginPatientExamFileSelection(target){
    setPatientTarget(target);setPatientIngest(null);setExamUploadConfirm(null);
-   if(patientFileInput.current){patientFileInput.current.value="";patientFileInput.current.click()}
+   const examType=(patientDetail?.examTypes||radiologyExamTypes).find(t=>t.id===(target?.examTypeId||patientExamType))||null;
+   const policy=examUploadPolicy(examType);
+   if(patientFileInput.current){
+     patientFileInput.current.value="";
+     patientFileInput.current.accept=policy.accept;
+     patientFileInput.current.multiple=policy.multiple;
+     patientFileInput.current.click();
+   }
  }
  function confirmOrderExamUpload(order){
    setExamUploadConfirm({
@@ -627,20 +643,22 @@ function Radiology(){
  async function handlePatientExamFiles(event){
    const files=Array.from(event.target.files||[]);
    if(!patientTarget||!files.length)return;
-   setPatientIngest({status:"reading",progress:{phase:"start"}});
+   const examType=(patientDetail?.examTypes||radiologyExamTypes).find(t=>t.id===(patientTarget.examTypeId||patientExamType))||null;
+   const policy=examUploadPolicy(examType);
+   setPatientIngest({status:"reading",progress:{phase:policy.kind==="dicom"?"start":"single"}});
    try{
-     const result=await importExam(files,{onProgress:progress=>setPatientIngest({status:"reading",progress})});
+     const result=policy.kind==="dicom"
+       ?await importExam(files,{onProgress:progress=>setPatientIngest({status:"reading",progress})})
+       :await importSingleFileExam(files,examType);
      setPatientIngest({status:"ready",result});
    }catch(e){setPatientIngest({status:"error",message:e.message||"Falha ao abrir exame."})}
  }
  async function sendPatientExam(){
    if(!patientIngest?.result||!patientTarget)return;
-   const r=patientIngest.result,firstValid=r.series.find(s=>s.valid)||r.series[0]||{};
+   const r=patientIngest.result;
    try{
      setPatientIngest(prev=>({...prev,send:{status:"uploading",done:0,total:r.files.length}}));
-     const body={
-       sourceType:r.sourceType,modality:firstValid.modality,manufacturer:firstValid.manufacturer,model:firstValid.model,seriesCount:r.seriesCount
-     };
+     const body=uploadMetaFromResult(r);
      let created;
      if(patientTarget.kind==="order"){
        created=await api("/api/unit/orders/"+patientTarget.id+"/study",{method:"POST",body:JSON.stringify(body)});
@@ -659,6 +677,13 @@ function Radiology(){
    setOpeningUnitStudy(study.id);setErr("");
    try{
      const manifest=await api("/api/unit/studies/"+study.id);
+     if(!isDicomStudySource(manifest.study?.sourceType)){
+       const meta=manifest.files?.[0];
+       if(!meta)throw new Error("Arquivo do exame não encontrado.");
+       const blob=await apiBlob("/api/unit/studies/"+study.id+"/files/"+meta.id);
+       openBlobFile(new Blob([blob],{type:meta.contentType||blob.type||"application/octet-stream"}),meta.fileName||"exame");
+       return;
+     }
      const files=new Array(manifest.files.length);
      let cursor=0,done=0;
      const worker=async()=>{
