@@ -8,6 +8,16 @@ import {clearViewerSession,getViewerSession} from "./viewerSession.js";
 
 const PANORAMIC_BAND_HALF_MM=2;
 
+function detectViewerDeviceProfile(){
+  if(typeof window==="undefined")return "desktop";
+  const width=Math.max(window.innerWidth||0,document.documentElement?.clientWidth||0);
+  const coarse=window.matchMedia?.("(pointer: coarse)")?.matches===true;
+  const ua=String(navigator.userAgent||"");
+  if(width<=760)return "phone";
+  if((coarse&&width<=1400)||/iPad|Android/i.test(ua))return "tablet";
+  return "desktop";
+}
+
 let cornerstoneConfigured=false;
 function configureCornerstone(){
   if(cornerstoneConfigured)return;
@@ -142,6 +152,7 @@ function ViewerBootIntro({loading}){
 export default function Viewer2(){
   const nav=useNavigate(),[query]=useSearchParams();
   const session=useMemo(()=>getViewerSession(),[]);
+  const deviceProfile=useMemo(()=>detectViewerDeviceProfile(),[]);
   const [showIntro,setShowIntro]=useState(true);
   const storedRole=localStorage.getItem("odontoview_role")||"";
   const fallbackHome=storedRole==="UNIT_USER"?"/radiologia":storedRole==="DENTIST"?"/dentista":"/";
@@ -318,6 +329,7 @@ export default function Viewer2(){
           ?{wc:Number(Array.isArray(first.windowCenter)?first.windowCenter[0]:first.windowCenter),ww:Number(Array.isArray(first.windowWidth)?first.windowWidth[0]:first.windowWidth)}
           :percentileWindow(volume);
         const nextMeta={w,h,d,spacingX,spacingY,spacingZ,manufacturer:session.result.series[validIndex].manufacturer,model:session.result.series[validIndex].model,seriesIndex:validIndex};
+        try{cornerstone.imageCache?.purgeCache?.()}catch{}
         volumeRef.current=volume;metaRef.current=nextMeta;
         defaultWindowRef.current=computedWindow;
         setMeta(nextMeta);setWindowLevel(computedWindow);
@@ -353,7 +365,8 @@ export default function Viewer2(){
 
   function fit(canvas,pixelW,pixelH,spacingA,spacingB,plane){
     const rect=canvas.parentElement.getBoundingClientRect();
-    const dpr=Math.min(window.devicePixelRatio||1,1.5);
+    const dprCap=deviceProfile==="phone"?1:deviceProfile==="tablet"?1.1:1.5;
+    const dpr=Math.min(window.devicePixelRatio||1,dprCap);
     const cw=Math.max(1,Math.floor(rect.width*dpr)),ch=Math.max(1,Math.floor(rect.height*dpr));
     if(canvas.width!==cw||canvas.height!==ch){canvas.width=cw;canvas.height=ch}
     const t=transforms[plane]||{zoom:1,panX:0,panY:0};
@@ -367,7 +380,8 @@ export default function Viewer2(){
 
   function toImagePoint(canvas,event){
     const rect=canvas.getBoundingClientRect();
-    const dpr=canvas._map?.dpr||Math.min(window.devicePixelRatio||1,1.5);
+    const fallbackDpr=deviceProfile==="phone"?1:deviceProfile==="tablet"?1.1:1.5;
+    const dpr=canvas._map?.dpr||Math.min(window.devicePixelRatio||1,fallbackDpr);
     const x=(event.clientX-rect.left)*dpr,y=(event.clientY-rect.top)*dpr;
     if(canvas._tangentialPanels?.length){
       for(const map of canvas._tangentialPanels){
@@ -1417,12 +1431,12 @@ export default function Viewer2(){
   if(error)return <main className="page centered"><section className="card auth"><button type="button" className="brand viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}}>OdontoView</button><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>{clearViewerSession();nav(returnTo)}}>{returnLabel}</button></section></main>;
 
   const toolName={navigate:"Cruzeta",pan:"Pan",measure:"Medir",curve:"Curva da arcada",nerve:"Nervo",foramen:"Forame"}[tool];
-  return <main className="viewer2">
+  return <main className={"viewer2 is-"+deviceProfile} data-device-profile={deviceProfile}>
     {showIntro&&<ViewerBootIntro loading={false}/>} 
     {session?.isDemo&&<div className="viewer2-demo-banner"><strong>DEMONSTRAÇÃO</strong><span>Paciente fictício • alterações desta sessão não afetam sua conta</span></div>}
     <header className="viewer2-top">
       <div><button type="button" className="brand light viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}} title="Ir para a página inicial">OdontoView</button><span className="viewer2-beta">VIEWER 2.0 BETA</span>{session?.isDemo&&<span className="viewer2-demo-badge">DEMO</span>}</div>
-      <div className="viewer2-study"><strong>{session?.order?.patient?.name||"Exame local"}</strong><span>{session?.order?.examType?.name||session?.result?.series?.[meta.seriesIndex]?.description} • {meta.manufacturer}{meta.model?" "+meta.model:""}</span></div>
+      <div className="viewer2-study"><strong>{session?.order?.patient?.name||"Exame local"}</strong><span>{session?.order?.examType?.name||session?.result?.series?.[meta.seriesIndex]?.description} • {meta.manufacturer}{meta.model?" "+meta.model:""}</span>{deviceProfile!=="desktop"&&<small className="viewer2-device-mode">{deviceProfile==="tablet"?"Modo tablet • desempenho otimizado":"Modo celular • desempenho otimizado"}</small>}</div>
       <button className="viewer2-exit" onClick={()=>{clearViewerSession();nav(returnTo)}}>← {returnLabel}</button>
     </header>
     <section className="viewer2-toolbar">
@@ -1470,6 +1484,7 @@ export default function Viewer2(){
               onImplantsChange={setImplants}
               onActiveImplantChange={setActiveImplantId}
               layoutMode={expandedPanel||"mosaic"}
+              performanceProfile={deviceProfile}
             />
           </div>
           <div className={"viewer3d-mini-pano"+(expandedPanel==="panoramic"?" is-expanded":"")}>
