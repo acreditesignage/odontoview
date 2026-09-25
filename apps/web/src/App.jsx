@@ -7,6 +7,7 @@ import {importExam,importSingleFileExam} from "./ingest.js";
 import {examUploadPolicy,isDicomStudySource} from "./examUpload.js";
 import {DEMO_EXAM,checkDemoExamAvailability,loadDemoExam} from "./demoExam.js";
 import Viewer2 from "./Viewer2.jsx";
+import DocumentationWorkspace from "./DocumentationWorkspace.jsx";
 import {setViewerSession} from "./viewerSession.js";
 import QRCode from "qrcode";
 
@@ -332,6 +333,11 @@ function DentistDashboard(){
    });
    await load();
  }
+ async function saveDentistDocumentationLayout(layout){
+   const studyId=dentistDocumentation?.study?.id;
+   if(!studyId)throw new Error("Documentação não encontrada.");
+   return api("/api/dentist/studies/"+studyId+"/layout",{method:"PUT",body:JSON.stringify({layout})});
+ }
  async function performDentistStudyDelete(studyId){
    if(!studyId)return;
    await api("/api/dentist/studies/"+studyId,{method:"DELETE"});
@@ -411,7 +417,7 @@ function DentistDashboard(){
  const dentistUploadPolicy=examUploadPolicy(selectedDentistImportType);
  return <main className="page dentist-dashboard"><section className="wide">
    <input className="hidden-file" ref={dentistFileInput} type="file" accept={dentistUploadPolicy.accept} multiple={dentistUploadPolicy.multiple} onChange={handleDentistImportFiles}/>
-   {dentistDocumentation&&<DocumentationViewer gallery={dentistDocumentation} setGallery={setDentistDocumentation} onClose={closeDentistDocumentation} onDeleteFile={deleteDentistGalleryFile}/>}
+   {dentistDocumentation&&<DocumentationWorkspace gallery={dentistDocumentation} setGallery={setDentistDocumentation} onClose={closeDentistDocumentation} onDeleteFile={deleteDentistGalleryFile} onSaveLayout={saveDentistDocumentationLayout}/>}
    <header className="topbar"><BrandLockup role="DENTISTA"/><div className="topbar-actions"><HybridStorageBadge/><a className="ghost compact" href="/cadastro-dentista" target="_blank" rel="noreferrer">Link de cadastro</a><button className="ghost" onClick={logout}>Sair</button></div></header>
    <div className="hero-row dentist-hero"><div><p className="eyebrow">ODONTOVIEW NETWORK</p><h1>{data?.dentist?.user?.name||"Seu painel clínico"}</h1><p className="muted">{data?.dentist?("CRO "+data.dentist.cro+"/"+data.dentist.uf+" • pacientes, pedidos e exames em um só lugar."):"Carregando perfil…"}</p></div><div className="hero-actions dentist-hero-actions"><button className="primary" onClick={startNewPatient}>＋ Novo paciente</button><button className="secondary" onClick={()=>goDentistTab("import")}>⬆ Importar exame</button></div></div>
    <nav className="workspace-tabs">
@@ -908,6 +914,11 @@ function Radiology(){
    });
    await Promise.all([load(),loadPatients(""),refreshPatientDetail()]);
  }
+ async function saveDocumentationGalleryLayout(layout){
+   const studyId=documentationGallery?.study?.id;
+   if(!studyId)throw new Error("Documentação não encontrada.");
+   return api("/api/unit/studies/"+studyId+"/layout",{method:"PUT",body:JSON.stringify({layout})});
+ }
  async function performUnitStudyDelete(studyId){
    if(!studyId)return;
    await api("/api/unit/studies/"+studyId,{method:"DELETE"});
@@ -985,7 +996,7 @@ function Radiology(){
  return <main className="page radiology"><section className="wide">
    <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
    <input className="hidden-file" ref={patientFileInput} type="file" multiple onChange={handlePatientExamFiles}/>
-   {documentationGallery&&<DocumentationViewer gallery={documentationGallery} setGallery={setDocumentationGallery} onClose={closeDocumentationGallery} onDeleteFile={deleteDocumentationGalleryFile}/>}
+   {documentationGallery&&<DocumentationWorkspace gallery={documentationGallery} setGallery={setDocumentationGallery} onClose={closeDocumentationGallery} onDeleteFile={deleteDocumentationGalleryFile} onSaveLayout={saveDocumentationGalleryLayout}/>}
    {examUploadConfirm&&<div className="exam-upload-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setExamUploadConfirm(null)}}>
      <section className="exam-upload-dialog" role="dialog" aria-modal="true" aria-labelledby="exam-upload-title" onDragOver={e=>e.preventDefault()} onDrop={e=>{dropPatientExamFiles(e,examUploadConfirm.target);setExamUploadConfirm(null)}}>
        <div className="exam-upload-dialog-head"><div><p className="eyebrow">ADICIONAR EXAME</p><h2 id="exam-upload-title">Confirme antes de selecionar o arquivo.</h2></div><button type="button" className="ghost compact" onClick={()=>setExamUploadConfirm(null)}>Fechar</button></div>
