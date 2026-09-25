@@ -582,6 +582,34 @@ const STATUS={
  IMAGENS_RECEBIDAS:{label:"Imagens recebidas",tone:"green"}
 };
 
+function deliveryDateTime(value){
+ if(!value)return "";
+ try{return new Date(value).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"})}catch{return new Date(value).toLocaleString("pt-BR")}
+}
+function deliveryButtonLabel(study){
+ const status=String(study?.dentistDeliveryStatus||"").toUpperCase();
+ if(status==="ACCESSED")return "Acessado ✓";
+ if(status==="SENT")return "Enviado ✓";
+ if(status==="READY")return "Link pronto";
+ if(status==="FAILED")return "Tentar enviar";
+ if(status==="NO_EMAIL")return "Gerar / copiar link";
+ return "Enviar ao dentista";
+}
+function deliveryStatusText(study){
+ const status=String(study?.dentistDeliveryStatus||"").toUpperCase();
+ if(status==="ACCESSED"){
+   const first=deliveryDateTime(study?.dentistDeliveryOpenedAt);
+   const last=deliveryDateTime(study?.dentistDeliveryLastOpenedAt);
+   const count=Number(study?.dentistDeliveryOpenCount||0);
+   return "✓ Acessado"+(first?" em "+first:"")+(count>1&&last?" • último acesso "+last+" • "+count+" acessos":"");
+ }
+ if(status==="SENT")return "✓ Enviado por e-mail"+(study?.dentistDeliverySentAt?" em "+deliveryDateTime(study.dentistDeliverySentAt):"");
+ if(status==="READY")return "Link pronto • e-mail automático ainda não configurado";
+ if(status==="FAILED")return "Falha no e-mail • link continua disponível";
+ if(status==="NO_EMAIL")return "Sem e-mail do dentista • use link/QR Code";
+ return "";
+}
+
 function DocumentationViewer({gallery,setGallery,onClose,onDeleteFile}){
  const [brightness,setBrightness]=useState(100);
  const [contrast,setContrast]=useState(100);
@@ -1048,7 +1076,7 @@ function Radiology(){
    </nav>
    {err&&<div className="error">{err}</div>}
    {dentistDelivery&&<section className={"dentist-delivery-banner status-"+String(dentistDelivery.status||"ready").toLowerCase()}>
-     <div className="dentist-delivery-copy"><span className="dentist-delivery-icon">↗</span><div><p className="eyebrow">ENTREGA AO DENTISTA</p><strong>{dentistDelivery.status==="SENT"?"Exame enviado por e-mail":dentistDelivery.status==="NO_EMAIL"?"Link pronto — falta e-mail do dentista":dentistDelivery.status==="FAILED"?"Link pronto — envio de e-mail falhou":"Link do Viewer pronto"}</strong><small>{dentistDelivery.target?.name||"Dentista solicitante"}{dentistDelivery.target?.cro?" • CRO "+dentistDelivery.target.cro:""}{dentistDelivery.target?.email?" • "+dentistDelivery.target.email:""}</small></div></div>
+     <div className="dentist-delivery-copy"><span className="dentist-delivery-icon">↗</span><div><p className="eyebrow">ENTREGA AO DENTISTA</p><strong>{dentistDelivery.status==="ACCESSED"?"Dentista acessou o exame":dentistDelivery.status==="SENT"?"Exame enviado por e-mail":dentistDelivery.status==="NO_EMAIL"?"Link pronto — falta e-mail do dentista":dentistDelivery.status==="FAILED"?"Link pronto — envio de e-mail falhou":"Link do Viewer pronto"}</strong><small>{dentistDelivery.target?.name||"Dentista solicitante"}{dentistDelivery.target?.cro?" • CRO "+dentistDelivery.target.cro:""}{dentistDelivery.target?.email?" • "+dentistDelivery.target.email:""}</small></div></div>
      <div className="dentist-delivery-actions">
        {dentistDelivery.qrDataUrl&&<img src={dentistDelivery.qrDataUrl} alt="QR Code do acesso ao Viewer"/>}
        <div><a className="primary compact" target="_blank" rel="noreferrer" href={dentistDelivery.viewerUrl}>Abrir link do Viewer</a><button className="secondary compact" onClick={()=>navigator.clipboard.writeText(dentistDelivery.viewerUrl)}>Copiar link</button><button className="ghost compact" onClick={()=>setDentistDelivery(null)}>Fechar</button></div>
@@ -1112,14 +1140,14 @@ function Radiology(){
      <div className="radiology-exam-list">{operationalOrders.map(o=>{
        const st=STATUS[o.status]||{label:o.status,tone:""};
        return <article className="radiology-exam-row" key={o.id}>
-         <div className="radiology-exam-main"><div className="patient-name-line"><strong>{o.patient.name}</strong><span className={"badge "+st.tone}>{st.label}</span></div><small>{o.examType.name}</small><small>Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</small></div>
+         <div className="radiology-exam-main"><div className="patient-name-line"><strong>{o.patient.name}</strong><span className={"badge "+st.tone}>{st.label}</span></div><small>{o.examType.name}</small><small>Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</small>{o.study&&deliveryStatusText(o.study)&&<small className={"delivery-status-line status-"+String(o.study.dentistDeliveryStatus||"").toLowerCase()}>{deliveryStatusText(o.study)}</small>}</div>
          <div className="radiology-exam-actions">
            {o.status==="AGENDADO"&&<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>Confirmar chegada</button>}
            {o.status==="PACIENTE_CHEGOU"&&<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>Marcar realizado</button>}
            {o.status==="EXAME_REALIZADO"&&<button className="primary compact" onClick={()=>pickExam(o)}>Selecionar exame</button>}
            {o.status==="IMAGENS_RECEBIDAS"&&o.study&&<>
              <button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy(o.study)}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":isDicomStudySource(o.study.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
-             <button className="ai-secondary compact" disabled={busy==="deliver:"+o.study.id} onClick={()=>deliverStudyToDentist(o.study)}>{busy==="deliver:"+o.study.id?"Preparando…":o.study.dentistDeliveryStatus==="SENT"?"Reenviar ao dentista":"Enviar ao dentista"}</button>
+             <button className="ai-secondary compact" disabled={busy==="deliver:"+o.study.id} onClick={()=>deliverStudyToDentist(o.study)}>{busy==="deliver:"+o.study.id?"Preparando…":deliveryButtonLabel(o.study)}</button>
              <button className="danger-quiet compact" disabled={openingUnitStudy==="delete:"+o.study.id} onClick={()=>deleteUnitStudyFromList(o.study)}>{openingUnitStudy==="delete:"+o.study.id?"Excluindo…":"Excluir"}</button>
            </>}
            {o.status==="IMAGENS_RECEBIDAS"&&!o.study&&<span className="done">✓ Imagens recebidas</span>}
@@ -1183,11 +1211,11 @@ function Radiology(){
            <div className="section-title"><div><p className="eyebrow">PEDIDOS / EXAMES</p><h3>Histórico clínico da unidade</h3></div></div>
            {patientDetail.orders.length===0&&patientDetail.studies.length===0&&<div className="empty"><strong>Nenhum exame ainda.</strong><p>Você já pode adicionar o primeiro exame deste paciente.</p></div>}
            {patientDetail.orders.map(o=><div className="patient-order-card" key={o.id}>
-             <div><strong>{o.examType.name}</strong><small>Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</small><small>Status: {STATUS[o.status]?.label||o.status}</small></div>
+             <div><strong>{o.examType.name}</strong><small>Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</small><small>Status: {STATUS[o.status]?.label||o.status}</small>{o.study&&deliveryStatusText(o.study)&&<small className={"delivery-status-line status-"+String(o.study.dentistDeliveryStatus||"").toLowerCase()}>{deliveryStatusText(o.study)}</small>}</div>
              <div className="patient-order-actions">
                {o.study?.status==="READY"?<>
                  <button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy({...o.study,examType:o.examType})}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":isDicomStudySource(o.study.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
-                 <button className="ai-secondary compact" disabled={busy==="deliver:"+o.study.id} onClick={()=>deliverStudyToDentist(o.study)}>{busy==="deliver:"+o.study.id?"Preparando…":o.study.dentistDeliveryStatus==="SENT"?"Reenviar ao dentista":"Enviar ao dentista"}</button>
+                 <button className="ai-secondary compact" disabled={busy==="deliver:"+o.study.id} onClick={()=>deliverStudyToDentist(o.study)}>{busy==="deliver:"+o.study.id?"Preparando…":deliveryButtonLabel(o.study)}</button>
                  <button className="danger-quiet compact" disabled={openingUnitStudy==="delete:"+o.study.id} onClick={()=>deleteUnitStudyFromList(o.study)}>{openingUnitStudy==="delete:"+o.study.id?"Excluindo…":"Excluir"}</button>
                </>:
                o.status==="AGENDADO"?<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Confirmar chegada"}</button>:
@@ -1198,10 +1226,10 @@ function Radiology(){
              </div>
            </div>)}
            {patientDetail.studies.filter(s=>!s.orderId).map(s=><div className="patient-order-card local-study" key={s.id}>
-             <div><strong>{s.examType?.name||s.modality||"Exame DICOM"}</strong><small>{s.fileCount} arquivo(s) • {formatBytes(s.totalBytes)}</small><small>{s.completedAt?new Date(s.completedAt).toLocaleString("pt-BR"):""}</small></div>
+             <div><strong>{s.examType?.name||s.modality||"Exame DICOM"}</strong><small>{s.fileCount} arquivo(s) • {formatBytes(s.totalBytes)}</small><small>{s.completedAt?new Date(s.completedAt).toLocaleString("pt-BR"):""}</small>{deliveryStatusText(s)&&<small className={"delivery-status-line status-"+String(s.dentistDeliveryStatus||"").toLowerCase()}>{deliveryStatusText(s)}</small>}</div>
              <div className="exam-row-actions">
                <button className="secondary compact" disabled={openingUnitStudy.startsWith(s.id)} onClick={()=>openUnitStudy(s)}>{openingUnitStudy.startsWith(s.id)?"Abrindo…":isDicomStudySource(s.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
-               <button className="ai-secondary compact" disabled={busy==="deliver:"+s.id} onClick={()=>deliverStudyToDentist(s)}>{busy==="deliver:"+s.id?"Preparando…":s.dentistDeliveryStatus==="SENT"?"Reenviar ao dentista":"Enviar ao dentista"}</button>
+               <button className="ai-secondary compact" disabled={busy==="deliver:"+s.id} onClick={()=>deliverStudyToDentist(s)}>{busy==="deliver:"+s.id?"Preparando…":deliveryButtonLabel(s)}</button>
                <button className="danger-quiet compact" disabled={openingUnitStudy==="delete:"+s.id} onClick={()=>deleteUnitStudyFromList(s)}>{openingUnitStudy==="delete:"+s.id?"Excluindo…":"Excluir"}</button>
              </div>
            </div>)}
