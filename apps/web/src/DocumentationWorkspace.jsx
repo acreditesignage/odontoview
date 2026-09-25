@@ -320,6 +320,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const [aiAnalysis,setAiAnalysis]=useState(gallery?.study?.aiAnalysis||null);
  const [aiBusy,setAiBusy]=useState("");
  const [aiError,setAiError]=useState("");
+ const [showAiOverlays,setShowAiOverlays]=useState(true);
  const dragRef=useRef(null);
  const finalBoardRef=useRef(null);
  const collator=useMemo(()=>new Intl.Collator("pt-BR",{numeric:true,sensitivity:"base"}),[]);
@@ -354,6 +355,11 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const aiFindings=Array.isArray(aiAnalysis?.findings)?aiAnalysis.findings:[];
  const aiConfirmed=aiFindings.filter(item=>item.status==="CONFIRMED").length;
  const aiSuggested=aiFindings.filter(item=>item.status==="SUGGESTED").length;
+ const activeAiFindings=aiFindings.filter(item=>
+   String(item.fileId)===String(active?.id)&&
+   item.bbox&&
+   item.status!=="REJECTED"
+ );
  const preset=DOC_TEMPLATE_PRESETS[templateId]||DOC_TEMPLATE_PRESETS.PERIAPICAL_14_BW_4;
  const slotIds=preset.groups.flatMap(group=>group.slots.map(slot=>slot.id));
  const assignedKeys=new Set(slotIds.map(id=>templateMap[id]).filter(key=>key&&itemByKey.has(key)));
@@ -397,7 +403,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  function resetView(){
    setBrightness(100);setContrast(100);setZoom(1);setPan({x:0,y:0});dragRef.current=null;
  }
- useEffect(()=>{resetView()},[gallery?.activeIndex,gallery?.study?.id]);
+ useEffect(()=>{resetView();setShowAiOverlays(true)},[gallery?.activeIndex,gallery?.study?.id]);
  useEffect(()=>{setAiAnalysis(gallery?.study?.aiAnalysis||null);setAiError("");setAiBusy("")},[gallery?.study?.id]);
  useEffect(()=>{
    const saved=gallery?.study?.documentationLayout;
@@ -779,13 +785,33 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
          <div className="documentation-tool"><span>Contraste</span><button disabled={!isImage} onClick={()=>setContrast(v=>Math.max(40,v-10))}>−</button><strong>{contrast}%</strong><button disabled={!isImage} onClick={()=>setContrast(v=>Math.min(220,v+10))}>+</button></div>
          <div className="documentation-tool"><span>Zoom</span><button disabled={!isImage} onClick={()=>setZoom(v=>Math.max(.5,Number((v-.15).toFixed(2))))}>−</button><strong>{Math.round(zoom*100)}%</strong><button disabled={!isImage} onClick={()=>setZoom(v=>Math.min(5,Number((v+.15).toFixed(2))))}>+</button></div>
          <button className="ghost compact" disabled={!isImage} onClick={resetView}>Restaurar</button>
+         {isImage&&activeAiFindings.length>0&&<button className={"documentation-ai-overlay-toggle "+(showAiOverlays?"active":"")} onClick={()=>setShowAiOverlays(value=>!value)}>
+           <span className="documentation-ai-overlay-dot"/>{showAiOverlays?"Ocultar IA":"Mostrar IA"} <b>{activeAiFindings.length}</b>
+         </button>}
        </div>
        <div className={"documentation-gallery-stage "+(isImage?"is-image":"")} onWheel={e=>{if(!isImage)return;e.preventDefault();setZoom(v=>Math.min(5,Math.max(.5,Number((v+(e.deltaY<0?.12:-.12)).toFixed(2)))))}} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
-         {active?.previewKind==="image"?<img draggable="false" src={active.url} alt={active.fileName} style={{filter:"brightness("+brightness+"%) contrast("+contrast+"%)",transform:"translate("+pan.x+"px,"+pan.y+"px) scale("+zoom+")"}}/>:
+         {active?.previewKind==="image"?<div className="documentation-ai-image-layer" style={{transform:"translate("+pan.x+"px,"+pan.y+"px) scale("+zoom+")"}}>
+           <img draggable="false" src={active.url} alt={active.fileName} style={{filter:"brightness("+brightness+"%) contrast("+contrast+"%)"}}/>
+           {showAiOverlays&&activeAiFindings.map((finding,index)=>{
+             const box=finding.bbox||{};
+             const x=Math.max(0,Math.min(1,Number(box.x)||0));
+             const y=Math.max(0,Math.min(1,Number(box.y)||0));
+             const w=Math.max(0,Math.min(1-x,Number(box.w)||0));
+             const h=Math.max(0,Math.min(1-y,Number(box.h)||0));
+             return <div key={finding.id||index} className={"documentation-ai-overlay-box status-"+String(finding.status||"SUGGESTED").toLowerCase()}
+               style={{left:(x*100)+"%",top:(y*100)+"%",width:(w*100)+"%",height:(h*100)+"%"}}>
+               <div className="documentation-ai-overlay-label"><span>{finding.label||"Região para revisão"}</span>{Number(finding.confidence)>0&&<b>{Math.round(Number(finding.confidence)*100)}%</b>}</div>
+             </div>
+           })}
+         </div>:
           active?.previewKind==="pdf"?<iframe src={active.url} title={active.fileName}/>:
           active?<div className="documentation-gallery-file"><span>3D</span><strong>{active.fileName}</strong><button className="secondary compact" onClick={()=>openBlobFile(active.blob,active.fileName)}>Baixar / abrir modelo 3D</button></div>:
           <div className="empty">Nenhum arquivo.</div>}
        </div>
+       {isImage&&activeAiFindings.length>0&&<div className="documentation-ai-viewer-summary">
+         <div><span className="documentation-ai-overlay-dot"/><strong>OdontoView AI</strong><small>{activeAiFindings.length} região(ões) marcada(s) nesta radiografia</small></div>
+         <span>Achados assistivos — requer revisão profissional</span>
+       </div>}
        <div className="documentation-gallery-grid">
          {gallery.items.map((item,index)=><button type="button" key={item.id||index} className={"documentation-thumb "+(index===gallery.activeIndex?"active":"")} onClick={()=>setActive(index)}>
            {item.previewKind==="image"?<img src={item.url} alt=""/>:<span>{item.previewKind==="pdf"?"PDF":"3D"}</span>}
