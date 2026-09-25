@@ -4,6 +4,7 @@ import path from "node:path";
 import cors from "cors";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import QRCode from "qrcode";
 import { prisma } from "./prisma.js";
 import { createAccessToken, resolveAccessToken, newToken, hashToken } from "./token.js";
 import { deletePrivateObject, getPrivateObject, putPrivateObject, storageReady } from "./storage.js";
@@ -20,6 +21,130 @@ const unitMembershipFor=(userId)=>prisma.unitMembership.findFirst({
   include:{unit:{include:{organization:true}}}
 });
 const sign=(user)=>jwt.sign({sub:user.id,role:user.role,email:user.email},process.env.JWT_SECRET,{expiresIn:"8h"});
+
+function cleanOptionalText(value,max=180){
+  const text=String(value||"").trim();
+  return text?text.slice(0,max):null;
+}
+function cleanOptionalEmail(value){
+  const email=String(value||"").trim().toLowerCase();
+  if(!email)return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:null;
+}
+function escapeHtml(value){
+  return String(value||"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+}
+function requestBaseUrl(req){
+  const configured=String(process.env.PUBLIC_APP_URL||"").trim().replace(/\/+$/,"");
+  return configured||(`${req.protocol}://${req.get("host")}`);
+}
+async function resolveStudyDeliveryTarget(study){
+  if(study?.order?.dentist){
+    const dentist=study.order.dentist;
+    return {
+      name:dentist.user?.name||"Dentista solicitante",
+      cro:[dentist.cro,dentist.uf].filter(Boolean).join("/"),
+      email:cleanOptionalEmail(dentist.user?.email)
+    };
+  }
+  const patient=study?.patient||{};
+  return {
+    name:patient.referringDentistName||"Dentista solicitante",
+    cro:patient.referringDentistCro||"",
+    email:cleanOptionalEmail(patient.referringDentistEmail)
+  };
+}
+async function buildStudyDentistDelivery(req,studyId,{sendEmail=true}={}){
+  const study=await prisma.examStudy.findUnique({
+    where:{id:studyId},
+    include:{
+      patient:true,
+      examType:true,
+      unit:{include:{organization:true}},
+      order:{include:{dentist:{include:{user:true}}}}
+    }
+  });
+  if(!study||study.status!=="READY") return {status:"NOT_READY",error:"Exame ainda não está pronto."};
+
+  const target=await resolveStudyDeliveryTarget(study);
+  const rawToken=newToken();
+  const expiresAt=new Date(Date.now()+30*24*3600000);
+  await prisma.dentistInvite.create({data:{
+    patientId:study.patientId,
+    studyId:study.id,
+    unitId:study.unitId||null,
+    tokenHash:hashToken(rawToken),
+    expiresAt
+  }});
+  const viewerUrl=requestBaseUrl(req)+"/acesso-exame?token="+encodeURIComponent(rawToken);
+  const qrDataUrl=await QRCode.toDataURL(viewerUrl,{width:360,margin:1,errorCorrectionLevel:"M"});
+  const email=target.email;
+
+  if(!email){
+    await prisma.examStudy.update({where:{id:study.id},data:{
+      dentistDeliveryStatus:"NO_EMAIL",dentistDeliveryEmail:null,dentistDeliverySentAt:null,
+      dentistDeliveryError:"Dentista solicitante sem e-mail cadastrado."
+    }});
+    return {status:"NO_EMAIL",viewerUrl,qrDataUrl,expiresAt,target};
+  }
+
+  const apiKey=String(process.env.RESEND_API_KEY||"").trim();
+  const from=String(process.env.ODONTOVIEW_FROM_EMAIL||"").trim();
+  if(!sendEmail||!apiKey||!from){
+    await prisma.examStudy.update({where:{id:study.id},data:{
+      dentistDeliveryStatus:"READY",dentistDeliveryEmail:email,dentistDeliverySentAt:null,
+      dentistDeliveryError:sendEmail?"Envio automático aguardando configuração de e-mail.":null
+    }});
+    return {status:"READY",viewerUrl,qrDataUrl,expiresAt,target,emailConfigured:Boolean(apiKey&&from)};
+  }
+
+  const patientName=escapeHtml(study.patient?.name||"Paciente");
+  const examName=escapeHtml(study.examType?.name||study.modality||"Exame odontológico");
+  const dentistName=escapeHtml(target.name||"Doutor(a)");
+  const unitName=escapeHtml(study.unit?.name||study.unit?.organization?.name||"OdontoView");
+  const html=`<!doctype html><html><body style="margin:0;background:#f2f7fa;font-family:Arial,sans-serif;color:#15364d">
+    <div style="max-width:620px;margin:0 auto;padding:28px 18px">
+      <div style="background:#ffffff;border:1px solid #dce8ef;border-radius:18px;padding:26px">
+        <div style="font-size:12px;font-weight:800;letter-spacing:.12em;color:#168bd2">ODONTOVIEW</div>
+        <h1 style="font-size:24px;margin:10px 0 8px">Exame disponível no Viewer</h1>
+        <p style="font-size:15px;line-height:1.55;margin:0 0 18px">Olá, ${dentistName}. O exame de <strong>${patientName}</strong> já está disponível.</p>
+        <div style="padding:14px 16px;border-radius:12px;background:#f6fafc;margin-bottom:18px">
+          <div><strong>Exame:</strong> ${examName}</div>
+          <div style="margin-top:5px"><strong>Radiologia:</strong> ${unitName}</div>
+        </div>
+        <a href="${viewerUrl}" style="display:inline-block;padding:13px 20px;border-radius:11px;background:#168bd2;color:#fff;text-decoration:none;font-weight:800">Abrir no OdontoView Viewer</a>
+        <p style="font-size:12px;color:#718696;line-height:1.5;margin:18px 0 0">O QR Code para o mesmo acesso está anexado a este e-mail. O link é pessoal e expira em 30 dias.</p>
+      </div>
+    </div></body></html>`;
+
+  try{
+    const response=await fetch("https://api.resend.com/emails",{
+      method:"POST",
+      headers:{"Authorization":"Bearer "+apiKey,"Content-Type":"application/json"},
+      body:JSON.stringify({
+        from,
+        to:[email],
+        subject:"Exame disponível no OdontoView — "+(study.patient?.name||"Paciente"),
+        html,
+        attachments:[{filename:"odontoview-qr.png",content:String(qrDataUrl).split(",")[1]||""}]
+      })
+    });
+    if(!response.ok){
+      const detail=await response.text();
+      throw new Error("Falha no serviço de e-mail ("+response.status+"): "+detail.slice(0,240));
+    }
+    await prisma.examStudy.update({where:{id:study.id},data:{
+      dentistDeliveryStatus:"SENT",dentistDeliveryEmail:email,dentistDeliverySentAt:new Date(),dentistDeliveryError:null
+    }});
+    return {status:"SENT",viewerUrl,qrDataUrl,expiresAt,target,emailConfigured:true};
+  }catch(error){
+    await prisma.examStudy.update({where:{id:study.id},data:{
+      dentistDeliveryStatus:"FAILED",dentistDeliveryEmail:email,dentistDeliverySentAt:null,
+      dentistDeliveryError:String(error?.message||"Falha no envio.").slice(0,500)
+    }});
+    return {status:"FAILED",viewerUrl,qrDataUrl,expiresAt,target,error:String(error?.message||"Falha no envio.")};
+  }
+}
 const dentistPatientWhere=(dentistId,patientId)=>({
   id:patientId,
   OR:[
