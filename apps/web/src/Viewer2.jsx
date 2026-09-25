@@ -179,6 +179,8 @@ export default function Viewer2(){
   const [showAdvancedTools,setShowAdvancedTools]=useState(false);
   const [archSetupOpen,setArchSetupOpen]=useState(false);
   const [archSetupBusy,setArchSetupBusy]=useState(false);
+  const [archSetupStep,setArchSetupStep]=useState("arch");
+  const [pendingArchType,setPendingArchType]=useState("unknown");
   const [dentalArchType,setDentalArchType]=useState("unknown");
   const [cursor,setCursor]=useState({x:0,y:0,z:0});
   const [curvePoints,setCurvePoints]=useState([]);
@@ -355,6 +357,8 @@ export default function Viewer2(){
         setCurvePoints(arch);
         const sampled=catmullRom(arch,18);setCurveIndex(Math.floor(sampled.length/2));
         setLoading(false);
+        setPendingArchType("unknown");
+        setArchSetupStep("arch");
         setArchSetupOpen(true);
       }catch(e){if(!cancelled){setError(e.message||"Falha ao montar o volume.");setLoading(false)}}
     }
@@ -1260,25 +1264,54 @@ export default function Viewer2(){
     setCurveAssistMessage(`Sugestão aplicada no axial Z ${z+1}. Confira os 7 pontos antes de usar para planejamento.`);
     return true;
   }
-  async function prepareArchAutomatically(kind){
+  function chooseArchForManual(kind){
+    setPendingArchType(kind);
+    setArchSetupStep("extent");
+  }
+  async function startManualArch(mode){
     if(archSetupBusy)return;
     setArchSetupBusy(true);
-    setDentalArchType(kind);
     try{
       await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+      const kind=pendingArchType||"unknown";
       const z=findBestArchAxialSlice();
+      setDentalArchType(kind);
+      setArchMode(mode);
       setCursor(current=>({...current,z}));
-      const ok=suggestArchFromAxial(z);
-      if(ok){
-        setCurveAssistMessage(`${kind==="maxilla"?"Maxila":kind==="mandible"?"Mandíbula":kind==="both"?"Ambas as arcadas":"Arcada não informada"} • curva inicial sugerida automaticamente no axial Z ${z+1}. Revise antes do planejamento.`);
-        setArchSetupOpen(false);
-        setTool("navigate");
-      }else{
-        setCurveAssistMessage("Não foi possível sugerir a curva com segurança. Ajuste os pontos manualmente no axial.");
-        setTool("curve");
-        setArchSetupOpen(false);
-      }
+      setCurvePoints([]);
+      setCurveIndex(0);
+      curveBeforeAssistRef.current=null;
+      const archLabel=kind==="maxilla"?"Maxila":kind==="mandible"?"Mandíbula":kind==="both"?"Ambas as arcadas":"Arcada a confirmar";
+      const extentLabel=mode==="left"?"semi-arcada esquerda":mode==="right"?"semi-arcada direita":"arcada inteira";
+      setCurveAssistMessage(`${archLabel} • ${extentLabel}. Toque ponto por ponto no corte axial para construir a curva. A linha cresce somente pelos pontos adicionados; nada é esticado automaticamente.`);
+      setCrosshairVisible(false);
+      setTool("curve");
+      setArchSetupOpen(false);
+      setArchSetupStep("arch");
+      setTimeout(()=>document.getElementById("viewer2-axial")?.scrollIntoView({behavior:"smooth",block:"start"}),80);
     }finally{setArchSetupBusy(false)}
+  }
+  function undoManualCurvePoint(){
+    setCurvePoints(points=>{
+      const next=points.slice(0,-1);
+      setCurveIndex(Math.max(0,catmullRom(next,18).length-1));
+      return next;
+    });
+  }
+  function clearManualCurve(){
+    setCurvePoints([]);
+    setCurveIndex(0);
+    setCurveAssistMessage("Curva limpa. Toque no axial para começar novamente, ponto por ponto.");
+  }
+  function finishManualCurve(){
+    if(curvePoints.length<3){
+      setCurveAssistMessage("Marque pelo menos 3 pontos para formar uma curva utilizável.");
+      return;
+    }
+    setCurveIndex(Math.floor(curve.length/2));
+    setTool("navigate");
+    setCrosshairVisible(true);
+    setCurveAssistMessage(`Curva manual concluída com ${curvePoints.length} pontos. Você pode reabrir Curva para acrescentar mais pontos ou usar Desfazer último.`);
   }
   function undoSuggestedArch(){
     if(!curveBeforeAssistRef.current)return;
@@ -1420,9 +1453,15 @@ export default function Viewer2(){
     if(!pt)return;
     if(tool==="measure"){handleMeasurement(plane,pt);return}
     if(tool==="curve"&&plane==="axial"){
-      const map=canvas._map;let best=-1,bestDist=Infinity;
-      curvePoints.forEach((c,i)=>{const a=c.x/metaRef.current.w*map.pixelW,b=c.y/metaRef.current.h*map.pixelH,dist=Math.hypot(a-pt.a,b-pt.b);if(dist<bestDist){best=i;bestDist=dist}});
-      if(best>=0&&bestDist<20){curveDragRef.current=best;canvas.setPointerCapture(e.pointerId)}return;
+      const m=metaRef.current;
+      const nextPoint={x:clamp(pt.a,0,m.w-1),y:clamp(pt.b,0,m.h-1)};
+      const previous=curvePoints[curvePoints.length-1];
+      if(previous&&Math.hypot(previous.x-nextPoint.x,previous.y-nextPoint.y)<2)return;
+      const next=[...curvePoints,nextPoint];
+      setCurvePoints(next);
+      setCurveIndex(Math.max(0,catmullRom(next,18).length-1));
+      setCurveAssistMessage(`${next.length} ponto(s) marcado(s). Continue tocando ao longo da arcada; a linha será construída na ordem dos pontos.`);
+      return;
     }
     if((tool==="nerve"||tool==="foramen")&&plane==="tangential"){
       const targetIndex=Number.isInteger(pt.tangentialIndex)?pt.tangentialIndex:curveIndex;
@@ -1461,9 +1500,6 @@ export default function Viewer2(){
       return;
     }
     if(curveDragRef.current==null||tool!=="curve"||plane!=="axial")return;
-    const pt=toImagePoint(e.currentTarget,e);if(!pt)return;
-    const i=curveDragRef.current,m=metaRef.current;
-    setCurvePoints(ps=>ps.map((p,index)=>index===i?{x:clamp(pt.a,0,m.w-1),y:clamp(pt.b,0,m.h-1)}:p));
   }
   function onPointerUp(plane,e){
     const tap=touchTapRef.current;
@@ -1537,9 +1573,17 @@ export default function Viewer2(){
       {[
         ["axial","Axial",canvases.axial],["coronal","Coronal",canvases.coronal],["sagittal","Sagital",canvases.sagittal],
         ["tangential","Tangencial • 3 cortes",canvases.tangential]
-      ].map(([id,label,ref])=><article className={"viewer2-pane "+id+(expandedPanel===id?" is-expanded":"")} key={id}>
+      ].map(([id,label,ref])=><article id={"viewer2-"+id} className={"viewer2-pane "+id+(expandedPanel===id?" is-expanded":"")} key={id}>
         <div className="viewer2-pane-head"><strong>{label}</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane(id)}>1:1</button>{expandButton(id,label)}</div></div>
         {renderSliceControl(id,label)}
+        {id==="axial"&&tool==="curve"&&<div className="viewer2-curve-capture-bar">
+          <div><strong>Curva manual</strong><span>{curvePoints.length} ponto(s) • toque na imagem para adicionar</span></div>
+          <div>
+            <button type="button" disabled={!curvePoints.length} onClick={undoManualCurvePoint}>↶ Desfazer último</button>
+            <button type="button" disabled={!curvePoints.length} onClick={clearManualCurve}>Limpar</button>
+            <button type="button" className="primary" disabled={curvePoints.length<3} onClick={finishManualCurve}>Concluir curva</button>
+          </div>
+        </div>}
         <div className={"viewer2-canvas-wrap "+(deviceProfile!=="desktop"&&tool==="navigate"?"touch-scroll-friendly":"touch-tool-active")}><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={e=>onPointerUp(id,e)} onPointerCancel={e=>onPointerUp(id,e)}/></div>
       </article>)}
       <article id="viewer2-panorama" className={"viewer2-pane panoramic visual3d-composite"+(expandedPanel==="3d"?" is-expanded":"")}>
@@ -1581,20 +1625,20 @@ export default function Viewer2(){
         <section>
           <p className="eyebrow">CURVA DA ARCADA</p><strong>{archRange.label}</strong>
           <small className="viewer2-arch-type">Arcada informada: {dentalArchType==="maxilla"?"Maxila":dentalArchType==="mandible"?"Mandíbula":dentalArchType==="both"?"Ambas":"A confirmar"}</small>
-          <div className="arch-scope" role="group" aria-label="Tipo de arcada">
-            <button className={archMode==="auto"?"active":""} onClick={()=>setArchMode("auto")}>Auto</button>
+          <div className="arch-scope" role="group" aria-label="Extensão da curva">
             <button className={archMode==="full"?"active":""} onClick={()=>setArchMode("full")}>Completa</button>
             <button className={archMode==="left"?"active":""} onClick={()=>setArchMode("left")}>Semi ← imagem</button>
             <button className={archMode==="right"?"active":""} onClick={()=>setArchMode("right")}>Semi → imagem</button>
           </div>
-          <button className="viewer2-small assist" onClick={analyzeArchScope}>Reanalisar tipo de arcada</button>
+          <button className="viewer2-small assist" onClick={()=>{setArchMode("auto");analyzeArchScope()}}>Tentar identificar extensão automaticamente</button>
           <input type="range" min={archRange.start} max={archRange.end} value={curveIndex} onChange={e=>setCurveIndex(Number(e.target.value))}/>
           <small>Corte tangencial {curveIndex-archRange.start+1}/{archRange.end-archRange.start+1}. A faixa azul mostra os {PANORAMIC_BAND_HALF_MM*2} mm usados na reconstrução. Em Auto, o OdontoView tenta distinguir arcada completa de semi-arcada pelo axial atual; o profissional pode sobrescrever a escolha.</small>
           <div className="curve-assist-actions">
-            <button className="viewer2-small assist" onClick={()=>suggestArchFromAxial()}>Sugerir curva pelo axial atual</button>
-            <button className="viewer2-small" onClick={()=>{setTool("curve");document.getElementById("viewer2-top")?.scrollIntoView({behavior:"smooth"})}}>Ajustar curva manualmente</button>
+            <button className="viewer2-small primary" onClick={()=>{setTool("curve");setCrosshairVisible(false);document.getElementById("viewer2-axial")?.scrollIntoView({behavior:"smooth",block:"start"})}}>Adicionar pontos manualmente</button>
+            <button className="viewer2-small" disabled={!curvePoints.length} onClick={undoManualCurvePoint}>Desfazer último ponto</button>
+            <button className="viewer2-small" disabled={!curvePoints.length} onClick={clearManualCurve}>Limpar curva</button>
+            <button className="viewer2-small assist" onClick={()=>suggestArchFromAxial()}>Tentar sugestão automática</button>
             {curveBeforeAssistRef.current&&<button className="viewer2-small" onClick={undoSuggestedArch}>Desfazer sugestão</button>}
-            <button className="viewer2-small" onClick={resetArch}>Restaurar curva inicial</button>
           </div>
           {curveAssistMessage&&<div className="assist-note">{curveAssistMessage}</div>}
           <small>A sugestão usa densidade local do corte axial atual como auxílio de posicionamento; não é segmentação anatômica automática e precisa de revisão do profissional.</small>
@@ -1676,16 +1720,26 @@ export default function Viewer2(){
       <section>
         <span className="viewer2-arch-setup-icon">⌒</span>
         <p className="eyebrow">PREPARAÇÃO DA PANORÂMICA</p>
-        <h2>Qual arcada este DICOM representa?</h2>
-        <p>Isso ajuda o OdontoView a preparar a primeira curva antes de abrir o planejamento. A sugestão é heurística e deve ser revisada pelo profissional.</p>
-        <div className="viewer2-arch-choices">
-          <button disabled={archSetupBusy} onClick={()=>prepareArchAutomatically("maxilla")}><strong>Maxila</strong><span>Arcada superior</span></button>
-          <button disabled={archSetupBusy} onClick={()=>prepareArchAutomatically("mandible")}><strong>Mandíbula</strong><span>Arcada inferior</span></button>
-          <button disabled={archSetupBusy} onClick={()=>prepareArchAutomatically("both")}><strong>Ambas</strong><span>Volume com as duas arcadas</span></button>
-          <button disabled={archSetupBusy} onClick={()=>prepareArchAutomatically("unknown")}><strong>Não sei</strong><span>Deixe o sistema tentar</span></button>
-        </div>
-        {archSetupBusy&&<div className="viewer2-arch-preparing">Analisando o volume e preparando a curva…</div>}
-        <button className="viewer2-arch-manual" disabled={archSetupBusy} onClick={()=>{setDentalArchType("unknown");setArchSetupOpen(false);setTool("curve")}}>Pular e ajustar manualmente</button>
+        {archSetupStep==="arch"?<>
+          <h2>Qual arcada este DICOM representa?</h2>
+          <p>Vamos abrir o corte axial já no modo manual. Você vai marcar os pontos com o dedo ou mouse e a curva será construída na ordem dos toques, sem esticar pontos predefinidos.</p>
+          <div className="viewer2-arch-choices">
+            <button disabled={archSetupBusy} onClick={()=>chooseArchForManual("maxilla")}><strong>Maxila</strong><span>Arcada superior</span></button>
+            <button disabled={archSetupBusy} onClick={()=>chooseArchForManual("mandible")}><strong>Mandíbula</strong><span>Arcada inferior</span></button>
+            <button disabled={archSetupBusy} onClick={()=>chooseArchForManual("both")}><strong>Ambas</strong><span>Volume com as duas arcadas</span></button>
+            <button disabled={archSetupBusy} onClick={()=>chooseArchForManual("unknown")}><strong>Não sei</strong><span>Definir apenas a extensão</span></button>
+          </div>
+        </>:<>
+          <h2>Qual extensão você vai traçar?</h2>
+          <p>{pendingArchType==="maxilla"?"Maxila":pendingArchType==="mandible"?"Mandíbula":pendingArchType==="both"?"Ambas as arcadas":"Arcada a confirmar"} selecionada. Escolha a extensão e o OdontoView abrirá o axial pronto para você marcar ponto por ponto.</p>
+          <div className="viewer2-arch-choices viewer2-arch-extent">
+            <button disabled={archSetupBusy} onClick={()=>startManualArch("full")}><strong>Arcada inteira</strong><span>Traçado completo</span></button>
+            <button disabled={archSetupBusy} onClick={()=>startManualArch("left")}><strong>Semi-arcada ←</strong><span>Lado esquerdo da imagem</span></button>
+            <button disabled={archSetupBusy} onClick={()=>startManualArch("right")}><strong>Semi-arcada →</strong><span>Lado direito da imagem</span></button>
+          </div>
+          <button className="viewer2-arch-manual" disabled={archSetupBusy} onClick={()=>setArchSetupStep("arch")}>← Voltar</button>
+        </>}
+        {archSetupBusy&&<div className="viewer2-arch-preparing">Preparando o melhor corte axial para o traçado manual…</div>}
       </section>
     </div>}
 
