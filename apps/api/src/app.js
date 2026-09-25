@@ -551,9 +551,10 @@ export function createApp(){
         where:{id:req.params.studyId,unitId:membership.unitId,status:"READY"},
         include:{
           files:{orderBy:{index:"asc"},select:{id:true,index:true,fileName:true,sizeBytes:true,contentType:true}},
-          patient:{select:{id:true,name:true}},
+          patient:{select:{id:true,name:true,birthDate:true}},
           examType:true,
-          order:{select:{id:true,status:true}}
+          unit:{select:{id:true,name:true}},
+          order:{select:{id:true,status:true,dentist:{select:{user:{select:{name:true}}}}}}
         }
       });
       if(!study) return res.status(404).json({error:"Exame não encontrado nesta unidade."});
@@ -568,6 +569,7 @@ export function createApp(){
         },
         patient:study.patient,
         examType:study.examType,
+        unit:study.unit,
         order:study.order,
         files:study.files
       });
@@ -760,10 +762,10 @@ export function createApp(){
         },
         include:{
           files:{orderBy:{index:"asc"},select:{id:true,index:true,fileName:true,sizeBytes:true,contentType:true}},
-          patient:{select:{id:true,name:true}},
+          patient:{select:{id:true,name:true,birthDate:true}},
           examType:true,
           unit:true,
-          order:{include:{patient:{select:{id:true,name:true}},examType:true,unit:true}}
+          order:{include:{patient:{select:{id:true,name:true,birthDate:true}},examType:true,unit:true,dentist:{select:{user:{select:{name:true}}}}}}
         }
       });
       if(!study) return res.status(404).json({error:"Exame não encontrado."});
