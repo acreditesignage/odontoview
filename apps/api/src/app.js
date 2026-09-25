@@ -278,7 +278,7 @@ export function createApp(){
           include:{
             examType:true,
             dentist:{include:{user:{select:{name:true}}}},
-            study:{select:{id:true,status:true,fileCount:true,totalBytes:true,completedAt:true}}
+            study:{select:{id:true,status:true,sourceType:true,modality:true,fileCount:true,totalBytes:true,completedAt:true}}
           },
           orderBy:{requestedAt:"desc"}
         }),
