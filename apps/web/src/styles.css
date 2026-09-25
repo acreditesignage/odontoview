@@ -2622,3 +2622,30 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .viewer2-arch-choices{grid-template-columns:1fr}
   .viewer2-tablet-scroll{display:none}
 }
+
+
+/* Manual point-by-point panoramic curve */
+.viewer2-curve-capture-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;
+  border-top:1px solid #294257;border-bottom:1px solid #294257;background:linear-gradient(180deg,#10202d,#0b1722)
+}
+.viewer2-curve-capture-bar>div:first-child{display:grid;gap:2px}
+.viewer2-curve-capture-bar strong{font-size:10px;color:#eaf6ff}
+.viewer2-curve-capture-bar span{font-size:8px;color:#78dedd}
+.viewer2-curve-capture-bar>div:last-child{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.viewer2-curve-capture-bar button{
+  min-height:30px;padding:5px 8px;border:1px solid #365169;border-radius:8px;background:#132334;color:#cfdeea;
+  font-size:8px;font-weight:850
+}
+.viewer2-curve-capture-bar button.primary{border-color:#1fbfc8;background:#0b7186;color:#fff}
+.viewer2-curve-capture-bar button:disabled{opacity:.38;cursor:not-allowed}
+.viewer2.is-tablet .viewer2-pane.axial .viewer2-canvas-wrap.touch-tool-active canvas{
+  cursor:crosshair
+}
+.viewer2-arch-extent{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:900px){
+  .viewer2-curve-capture-bar{align-items:flex-start;flex-direction:column}
+  .viewer2-curve-capture-bar>div:last-child{width:100%;display:grid;grid-template-columns:1fr 1fr}
+  .viewer2-curve-capture-bar button.primary{grid-column:1/-1;min-height:40px}
+  .viewer2-arch-extent{grid-template-columns:1fr}
+}
