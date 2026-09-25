@@ -185,7 +185,7 @@ function BoardImage({slotId,templateMap,itemByKey,onOpen,className="",aiAnalysis
 
   return <button type="button" className={"radiographic-board-image "+className} disabled={!entry} onClick={()=>entry&&onOpen?.(entry)}>
     {entry?<div className="radiographic-board-media" ref={mediaRef}>
-      <img ref={imgRef} onLoad={()=>{
+      <img key={String(entry?.item?.id||entry?.item?.url||entry?.key)} ref={imgRef} onLoad={()=>{
         const media=mediaRef.current,img=imgRef.current;
         if(!media||!img?.naturalWidth||!img?.naturalHeight)return;
         const scale=Math.min(media.clientWidth/img.naturalWidth,media.clientHeight/img.naturalHeight);
@@ -228,7 +228,11 @@ function RadiographicBoard({gallery,templateMap,itemByKey,onOpen,aiAnalysis,show
   const rightRail=[...max.right,...mand.right];
   const boardImageProps={templateMap,itemByKey,onOpen,aiAnalysis,showAiOverlays,showAiLabels};
 
-  return <article className={"radiographic-final-board radiographic-final-board-template "+(showAiOverlays?"has-ai-overlays":"")}>
+  return <article
+    className={"radiographic-final-board radiographic-final-board-template "+(showAiOverlays?"has-ai-overlays":"")}
+    data-study-id={String(gallery?.study?.id||"")}
+    data-patient-name={String(gallery?.patient?.name||"")}
+  >
     <header className="radiographic-board-head">
       <div className="radiographic-board-brand"><span className="radiographic-board-mark">OV</span><strong>OdontoView</strong></div>
       <div className="radiographic-board-patient">
@@ -505,7 +509,11 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    setBrightness(100);setContrast(100);setZoom(1);setPan({x:0,y:0});dragRef.current=null;
  }
  useEffect(()=>{resetView();setShowAiOverlays(true)},[gallery?.activeIndex,gallery?.study?.id]);
- useEffect(()=>{setAiAnalysis(gallery?.study?.aiAnalysis||null);setAiError("");setAiBusy("")},[gallery?.study?.id]);
+ useEffect(()=>{
+   setAiAnalysis(gallery?.study?.aiAnalysis||null);
+   setAiError("");setAiBusy("");
+   setBoardAiVisible(true);setBoardLabelsVisible(true);
+ },[gallery?.study?.id]);
  useEffect(()=>{
    const saved=gallery?.study?.documentationLayout;
    const nextTemplate=DOC_TEMPLATE_PRESETS[saved?.template]?saved.template:"PERIAPICAL_14_BW_4";
@@ -575,20 +583,35 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  function clearTemplate(){setTemplateMap({});setTemplateDirty(true);setTemplateState("editing")}
 
  async function captureDisplayedBoard(){
+   const expectedStudyId=String(gallery?.study?.id||"");
+   const expectedPatient=String(gallery?.patient?.name||"");
    const shell=finalBoardRef.current;
    const target=shell?.querySelector?.(".radiographic-final-board");
    if(!target)throw new Error("A prancha final não está disponível para captura.");
-   const images=[...target.querySelectorAll("img")];
+   if(String(target.dataset.studyId||"")!==expectedStudyId||String(target.dataset.patientName||"")!==expectedPatient){
+     throw new Error("A prancha exibida ainda pertence ao exame anterior. Feche e abra o template novamente.");
+   }
+
+   const expectedFileIds=new Set(Object.values(templateMap||{}).map(String).filter(Boolean));
+   const images=[...target.querySelectorAll(".radiographic-board-media>img")];
+   if(expectedFileIds.size&&images.length!==expectedFileIds.size){
+     throw new Error("A prancha ainda está atualizando as radiografias deste exame. Tente novamente em um instante.");
+   }
+
    await Promise.all(images.map(img=>{
      if(img.complete&&img.naturalWidth>0)return Promise.resolve();
-     return new Promise(resolve=>{
-       const done=()=>resolve();
-       img.addEventListener("load",done,{once:true});
-       img.addEventListener("error",done,{once:true});
-       setTimeout(done,5000);
+     return new Promise((resolve,reject)=>{
+       const timer=setTimeout(()=>reject(new Error("Uma radiografia ainda não terminou de carregar.")),8000);
+       img.addEventListener("load",()=>{clearTimeout(timer);resolve()},{once:true});
+       img.addEventListener("error",()=>{clearTimeout(timer);reject(new Error("Falha ao carregar uma radiografia da prancha."))},{once:true});
      });
    }));
    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+
+   if(String(target.dataset.studyId||"")!==String(gallery?.study?.id||"")){
+     throw new Error("O exame mudou durante a geração. Gere o JPG novamente.");
+   }
+
    const rect=target.getBoundingClientRect();
    const scale=Math.max(2,Math.min(3,3200/Math.max(1,rect.width)));
    return html2canvas(target,{
@@ -597,7 +620,8 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
      useCORS:true,
      allowTaint:false,
      logging:false,
-     imageTimeout:10000
+     imageTimeout:10000,
+     removeContainer:true
    });
  }
 
@@ -617,7 +641,8 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
      const url=URL.createObjectURL(blob);
      const a=document.createElement("a");
      a.href=url;
-     a.download=safeTemplateFileName(gallery?.patient?.name)+"-prancha-radiografica-odontoview.jpg";
+     const studyToken=String(gallery?.study?.id||"").slice(-8)||String(Date.now());
+     a.download=safeTemplateFileName(gallery?.patient?.name)+"-prancha-odontoview-"+studyToken+".jpg";
      document.body.appendChild(a);a.click();a.remove();
      setTimeout(()=>URL.revokeObjectURL(url),60000);
    }catch(e){
@@ -780,7 +805,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
            </div>
 
            <div className="documentation-template-delivery-board" ref={finalBoardRef}>
-             <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} onOpen={openInViewer} aiAnalysis={aiAnalysis} showAiOverlays={boardAiVisible} showAiLabels={boardLabelsVisible}/>
+             <RadiographicBoard key={"main-board-"+String(gallery?.study?.id||"")} gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} onOpen={openInViewer} aiAnalysis={aiAnalysis} showAiOverlays={boardAiVisible} showAiLabels={boardLabelsVisible}/>
            </div>
          </div>
 
@@ -789,7 +814,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
              <div className="documentation-template-side-title"><span>▧</span><strong>Pré-visualização do arquivo</strong></div>
              <div className="documentation-template-preview-frame">
                <div className="documentation-template-preview-scale">
-                 <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} aiAnalysis={aiAnalysis} showAiOverlays={boardAiVisible} showAiLabels={boardLabelsVisible}/>
+                 <RadiographicBoard key={"preview-board-"+String(gallery?.study?.id||"")} gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} aiAnalysis={aiAnalysis} showAiOverlays={boardAiVisible} showAiLabels={boardLabelsVisible}/>
                </div>
              </div>
              <div className="documentation-template-download-note"><span>i</span><p>O download gera <b>um único JPG com toda a prancha montada</b>, exatamente como exibida: {boardAiVisible?"com marcações da IA":"sem marcações da IA"}{boardAiVisible?boardLabelsVisible?" e com rótulos.":" e sem rótulos.":"."}</p></div>
