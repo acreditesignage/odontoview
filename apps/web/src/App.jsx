@@ -2,7 +2,8 @@ import React from "react";
 import {useEffect,useMemo,useRef,useState} from "react";
 import {Navigate,Route,Routes,useNavigate,useSearchParams} from "react-router-dom";
 import {api,apiBinary,apiBlob} from "./api.js";
-import {importExam} from "./ingest.js";
+import {importExam,importSingleFileExam} from "./ingest.js";
+import {examUploadPolicy,isDicomStudySource} from "./examUpload.js";
 import {DEMO_EXAM,checkDemoExamAvailability,loadDemoExam} from "./demoExam.js";
 import Viewer2 from "./Viewer2.jsx";
 import {setViewerSession} from "./viewerSession.js";
@@ -12,6 +13,32 @@ function routeForRole(role){return role==="UNIT_USER"?"/radiologia":"/dentista"}
 function viewerRoute(origin,returnTo){const params=new URLSearchParams({from:origin,returnTo});return "/viewer2?"+params.toString()}
 function logout(){localStorage.removeItem("odontoview_token");localStorage.removeItem("odontoview_role");location.href="/"}
 function formatBytes(value){if(!value)return "0 MB";return (value/1024/1024).toFixed(value>10*1024*1024?1:2)+" MB"}
+function openBlobFile(blob,fileName="exame"){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.target="_blank";
+  a.rel="noopener noreferrer";
+  const type=String(blob?.type||"");
+  if(!(type.startsWith("image/")||type==="application/pdf"))a.download=fileName;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+function previewLocalExam(result){
+  const file=result?.files?.[0];
+  if(file)openBlobFile(file,file.name||result?.sourceName||"exame");
+}
+function uploadMetaFromResult(result){
+  const firstValid=result?.series?.find(s=>s.valid)||result?.series?.[0]||{};
+  return {
+    sourceType:result?.sourceType||"FILE",
+    sourceName:result?.sourceName||null,
+    modality:result?.modality||firstValid.modality||null,
+    manufacturer:firstValid.manufacturer||null,
+    model:firstValid.model||null,
+    seriesCount:Number(result?.seriesCount)||0
+  };
+}
 function BrandLockup({role="NETWORK",light=false}){
  return <div className={"brand-lockup"+(light?" is-light":"")}>
    <div className="brand-word">Odonto<span>View</span></div>
@@ -421,26 +448,29 @@ function IngestResult({state,onClear,onOpenViewer,onSend,sendLabel="Enviar exame
  if(!state)return null;
  if(state.status==="reading"){
    const p=state.progress||{};
-   const label=p.phase==="metadata"?`Lendo metadados DICOM • ${p.current||0}/${p.total||"?"}`:"Abrindo arquivo compactado…";
+   const label=p.phase==="metadata"?`Lendo metadados DICOM • ${p.current||0}/${p.total||"?"}`:p.phase==="single"?"Validando arquivo…":"Abrindo arquivo…";
    return <div className="ingest-panel"><strong>OdontoView Ingest</strong><p className="muted">{label}</p><div className="ingest-bar"><span/></div></div>;
  }
  if(state.status==="error")return <div className="ingest-panel ingest-error"><strong>Não foi possível abrir este exame.</strong><p>{state.message}</p><button className="ghost compact" onClick={onClear}>Fechar</button></div>;
  if(state.status!=="ready")return null;
- const r=state.result;
+ const r=state.result,single=r.kind==="single";
  const sending=state.send?.status==="uploading",sent=state.send?.status==="done";
  return <div className="ingest-panel">
-   <div className="ingest-head"><div><strong>Exame reconhecido localmente ✓</strong><p className="muted">{r.sourceType} • {r.totalFiles} DICOM • {formatBytes(r.totalBytes)} • {r.seriesCount} série(s)</p></div><button className="ghost compact" onClick={onClear} disabled={sending}>Descartar</button></div>
-   {r.failedFiles.length>0&&<div className="warn">{r.failedFiles.length} arquivo(s) não puderam ser lidos e foram ignorados.</div>}
-   <div className="series-list">{r.series.map(s=><div className="series-card" key={s.index}>
+   <div className="ingest-head"><div><strong>{single?"Arquivo reconhecido ✓":"Exame DICOM reconhecido ✓"}</strong><p className="muted">{single
+     ?`${r.singleFile?.fileName||r.sourceName} • ${r.singleFile?.contentType||"arquivo"} • ${formatBytes(r.totalBytes)}`
+     :`${r.sourceType} • ${r.totalFiles} DICOM • ${formatBytes(r.totalBytes)} • ${r.seriesCount} série(s)`}</p></div><button className="ghost compact" onClick={onClear} disabled={sending}>Descartar</button></div>
+   {!single&&r.failedFiles.length>0&&<div className="warn">{r.failedFiles.length} arquivo(s) não puderam ser lidos e foram ignorados.</div>}
+   {!single&&<div className="series-list">{r.series.map(s=><div className="series-card" key={s.index}>
      <div><strong>{s.description}</strong><small>{s.modality} • {s.files} corte(s){s.dimensions?" • "+s.dimensions:""}</small><small>{s.manufacturer}{s.model?" • "+s.model:""}</small></div>
      <span className={"series-status "+(s.valid?"ok":"bad")}>{s.valid?"Série válida":"Revisar"}</span>
-   </div>)}</div>
+   </div>)}</div>}
+   {single&&<div className="single-file-summary"><strong>{r.sourceType==="SCAN"?"Arquivo 3D":"Arquivo único"}</strong><small>{r.singleFile?.fileName}</small></div>}
    {sending&&<div className="cloud-send-progress"><strong>Enviando com segurança… {state.send.done}/{state.send.total}</strong><div className="ingest-bar"><span style={{width:Math.round((state.send.done/Math.max(1,state.send.total))*100)+"%"}}/></div><small>Gravando no storage privado do OdontoView.</small></div>}
-   {sent&&<div className="success cloud-send-done"><strong>Exame enviado ✓</strong><p>O estudo foi associado ao paciente/pedido e já pode ser acessado conforme as permissões do fluxo.</p></div>}
+   {sent&&<div className="success cloud-send-done"><strong>Exame enviado ✓</strong><p>O exame foi associado ao paciente/pedido e já pode ser acessado conforme as permissões do fluxo.</p></div>}
    {state.send?.status==="error"&&<div className="error">Falha no envio: {state.send.message}</div>}
-   {!state.send&&<p className="privacy-note">Leitura local concluída. Clique em “{sendLabel}” para gravar os DICOMs no storage privado e associá-los ao paciente/pedido.</p>}
+   {!state.send&&<p className="privacy-note">{single?"Arquivo validado localmente.":"Leitura DICOM local concluída."} Clique em “{sendLabel}” para gravar no storage privado e associar ao paciente/pedido.</p>}
    <div className="ingest-actions">
-     <button className="primary" onClick={onOpenViewer} disabled={sending}>Abrir Viewer 2.0</button>
+     {onOpenViewer&&<button className="primary" onClick={onOpenViewer} disabled={sending}>{single?"Abrir arquivo":"Abrir Viewer 2.0"}</button>}
      <button className="secondary" onClick={onSend} disabled={sending||sent||!onSend}>{sent?"Enviado ✓":sending?"Enviando…":sendLabel}</button>
    </div>
  </div>;
