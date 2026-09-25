@@ -131,6 +131,171 @@ function mapCandidatesToSlots(candidates,slotIds){
   return next;
 }
 
+const RADIOGRAPHIC_BOARD_LAYOUT={
+  maxilla:{label:"MAXILA",left:["max-1","max-2"],center:["max-3","max-4","max-5"],right:["max-6","max-7"]},
+  bitewing:{label:"BITE-WINGS",slots:["bw-1","bw-2","bw-3","bw-4"]},
+  mandible:{label:"MANDÍBULA",left:["mand-1","mand-2"],center:["mand-3","mand-4","mand-5"],right:["mand-6","mand-7"]}
+};
+
+function formatBoardDate(value){
+  if(!value)return "";
+  const parsed=new Date(value);
+  return Number.isNaN(parsed.getTime())?"":parsed.toLocaleDateString("pt-BR");
+}
+function boardEntry(slotId,templateMap,itemByKey){
+  const key=templateMap[slotId];
+  return key?itemByKey.get(key)||null:null;
+}
+function BoardImage({slotId,templateMap,itemByKey,onOpen,className=""}){
+  const entry=boardEntry(slotId,templateMap,itemByKey);
+  return <button type="button" className={"radiographic-board-image "+className} disabled={!entry} onClick={()=>entry&&onOpen?.(entry)}>
+    {entry?<img src={entry.item.url} alt={entry.item.fileName}/>:<span>Sem imagem</span>}
+  </button>;
+}
+function RadiographicBoard({gallery,templateMap,itemByKey,onOpen}){
+  const patientName=String(gallery?.patient?.name||"Paciente").toUpperCase();
+  const birthDate=formatBoardDate(gallery?.patient?.birthDate);
+  const examDate=formatBoardDate(gallery?.study?.completedAt||gallery?.study?.createdAt);
+  const examName=gallery?.examType?.name||"Documentação radiográfica";
+  const unitName=gallery?.unit?.name||gallery?.order?.unit?.name||"";
+  const dentistName=gallery?.order?.dentistName||gallery?.order?.dentist?.user?.name||"";
+  const orderId=gallery?.order?.id||"";
+  const max=RADIOGRAPHIC_BOARD_LAYOUT.maxilla;
+  const mand=RADIOGRAPHIC_BOARD_LAYOUT.mandible;
+  const bw=RADIOGRAPHIC_BOARD_LAYOUT.bitewing;
+  return <article className="radiographic-final-board">
+    <header className="radiographic-board-head">
+      <div className="radiographic-board-brand"><span className="radiographic-board-mark">OV</span><strong>OdontoView</strong></div>
+      <div className="radiographic-board-patient">
+        <p><b>Paciente:</b><span>{patientName}</span></p>
+        {birthDate&&<p><b>Data Nasc.:</b><span>{birthDate}</span></p>}
+        {examDate&&<p><b>Data Ex.:</b><span>{examDate}</span></p>}
+        {orderId&&<p><b>Nº Pedido:</b><span>{orderId}</span></p>}
+      </div>
+      <div className="radiographic-board-provider">
+        {unitName&&<p><b>Radiologia:</b><span>{unitName}</span></p>}
+        {dentistName&&<p><b>Doutor(a):</b><span>{dentistName}</span></p>}
+        <p><b>Exame:</b><span>{examName}</span></p>
+      </div>
+    </header>
+
+    <section className="radiographic-board-anatomy">
+      <div className="radiographic-board-band radiographic-board-band-maxilla">
+        <div className="radiographic-board-side-stack">
+          {max.left.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
+        </div>
+        <div className="radiographic-board-center-set">
+          <div className="radiographic-board-label"><span/>{max.label}<span/></div>
+          <div className="radiographic-board-center-images">
+            {max.center.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen} className="is-vertical"/>)}
+          </div>
+        </div>
+        <div className="radiographic-board-side-stack">
+          {max.right.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
+        </div>
+      </div>
+
+      <div className="radiographic-board-bitewings">
+        <div className="radiographic-board-label"><span/>{bw.label}<span/></div>
+        <div className="radiographic-board-bw-images">
+          {bw.slots.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
+        </div>
+      </div>
+
+      <div className="radiographic-board-band radiographic-board-band-mandible">
+        <div className="radiographic-board-side-stack">
+          {mand.left.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
+        </div>
+        <div className="radiographic-board-center-set">
+          <div className="radiographic-board-label"><span/>{mand.label}<span/></div>
+          <div className="radiographic-board-center-images">
+            {mand.center.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen} className="is-vertical"/>)}
+          </div>
+        </div>
+        <div className="radiographic-board-side-stack">
+          {mand.right.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
+        </div>
+      </div>
+    </section>
+
+    <footer className="radiographic-board-footer">
+      <span>Template radiográfico OdontoView</span><span>18 posições • 14 periapicais + 4 bite-wings</span>
+    </footer>
+  </article>;
+}
+
+async function renderRadiographicBoardCanvas({gallery,templateMap,itemByKey}){
+  const width=3200,height=2200;
+  const canvas=document.createElement("canvas");
+  canvas.width=width;canvas.height=height;
+  const ctx=canvas.getContext("2d");
+  ctx.fillStyle="#040a0f";ctx.fillRect(0,0,width,height);
+
+  const patientName=String(gallery?.patient?.name||"Paciente").toUpperCase();
+  const birthDate=formatBoardDate(gallery?.patient?.birthDate);
+  const examDate=formatBoardDate(gallery?.study?.completedAt||gallery?.study?.createdAt);
+  const examName=String(gallery?.examType?.name||"Documentação radiográfica");
+  const unitName=String(gallery?.unit?.name||gallery?.order?.unit?.name||"");
+  const dentistName=String(gallery?.order?.dentistName||gallery?.order?.dentist?.user?.name||"");
+  const orderId=String(gallery?.order?.id||"");
+
+  ctx.fillStyle="#71d7f6";ctx.font="700 54px Arial, sans-serif";ctx.fillText("OdontoView",150,105);
+  ctx.fillStyle="#f4f9fc";ctx.font="700 34px Arial, sans-serif";ctx.fillText("Paciente:",530,80);
+  ctx.font="500 34px Arial, sans-serif";ctx.fillText(patientName,720,80);
+  let metaY=128;
+  ctx.font="600 24px Arial, sans-serif";
+  if(birthDate){ctx.fillText("Data Nasc.:",530,metaY);ctx.font="400 24px Arial, sans-serif";ctx.fillText(birthDate,680,metaY);metaY+=38;ctx.font="600 24px Arial, sans-serif";}
+  if(examDate){ctx.fillText("Data Ex.:",530,metaY);ctx.font="400 24px Arial, sans-serif";ctx.fillText(examDate,680,metaY);metaY+=38;ctx.font="600 24px Arial, sans-serif";}
+  if(orderId){ctx.fillText("Nº Pedido:",530,metaY);ctx.font="400 24px Arial, sans-serif";ctx.fillText(orderId,680,metaY);}
+
+  ctx.textAlign="right";ctx.font="600 24px Arial, sans-serif";
+  let rightY=80;
+  if(unitName){ctx.fillText("Radiologia: "+unitName,3050,rightY);rightY+=38;}
+  if(dentistName){ctx.fillText("Doutor(a): "+dentistName,3050,rightY);rightY+=38;}
+  ctx.fillText("Exame: "+examName,3050,rightY);
+  ctx.textAlign="left";
+
+  async function drawCard(slotId,x,y,w,h){
+    const entry=boardEntry(slotId,templateMap,itemByKey);
+    roundedRectPath(ctx,x,y,w,h,26);ctx.fillStyle="#0a151e";ctx.fill();
+    if(!entry)return;
+    const img=await loadCanvasImage(entry.item.url);
+    ctx.save();roundedRectPath(ctx,x+6,y+6,w-12,h-12,22);ctx.clip();
+    drawContainedImage(ctx,img,x+9,y+9,w-18,h-18);ctx.restore();
+  }
+  function sectionLabel(label,y,x1,x2){
+    ctx.strokeStyle="#78909f";ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(width/2-150,y);ctx.moveTo(width/2+150,y);ctx.lineTo(x2,y);ctx.stroke();
+    ctx.fillStyle="#eef7fb";ctx.font="700 24px Arial, sans-serif";ctx.textAlign="center";ctx.fillText(label,width/2,y+8);ctx.textAlign="left";
+  }
+  async function drawAnatomicBand(layout,y){
+    const sideX=150,sideW=500,sideH=255,sideGap=28;
+    const centerW=430,centerH=538,centerGap=38;
+    const centerTotal=centerW*3+centerGap*2;
+    const centerX=(width-centerTotal)/2;
+    const rightX=width-sideX-sideW;
+    for(let i=0;i<layout.left.length;i++)await drawCard(layout.left[i],sideX,y+i*(sideH+sideGap),sideW,sideH);
+    for(let i=0;i<layout.center.length;i++)await drawCard(layout.center[i],centerX+i*(centerW+centerGap),y,centerW,centerH);
+    for(let i=0;i<layout.right.length;i++)await drawCard(layout.right[i],rightX,y+i*(sideH+sideGap),sideW,sideH);
+  }
+
+  sectionLabel("MAXILA",285,760,2440);
+  await drawAnatomicBand(RADIOGRAPHIC_BOARD_LAYOUT.maxilla,325);
+
+  sectionLabel("BITE-WINGS",925,620,2580);
+  const bw=RADIOGRAPHIC_BOARD_LAYOUT.bitewing.slots;
+  const bwW=560,bwH=320,bwGap=34,bwTotal=bwW*4+bwGap*3,bwX=(width-bwTotal)/2;
+  for(let i=0;i<bw.length;i++)await drawCard(bw[i],bwX+i*(bwW+bwGap),970,bwW,bwH);
+
+  sectionLabel("MANDÍBULA",1390,760,2440);
+  await drawAnatomicBand(RADIOGRAPHIC_BOARD_LAYOUT.mandible,1430);
+
+  ctx.strokeStyle="#173143";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(150,2070);ctx.lineTo(3050,2070);ctx.stroke();
+  ctx.fillStyle="#708897";ctx.font="500 18px Arial, sans-serif";ctx.fillText("Template radiográfico OdontoView",150,2115);
+  ctx.textAlign="right";ctx.fillText("18 posições • 14 periapicais + 4 bite-wings",3050,2115);ctx.textAlign="left";
+  return canvas;
+}
+
 export default function DocumentationWorkspace({gallery,setGallery,onClose,onDeleteFile,onSaveLayout}){
  const [mode,setMode]=useState("overview");
  const [brightness,setBrightness]=useState(100);
@@ -285,120 +450,22 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
      alert("Complete as posições do template antes de gerar a prancha.");
      return;
    }
+   if(templateDirty){
+     alert("Salve a organização antes de baixar a prancha final.");
+     return;
+   }
    setBusy("download");
    try{
-     const width=3200,height=2200;
-     const canvas=document.createElement("canvas");
-     canvas.width=width;canvas.height=height;
-     const ctx=canvas.getContext("2d");
-     ctx.fillStyle="#050b10";ctx.fillRect(0,0,width,height);
-
-     const patientName=String(gallery?.patient?.name||"Paciente").toUpperCase();
-     const examName=String(gallery?.examType?.name||"Documentação radiográfica");
-     const rawDate=gallery?.study?.completedAt||gallery?.study?.createdAt||null;
-     const examDate=rawDate?new Date(rawDate).toLocaleDateString("pt-BR"):"";
-     const birthDate=gallery?.patient?.birthDate?new Date(gallery.patient.birthDate+"T12:00:00").toLocaleDateString("pt-BR"):"";
-
-     ctx.fillStyle="#f4f9fc";
-     ctx.font="700 34px Arial, sans-serif";
-     ctx.fillText("DOCUMENTAÇÃO RADIOGRÁFICA",180,92);
-     ctx.font="700 52px Arial, sans-serif";
-     ctx.fillText(patientName,180,160);
-     ctx.font="400 28px Arial, sans-serif";
-     ctx.fillStyle="#a9bfce";
-     const details=[examName,examDate&&("Exame: "+examDate),birthDate&&("Nascimento: "+birthDate)].filter(Boolean).join("   •   ");
-     ctx.fillText(details,180,212);
-
-     ctx.textAlign="right";
-     ctx.fillStyle="#71d7f6";
-     ctx.font="700 54px Arial, sans-serif";
-     ctx.fillText("OdontoView",3020,130);
-     ctx.fillStyle="#829aaa";
-     ctx.font="600 20px Arial, sans-serif";
-     ctx.fillText("IMAGEM ODONTOLÓGICA SEM LIMITES",3020,171);
-     ctx.textAlign="left";
-
-     async function drawGroup(groupId,title,y,imageH,columns){
-       const group=preset.groups.find(item=>item.id===groupId);
-       if(!group)return;
-       const margin=180,gap=28;
-       const totalW=width-(margin*2);
-       const cellW=(totalW-gap*(columns-1))/columns;
-       ctx.textAlign="center";
-       ctx.fillStyle="#6fd6f7";
-       ctx.font="700 22px Arial, sans-serif";
-       ctx.fillText(title,width/2,y-34);
-       for(let i=0;i<group.slots.length;i++){
-         const slot=group.slots[i];
-         const key=templateMap[slot.id];
-         const entry=key?itemByKey.get(key):null;
-         if(!entry)continue;
-         const img=await loadCanvasImage(entry.item.url);
-         const x=margin+i*(cellW+gap);
-         roundedRectPath(ctx,x,y,cellW,imageH,24);
-         ctx.fillStyle="#09151e";ctx.fill();
-         ctx.save();
-         roundedRectPath(ctx,x+5,y+5,cellW-10,imageH-52,20);
-         ctx.clip();
-         drawContainedImage(ctx,img,x+8,y+8,cellW-16,imageH-58);
-         ctx.restore();
-         ctx.fillStyle="#dbe8ef";
-         ctx.font="600 18px Arial, sans-serif";
-         ctx.fillText(slot.label,x+cellW/2,y+imageH-18);
-       }
-       ctx.textAlign="left";
-     }
-
-     await drawGroup("maxilla","MAXILA",330,430,7);
-     await drawGroup("mandible","MANDÍBULA",895,430,7);
-
-     const bwGroup=preset.groups.find(item=>item.id==="bitewing");
-     if(bwGroup){
-       const gap=34,cellW=620,imageH=385;
-       const total=cellW*bwGroup.slots.length+gap*(bwGroup.slots.length-1);
-       const startX=(width-total)/2;
-       ctx.textAlign="center";
-       ctx.fillStyle="#6fd6f7";
-       ctx.font="700 22px Arial, sans-serif";
-       ctx.fillText("BITE-WINGS",width/2,1430);
-       for(let i=0;i<bwGroup.slots.length;i++){
-         const slot=bwGroup.slots[i];
-         const key=templateMap[slot.id];
-         const entry=key?itemByKey.get(key):null;
-         if(!entry)continue;
-         const img=await loadCanvasImage(entry.item.url);
-         const x=startX+i*(cellW+gap),y=1470;
-         roundedRectPath(ctx,x,y,cellW,imageH,24);
-         ctx.fillStyle="#09151e";ctx.fill();
-         ctx.save();
-         roundedRectPath(ctx,x+5,y+5,cellW-10,imageH-50,20);
-         ctx.clip();
-         drawContainedImage(ctx,img,x+8,y+8,cellW-16,imageH-56);
-         ctx.restore();
-         ctx.fillStyle="#dbe8ef";
-         ctx.font="600 18px Arial, sans-serif";
-         ctx.fillText(slot.label,x+cellW/2,y+imageH-17);
-       }
-       ctx.textAlign="left";
-     }
-
-     ctx.strokeStyle="#163246";ctx.lineWidth=2;
-     ctx.beginPath();ctx.moveTo(180,2050);ctx.lineTo(3020,2050);ctx.stroke();
-     ctx.fillStyle="#718c9e";ctx.font="500 18px Arial, sans-serif";
-     ctx.fillText("Template gerado pelo OdontoView",180,2094);
-     ctx.textAlign="right";
-     ctx.fillText("18 posições • 14 periapicais + 4 bite-wings",3020,2094);
-     ctx.textAlign="left";
-
+     const canvas=await renderRadiographicBoardCanvas({gallery,templateMap,itemByKey});
      const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error("Falha ao gerar a imagem.")),"image/jpeg",0.96));
      const url=URL.createObjectURL(blob);
      const a=document.createElement("a");
      a.href=url;
-     a.download=safeTemplateFileName(gallery?.patient?.name)+"-template-radiografico-odontoview.jpg";
+     a.download=safeTemplateFileName(gallery?.patient?.name)+"-prancha-radiografica-odontoview.jpg";
      document.body.appendChild(a);a.click();a.remove();
      setTimeout(()=>URL.revokeObjectURL(url),60000);
    }catch(e){
-     alert(e.message||"Não foi possível gerar o template.");
+     alert(e.message||"Não foi possível gerar a prancha.");
    }finally{
      setBusy("");
    }
@@ -444,11 +511,13 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
        <div className="documentation-view-tabs-group" role="tablist" aria-label="Modo de visualização">
          <button className={mode==="overview"?"active":""} onClick={()=>setMode("overview")}>Visão geral</button>
          <button className={mode==="template"?"active":""} onClick={()=>setMode("template")}>Template</button>
+         <button className={mode==="board"?"active":""} disabled={!templateComplete} onClick={()=>setMode("board")}>Prancha final</button>
          <button className={mode==="viewer"?"active":""} onClick={()=>setMode("viewer")}>Viewer</button>
        </div>
        <div className="documentation-view-status">
          {mode==="overview"&&<><span className="status-dot ok"/>Leitura rápida • {imageEntries.length} imagem(ns)</>}
          {mode==="template"&&<><span className={"status-dot "+(templateComplete?"ok":"warn")}/>{placedCount}/{slotIds.length} posições{unassigned.length?" · "+unassigned.length+(templateComplete?" complementares":" para revisar"):""}</>}
+         {mode==="board"&&<><span className={"status-dot "+(!templateDirty&&hasSavedLayout?"ok":"warn")}/>{!templateDirty&&hasSavedLayout?"Prancha salva na nuvem":"Salve a organização para finalizar"}</>}
          {mode==="viewer"&&<><span className="status-dot ok"/>{gallery.activeIndex+1} de {gallery.items.length}</>}
        </div>
      </div>
@@ -480,7 +549,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
              {Object.entries(DOC_TEMPLATE_PRESETS).map(([id,item])=><option key={id} value={id}>{item.label}</option>)}
            </select>
            {canEditLayout&&<button className="secondary compact" onClick={organizeByNumber}>Montar automaticamente</button>}
-           <button className="primary compact" disabled={!templateComplete||busy==="download"} onClick={downloadTemplateBoard}>{busy==="download"?"Gerando…":"⬇ Baixar template JPG"}</button>
+           <button className="secondary compact" disabled={!templateComplete} onClick={()=>setMode("board")}>Ver prancha final</button>
            {canEditLayout&&<button className="ghost compact" onClick={clearTemplate}>Limpar</button>}
          </div>
        </div>
@@ -533,6 +602,24 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
          <div><span className={"documentation-save-indicator "+(templateState==="saved"&&!templateDirty?"saved":"")}/><p>{canEditLayout?(templateDirty?"Há alterações ainda não salvas.":"Organização oficial salva na nuvem."):"Template oficial em modo de leitura."}</p></div>
          {canEditLayout&&<button className="primary compact" disabled={!templateDirty||busy==="layout"} onClick={saveTemplate}>{busy==="layout"?"Salvando…":templateDirty?"Salvar organização":"Salvo ✓"}</button>}
        </div>
+     </div>}
+
+     {mode==="board"&&<div className="documentation-final-board-view">
+       <div className="documentation-final-board-toolbar">
+         <div>
+           <p className="eyebrow">PRANCHA RADIOGRÁFICA FINAL</p>
+           <strong>{!templateDirty&&hasSavedLayout?"Template montado e salvo":"Pré-visualização da organização atual"}</strong>
+           <span>Esta é a composição usada também no arquivo JPG.</span>
+         </div>
+         <div className="documentation-final-board-actions">
+           {canEditLayout&&<button className="ghost compact" onClick={()=>setMode("template")}>Editar organização</button>}
+           <button className="primary compact" disabled={!templateComplete||templateDirty||busy==="download"} onClick={downloadTemplateBoard}>{busy==="download"?"Gerando…":"⬇ Baixar prancha JPG"}</button>
+         </div>
+       </div>
+       <div className="documentation-final-board-stage">
+         <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} onOpen={openInViewer}/>
+       </div>
+       {templateDirty&&<div className="documentation-final-board-warning">Salve a organização para liberar o download da prancha final.</div>}
      </div>}
 
      {mode==="viewer"&&<div className="documentation-viewer-pane">
