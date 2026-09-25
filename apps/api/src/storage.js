@@ -1,4 +1,4 @@
-import {GetObjectCommand,PutObjectCommand,S3Client} from "@aws-sdk/client-s3";
+import {DeleteObjectCommand,GetObjectCommand,PutObjectCommand,S3Client} from "@aws-sdk/client-s3";
 
 let client=null;
 
@@ -45,4 +45,12 @@ export async function getPrivateObject(key){
     Key:key
   }));
   return out;
+}
+
+
+export async function deletePrivateObject(key){
+  await storage().send(new DeleteObjectCommand({
+    Bucket:required("S3_BUCKET"),
+    Key:key
+  }));
 }
