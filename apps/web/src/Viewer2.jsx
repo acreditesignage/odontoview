@@ -171,8 +171,10 @@ export default function Viewer2(){
   const navDragRef=useRef(null);
   const implantDragRef=useRef(null);
   const [loading,setLoading]=useState(true);
+  const [loadProgress,setLoadProgress]=useState({current:0,total:0,label:"Preparando DICOM…"});
   const [error,setError]=useState("");
   const [meta,setMeta]=useState(null);
+  const [threeDEnabled,setThreeDEnabled]=useState(deviceProfile==="desktop");
   const [cursor,setCursor]=useState({x:0,y:0,z:0});
   const [curvePoints,setCurvePoints]=useState([]);
   const curve=useMemo(()=>catmullRom(curvePoints,18),[curvePoints]);
@@ -308,23 +310,32 @@ export default function Viewer2(){
         const cornerstoneWADOImageLoader=window.cornerstoneWADOImageLoader;
         cornerstoneWADOImageLoader.wadouri.fileManager.purge();
         const ids=files.map(file=>cornerstoneWADOImageLoader.wadouri.fileManager.add(file));
+        setLoadProgress({current:0,total:ids.length,label:"Lendo série DICOM…"});
         const first=await cornerstone.loadAndCacheImage(ids[0]);
         const w=first.columns,h=first.rows,d=ids.length;
         const volume=new Int16Array(w*h*d);
         const slope0=Number(first.slope)||1,intercept0=Number(first.intercept)||0;
+        const yieldEvery=deviceProfile==="desktop"?18:4;
         for(let z=0;z<d;z++){
           if(cancelled)return;
           const image=z===0?first:await cornerstone.loadAndCacheImage(ids[z]);
           const px=image.getPixelData(),s=Number(image.slope)||slope0,i=Number(image.intercept)||intercept0;
           const off=z*w*h,n=w*h;
-          for(let p=0;p<n;p++)volume[off+p]=clamp(Math.round(px[p]*s+i),-32768,32767);
-          if(z%12===0)setMeta(m=>m?{...m,progress:z+1}:m);
+          const canDirectCopy=s===1&&i===0&&Number(image.minPixelValue??-32768)>=-32768&&Number(image.maxPixelValue??32767)<=32767;
+          if(canDirectCopy)volume.set(px,off);
+          else for(let p=0;p<n;p++)volume[off+p]=clamp(Math.round(px[p]*s+i),-32768,32767);
+          try{cornerstone.imageCache?.removeImageLoadObject?.(ids[z])}catch{}
+          if(z===d-1||z%yieldEvery===0){
+            setLoadProgress({current:z+1,total:d,label:"Montando volume DICOM…"});
+            if(deviceProfile!=="desktop")await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+          }
         }
         if(cancelled)return;
         const firstItem=sorted[0]||{};
         const spacingY=Number(firstItem.pixelSpacing?.[0])||Number(first.rowPixelSpacing)||1;
         const spacingX=Number(firstItem.pixelSpacing?.[1])||Number(first.columnPixelSpacing)||1;
         const spacingZ=Number(report.nominalSpacing)||Number(first.sliceThickness)||1;
+        setLoadProgress({current:d,total:d,label:"Finalizando MPR…"});
         const computedWindow=(Number.isFinite(Number(first.windowCenter))&&Number(first.windowWidth)>0)
           ?{wc:Number(Array.isArray(first.windowCenter)?first.windowCenter[0]:first.windowCenter),ww:Number(Array.isArray(first.windowWidth)?first.windowWidth[0]:first.windowWidth)}
           :percentileWindow(volume);
@@ -1427,7 +1438,7 @@ export default function Viewer2(){
     </button>;
   }
 
-  if(loading)return <>{showIntro&&<ViewerBootIntro loading/>}<main className="viewer2-loading"><div className="viewer2-loading-card"><div className="brand">OdontoView</div><h1>Preparando exame…</h1><p>Decodificando o volume DICOM localmente.</p><div className="viewer2-loading-pulse" aria-hidden="true"><span/></div></div></main></>;
+  if(loading)return <>{showIntro&&<ViewerBootIntro loading/>}<main className="viewer2-loading"><div className="viewer2-loading-card"><div className="brand">OdontoView</div><h1>Preparando exame…</h1><p>{loadProgress.label}</p>{loadProgress.total>0&&<><div className="viewer2-load-progress"><span style={{width:Math.min(100,Math.round(loadProgress.current/loadProgress.total*100))+"%"}}/></div><small>{loadProgress.current} de {loadProgress.total} cortes • {Math.round(loadProgress.current/loadProgress.total*100)}%</small></>}<div className="viewer2-loading-pulse" aria-hidden="true"><span/></div></div></main></>;
   if(error)return <main className="page centered"><section className="card auth"><button type="button" className="brand viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}}>OdontoView</button><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>{clearViewerSession();nav(returnTo)}}>{returnLabel}</button></section></main>;
 
   const toolName={navigate:"Cruzeta",pan:"Pan",measure:"Medir",curve:"Curva da arcada",nerve:"Nervo",foramen:"Forame"}[tool];
@@ -1468,7 +1479,7 @@ export default function Viewer2(){
         <div className="viewer2-pane-head"><strong>Modelo 3D • Planejamento</strong><div className="viewer2-pane-actions"><span className="viewer3d-badge">3D PROFISSIONAL</span>{expandButton("3d","3D")}</div></div>
         <div className="viewer3d-split">
           <div className="viewer3d-primary">
-            <Viewer3DPanel
+            {threeDEnabled?<Viewer3DPanel
               key={expandedPanel==="3d"?"viewer3d-expanded":"viewer3d-standard"}
               volume={volumeRef.current}
               meta={meta}
@@ -1485,7 +1496,12 @@ export default function Viewer2(){
               onActiveImplantChange={setActiveImplantId}
               layoutMode={expandedPanel||"mosaic"}
               performanceProfile={deviceProfile}
-            />
+            />:<div className="viewer3d-tablet-gate">
+              <span className="viewer3d-tablet-icon">3D</span>
+              <strong>3D sob demanda no {deviceProfile==="tablet"?"tablet":"celular"}</strong>
+              <p>Os cortes MPR já estão disponíveis em resolução original. O 3D é carregado separadamente para não travar o dispositivo.</p>
+              <button type="button" onClick={()=>setThreeDEnabled(true)}>Ativar reconstrução 3D</button>
+            </div>}
           </div>
           <div className={"viewer3d-mini-pano"+(expandedPanel==="panoramic"?" is-expanded":"")}>
             <div className="viewer3d-mini-head"><strong>Panorâmica reconstruída</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane("panoramic")}>1:1</button>{expandButton("panoramic","Panorâmica")}</div></div>
