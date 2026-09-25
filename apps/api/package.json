@@ -1,0 +1,26 @@
+{
+  "name": "odontoview-network-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test tests/*.test.js",
+    "db:push": "prisma db push",
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.2",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "prisma": "^6.16.2",
+    "supertest": "^7.1.4"
+  }
+}
