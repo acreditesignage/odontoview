@@ -680,13 +680,15 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
                {aiAnalysis?.status==="RUNNING"&&<><strong>Análise em processamento</strong><p>Preparando as radiografias para o motor clínico.</p></>}
                {aiAnalysis?.status==="NOT_CONFIGURED"&&<><strong>Infraestrutura pronta</strong><p>{aiAnalysis.message}</p></>}
                {aiAnalysis?.status==="FAILED"&&<><strong>Não foi possível concluir</strong><p>{aiAnalysis.message||"Falha no motor de IA."}</p></>}
-               {aiAnalysis?.status==="COMPLETED"&&<><strong>{aiFindings.length} achado(s) sugerido(s)</strong><p>{aiConfirmed} confirmado(s) · {aiSuggested} aguardando revisão</p></>}
+               {aiAnalysis?.status==="COMPLETED"&&(aiAnalysis?.demo
+                 ? <><strong>Modo DEMO ativo</strong><p>{aiFindings.length} marcação(ões) simulada(s) para validar a experiência visual.</p></>
+                 : <><strong>{aiFindings.length} achado(s) sugerido(s)</strong><p>{aiConfirmed} confirmado(s) · {aiSuggested} aguardando revisão</p></>)}
              </div>
              {aiError&&<div className="documentation-ai-error">{aiError}</div>}
              {aiAnalysis?.status==="COMPLETED"&&<div className="documentation-ai-findings">
                {aiFindings.length?aiFindings.map(finding=><article className={"documentation-ai-finding status-"+String(finding.status||"SUGGESTED").toLowerCase()} key={finding.id}>
                  <button type="button" className="documentation-ai-finding-main" onClick={()=>openAiFinding(finding)}>
-                   <div><strong>{finding.label}</strong><span>{finding.summary||"Região sugerida para revisão profissional."}</span></div>
+                   <div><strong>{finding.label}{(finding.demo||aiAnalysis?.demo)&&<em className="documentation-ai-demo-tag">DEMO</em>}</strong><span>{finding.summary||"Região sugerida para revisão profissional."}</span></div>
                    {Number(finding.confidence)>0&&<b>{Math.round(Number(finding.confidence)*100)}%</b>}
                  </button>
                  <div className="documentation-ai-finding-actions">
@@ -699,7 +701,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
                </article>):<div className="documentation-ai-empty">Nenhum achado foi sugerido pelo motor conectado.</div>}
              </div>}
              {canManageAi&&aiAnalysis?.status!=="COMPLETED"&&<button className="ai-secondary compact" disabled={aiBusy==="run"} onClick={runAiAnalysis}>{aiBusy==="run"?"Analisando…":"Executar análise"}</button>}
-             <p className="documentation-ai-disclaimer">Apoio à revisão profissional. Não substitui diagnóstico, laudo ou julgamento clínico.</p>
+             <p className={"documentation-ai-disclaimer "+(aiAnalysis?.demo?"is-demo":"")}>{aiAnalysis?.demo?"DEMO visual com marcações simuladas. Não usar como interpretação clínica.":"Apoio à revisão profissional. Não substitui diagnóstico, laudo ou julgamento clínico."}</p>
            </section>
 
            <section className="documentation-template-ready-side">
@@ -798,9 +800,9 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
              const y=Math.max(0,Math.min(1,Number(box.y)||0));
              const w=Math.max(0,Math.min(1-x,Number(box.w)||0));
              const h=Math.max(0,Math.min(1-y,Number(box.h)||0));
-             return <div key={finding.id||index} className={"documentation-ai-overlay-box status-"+String(finding.status||"SUGGESTED").toLowerCase()}
+             return <div key={finding.id||index} data-demo={(finding.demo||aiAnalysis?.demo)?"true":"false"} className={"documentation-ai-overlay-box status-"+String(finding.status||"SUGGESTED").toLowerCase()}
                style={{left:(x*100)+"%",top:(y*100)+"%",width:(w*100)+"%",height:(h*100)+"%"}}>
-               <div className="documentation-ai-overlay-label"><span>{finding.label||"Região para revisão"}</span>{Number(finding.confidence)>0&&<b>{Math.round(Number(finding.confidence)*100)}%</b>}</div>
+               <div className="documentation-ai-overlay-label"><span>{finding.label||"Região para revisão"}{(finding.demo||aiAnalysis?.demo)?" · DEMO":""}</span>{Number(finding.confidence)>0&&<b>{Math.round(Number(finding.confidence)*100)}%</b>}</div>
              </div>
            })}
          </div>:
@@ -810,7 +812,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
        </div>
        {isImage&&activeAiFindings.length>0&&<div className="documentation-ai-viewer-summary">
          <div><span className="documentation-ai-overlay-dot"/><strong>OdontoView AI</strong><small>{activeAiFindings.length} região(ões) marcada(s) nesta radiografia</small></div>
-         <span>Achados assistivos — requer revisão profissional</span>
+         <span>{aiAnalysis?.demo?"DEMO visual — marcações simuladas":"Achados assistivos — requer revisão profissional"}</span>
        </div>}
        <div className="documentation-gallery-grid">
          {gallery.items.map((item,index)=><button type="button" key={item.id||index} className={"documentation-thumb "+(index===gallery.activeIndex?"active":"")} onClick={()=>setActive(index)}>
