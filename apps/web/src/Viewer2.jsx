@@ -1113,7 +1113,7 @@ export default function Viewer2(){
     const m=metaRef.current,v=volumeRef.current;
     const last=Math.max(0,curve.length-1);
     if(!m||!v||curve.length<10)return {start:0,end:last,label:"Arcada completa",confidence:.25};
-    const z=clamp(Math.round(Number.isFinite(zOverride)?zOverride:cursor.z),0,m.d-1);
+    const z=clamp(Math.round(cursor.z),0,m.d-1);
     const samples=[];
     const sampleCount=25;
     for(let s=0;s<sampleCount;s++){
@@ -1221,7 +1221,7 @@ export default function Viewer2(){
   function suggestArchFromAxial(zOverride=null){
     const m=metaRef.current,v=volumeRef.current;if(!m||!v||curve.length<7)return false;
     if(archMode==="auto")analyzeArchScope();
-    const z=clamp(Math.round(cursor.z),0,m.d-1);
+    const z=clamp(Math.round(Number.isFinite(zOverride)?zOverride:cursor.z),0,m.d-1);
     const base=curve;
     const candidates=[];
     const pointCount=curvePoints.length;
