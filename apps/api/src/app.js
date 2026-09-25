@@ -27,6 +27,20 @@ const dentistPatientWhere=(dentistId,patientId)=>({
     {dentistAccess:{some:{dentistId}}}
   ]
 });
+function safeUploadContentType(value){
+  const raw=String(value||"application/octet-stream").trim().toLowerCase().slice(0,120);
+  return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(raw)?raw:"application/octet-stream";
+}
+function safeUploadExtension(fileName,contentType){
+  const match=String(fileName||"").match(/\.([a-z0-9]{1,10})$/i);
+  if(match)return "."+match[1].toLowerCase();
+  if(contentType==="application/dicom")return ".dcm";
+  if(contentType==="application/pdf")return ".pdf";
+  if(contentType==="image/jpeg")return ".jpg";
+  if(contentType==="image/png")return ".png";
+  if(contentType==="image/webp")return ".webp";
+  return ".bin";
+}
 
 
 export function createApp(){
@@ -328,6 +342,7 @@ export function createApp(){
         unitId:membership.unitId,
         examTypeId:examType?.id||null,
         sourceType:String(meta.sourceType||"DICOM").slice(0,24),
+        sourceName:meta.sourceName?String(meta.sourceName).slice(0,180):null,
         modality:meta.modality?String(meta.modality).slice(0,32):null,
         manufacturer:meta.manufacturer?String(meta.manufacturer).slice(0,120):null,
         model:meta.model?String(meta.model).slice(0,120):null,
@@ -418,6 +433,7 @@ export function createApp(){
       const study=order.study
         ? await prisma.examStudy.update({where:{id:order.study.id},data:{
             sourceType:String(meta.sourceType||"DICOM").slice(0,24),
+            sourceName:meta.sourceName?String(meta.sourceName).slice(0,180):null,
             modality:meta.modality?String(meta.modality).slice(0,32):null,
             manufacturer:meta.manufacturer?String(meta.manufacturer).slice(0,120):null,
             model:meta.model?String(meta.model).slice(0,120):null,
@@ -439,7 +455,7 @@ export function createApp(){
     }catch(e){next(e);}
   });
 
-  app.put("/api/unit/studies/:studyId/files/:index",auth,express.raw({type:"application/octet-stream",limit:"32mb"}),async(req,res,next)=>{
+  app.put("/api/unit/studies/:studyId/files/:index",auth,express.raw({type:"application/octet-stream",limit:"64mb"}),async(req,res,next)=>{
     try{
       if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
       if(!storageReady()) return res.status(503).json({error:"Storage privado ainda não está disponível."});
@@ -449,18 +465,20 @@ export function createApp(){
       if(!Number.isInteger(index)||index<0||index>10000) return res.status(400).json({error:"Índice de arquivo inválido."});
       const study=await prisma.examStudy.findFirst({where:{id:req.params.studyId,unitId:membership.unitId,status:"UPLOADING"}});
       if(!study) return res.status(404).json({error:"Estudo em envio não encontrado."});
-      if(!Buffer.isBuffer(req.body)||!req.body.length) return res.status(400).json({error:"Arquivo DICOM vazio."});
-      let fileName="dicom-"+String(index+1).padStart(4,"0")+".dcm";
+      if(!Buffer.isBuffer(req.body)||!req.body.length) return res.status(400).json({error:"Arquivo vazio."});
+      const dicomLike=["DICOM","ZIP","RAR"].includes(String(study.sourceType||"").toUpperCase());
+      let fileName=dicomLike?"dicom-"+String(index+1).padStart(4,"0")+".dcm":"arquivo-"+String(index+1).padStart(4,"0")+".bin";
       try{
         const raw=String(req.headers["x-file-name"]||"");
         if(raw) fileName=decodeURIComponent(raw).replace(/[\\/]+/g,"_").slice(-180)||fileName;
       }catch{}
-      const objectKey="studies/"+study.id+"/"+String(index).padStart(6,"0")+".dcm";
-      await putPrivateObject({key:objectKey,body:req.body,contentType:"application/dicom"});
+      const contentType=safeUploadContentType(req.headers["x-file-content-type"]||(dicomLike?"application/dicom":"application/octet-stream"));
+      const objectKey="studies/"+study.id+"/"+String(index).padStart(6,"0")+safeUploadExtension(fileName,contentType);
+      await putPrivateObject({key:objectKey,body:req.body,contentType});
       const file=await prisma.studyFile.upsert({
         where:{studyId_index:{studyId:study.id,index}},
-        create:{studyId:study.id,index,fileName,objectKey,sizeBytes:req.body.length,contentType:"application/dicom"},
-        update:{fileName,objectKey,sizeBytes:req.body.length,contentType:"application/dicom"}
+        create:{studyId:study.id,index,fileName,objectKey,sizeBytes:req.body.length,contentType},
+        update:{fileName,objectKey,sizeBytes:req.body.length,contentType}
       });
       res.status(201).json({file:{id:file.id,index:file.index,sizeBytes:file.sizeBytes}});
     }catch(e){next(e);}
@@ -505,7 +523,7 @@ export function createApp(){
       const study=await prisma.examStudy.findFirst({
         where:{id:req.params.studyId,unitId:membership.unitId,status:"READY"},
         include:{
-          files:{orderBy:{index:"asc"},select:{id:true,index:true,fileName:true,sizeBytes:true}},
+          files:{orderBy:{index:"asc"},select:{id:true,index:true,fileName:true,sizeBytes:true,contentType:true}},
           patient:{select:{id:true,name:true}},
           examType:true,
           order:{select:{id:true,status:true}}
@@ -576,7 +594,7 @@ export function createApp(){
     }catch(e){next(e);}
   });
 
-  app.put("/api/dentist/studies/:studyId/files/:index",auth,express.raw({type:"application/octet-stream",limit:"32mb"}),async(req,res,next)=>{
+  app.put("/api/dentist/studies/:studyId/files/:index",auth,express.raw({type:"application/octet-stream",limit:"64mb"}),async(req,res,next)=>{
     try{
       if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
       if(!storageReady()) return res.status(503).json({error:"Storage privado ainda não está disponível."});
@@ -586,18 +604,20 @@ export function createApp(){
       if(!Number.isInteger(index)||index<0||index>10000) return res.status(400).json({error:"Índice de arquivo inválido."});
       const study=await prisma.examStudy.findFirst({where:{id:req.params.studyId,ownerDentistId:dentist.id,status:"UPLOADING"}});
       if(!study) return res.status(404).json({error:"Estudo em envio não encontrado."});
-      if(!Buffer.isBuffer(req.body)||!req.body.length) return res.status(400).json({error:"Arquivo DICOM vazio."});
-      let fileName="dicom-"+String(index+1).padStart(4,"0")+".dcm";
+      if(!Buffer.isBuffer(req.body)||!req.body.length) return res.status(400).json({error:"Arquivo vazio."});
+      const dicomLike=["DICOM","ZIP","RAR"].includes(String(study.sourceType||"").toUpperCase());
+      let fileName=dicomLike?"dicom-"+String(index+1).padStart(4,"0")+".dcm":"arquivo-"+String(index+1).padStart(4,"0")+".bin";
       try{
         const raw=String(req.headers["x-file-name"]||"");
         if(raw) fileName=decodeURIComponent(raw).replace(/[\\/]+/g,"_").slice(-180)||fileName;
       }catch{}
-      const objectKey="studies/"+study.id+"/"+String(index).padStart(6,"0")+".dcm";
-      await putPrivateObject({key:objectKey,body:req.body,contentType:"application/dicom"});
+      const contentType=safeUploadContentType(req.headers["x-file-content-type"]||(dicomLike?"application/dicom":"application/octet-stream"));
+      const objectKey="studies/"+study.id+"/"+String(index).padStart(6,"0")+safeUploadExtension(fileName,contentType);
+      await putPrivateObject({key:objectKey,body:req.body,contentType});
       const file=await prisma.studyFile.upsert({
         where:{studyId_index:{studyId:study.id,index}},
-        create:{studyId:study.id,index,fileName,objectKey,sizeBytes:req.body.length,contentType:"application/dicom"},
-        update:{fileName,objectKey,sizeBytes:req.body.length,contentType:"application/dicom"}
+        create:{studyId:study.id,index,fileName,objectKey,sizeBytes:req.body.length,contentType},
+        update:{fileName,objectKey,sizeBytes:req.body.length,contentType}
       });
       res.status(201).json({file:{id:file.id,index:file.index,sizeBytes:file.sizeBytes}});
     }catch(e){next(e);}
@@ -640,7 +660,7 @@ export function createApp(){
           ]
         },
         include:{
-          files:{orderBy:{index:"asc"},select:{id:true,index:true,fileName:true,sizeBytes:true}},
+          files:{orderBy:{index:"asc"},select:{id:true,index:true,fileName:true,sizeBytes:true,contentType:true}},
           patient:{select:{id:true,name:true}},
           examType:true,
           unit:true,
