@@ -2,7 +2,7 @@ import React from "react";
 import {useEffect,useMemo,useRef,useState} from "react";
 import {Navigate,Route,Routes,useNavigate,useSearchParams} from "react-router-dom";
 import {api,apiBinary,apiBlob} from "./api.js";
-import {cachedStudyBlob,requestPersistentStudyStorage} from "./studyCache.js";
+import {cachedStudyBlob,getStudyCacheStats,requestPersistentStudyStorage} from "./studyCache.js";
 import {importExam,importSingleFileExam} from "./ingest.js";
 import {examUploadPolicy,isDicomStudySource} from "./examUpload.js";
 import {DEMO_EXAM,checkDemoExamAvailability,loadDemoExam} from "./demoExam.js";
@@ -77,6 +77,20 @@ function uploadMetaFromResult(result){
     seriesCount:Number(result?.seriesCount)||0
   };
 }
+function HybridStorageBadge(){
+ const [stats,setStats]=useState(null);
+ useEffect(()=>{
+   let alive=true;
+   const refresh=()=>getStudyCacheStats().then(s=>{if(alive)setStats(s)}).catch(()=>{});
+   refresh();
+   window.addEventListener("odontoview-study-cache-change",refresh);
+   return()=>{alive=false;window.removeEventListener("odontoview-study-cache-change",refresh)};
+ },[]);
+ return <span className="hybrid-storage-badge" title="Originais na nuvem. Exames já abertos podem permanecer em cache neste navegador para carregar mais rápido.">
+   <span>☁ Nuvem</span><b>+</b><span>💻 Cache local</span>{stats?.bytes>0&&<small>{formatBytes(stats.bytes)}</small>}
+ </span>;
+}
+
 function BrandLockup({role="NETWORK",light=false}){
  return <div className={"brand-lockup"+(light?" is-light":"")}>
    <div className="brand-word">Odonto<span>View</span></div>
@@ -392,7 +406,7 @@ function DentistDashboard(){
        </div>
      </section>
    </div>}
-   <header className="topbar"><BrandLockup role="DENTISTA"/><div className="topbar-actions"><a className="ghost compact" href="/cadastro-dentista" target="_blank" rel="noreferrer">Link de cadastro</a><button className="ghost" onClick={logout}>Sair</button></div></header>
+   <header className="topbar"><BrandLockup role="DENTISTA"/><div className="topbar-actions"><HybridStorageBadge/><a className="ghost compact" href="/cadastro-dentista" target="_blank" rel="noreferrer">Link de cadastro</a><button className="ghost" onClick={logout}>Sair</button></div></header>
    <div className="hero-row dentist-hero"><div><p className="eyebrow">ODONTOVIEW NETWORK</p><h1>{data?.dentist?.user?.name||"Seu painel clínico"}</h1><p className="muted">{data?.dentist?("CRO "+data.dentist.cro+"/"+data.dentist.uf+" • pacientes, pedidos e exames em um só lugar."):"Carregando perfil…"}</p></div><div className="hero-actions dentist-hero-actions"><button className="primary" onClick={startNewPatient}>＋ Novo paciente</button><button className="secondary" onClick={()=>goDentistTab("import")}>⬆ Importar exame</button></div></div>
    <nav className="workspace-tabs">
      <button className={tab==="home"?"active":""} onClick={()=>goDentistTab("home")}>Visão geral</button>
