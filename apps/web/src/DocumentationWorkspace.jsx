@@ -67,6 +67,7 @@ function drawContainedImage(ctx,img,x,y,w,h){
   const dw=img.width*scale,dh=img.height*scale;
   const dx=x+(w-dw)/2,dy=y+(h-dh)/2;
   ctx.drawImage(img,dx,dy,dw,dh);
+  return {x:dx,y:dy,w:dw,h:dh};
 }
 function roundedRectPath(ctx,x,y,w,h,r){
   const radius=Math.min(r,w/2,h/2);
@@ -147,13 +148,71 @@ function boardEntry(slotId,templateMap,itemByKey){
   const key=templateMap[slotId];
   return key?itemByKey.get(key)||null:null;
 }
-function BoardImage({slotId,templateMap,itemByKey,onOpen,className=""}){
+function boardFindingsForEntry(entry,aiAnalysis){
+  if(!entry)return [];
+  const fileId=String(entry?.item?.id||entry?.key||"");
+  return (Array.isArray(aiAnalysis?.findings)?aiAnalysis.findings:[]).filter(finding=>
+    String(finding?.fileId||"")===fileId&&
+    finding?.bbox&&
+    String(finding?.status||"SUGGESTED").toUpperCase()!=="REJECTED"
+  );
+}
+function BoardImage({slotId,templateMap,itemByKey,onOpen,className="",aiAnalysis,showAiOverlays=false,showAiLabels=true}){
   const entry=boardEntry(slotId,templateMap,itemByKey);
+  const mediaRef=useRef(null);
+  const imgRef=useRef(null);
+  const [imageRect,setImageRect]=useState(null);
+  const findings=boardFindingsForEntry(entry,aiAnalysis);
+
+  useEffect(()=>{
+    if(!entry){setImageRect(null);return}
+    const media=mediaRef.current,img=imgRef.current;
+    if(!media||!img)return;
+    const update=()=>{
+      const cw=media.clientWidth,ch=media.clientHeight,nw=img.naturalWidth,nh=img.naturalHeight;
+      if(!cw||!ch||!nw||!nh)return;
+      const scale=Math.min(cw/nw,ch/nh);
+      const w=nw*scale,h=nh*scale;
+      setImageRect({left:(cw-w)/2,top:(ch-h)/2,width:w,height:h});
+    };
+    update();
+    const observer=typeof ResizeObserver!=="undefined"?new ResizeObserver(update):null;
+    observer?.observe(media);
+    window.addEventListener("resize",update);
+    return()=>{observer?.disconnect();window.removeEventListener("resize",update)};
+  },[entry?.key]);
+
   return <button type="button" className={"radiographic-board-image "+className} disabled={!entry} onClick={()=>entry&&onOpen?.(entry)}>
-    {entry?<img src={entry.item.url} alt={entry.item.fileName}/>:<span>Sem imagem</span>}
+    {entry?<div className="radiographic-board-media" ref={mediaRef}>
+      <img ref={imgRef} onLoad={()=>{
+        const media=mediaRef.current,img=imgRef.current;
+        if(!media||!img?.naturalWidth||!img?.naturalHeight)return;
+        const scale=Math.min(media.clientWidth/img.naturalWidth,media.clientHeight/img.naturalHeight);
+        const width=img.naturalWidth*scale,height=img.naturalHeight*scale;
+        setImageRect({left:(media.clientWidth-width)/2,top:(media.clientHeight-height)/2,width,height});
+      }} src={entry.item.url} alt={entry.item.fileName}/>
+      {showAiOverlays&&imageRect&&findings.length>0&&<div className="radiographic-board-ai-layer" style={{left:imageRect.left,top:imageRect.top,width:imageRect.width,height:imageRect.height}}>
+        {findings.map((finding,index)=>{
+          const box=finding.bbox||{};
+          const x=Math.max(0,Math.min(1,Number(box.x)||0));
+          const y=Math.max(0,Math.min(1,Number(box.y)||0));
+          const w=Math.max(0,Math.min(1-x,Number(box.w)||0));
+          const h=Math.max(0,Math.min(1-y,Number(box.h)||0));
+          const demo=Boolean(finding.demo||aiAnalysis?.demo);
+          const confirmed=String(finding.status||"").toUpperCase()==="CONFIRMED";
+          return <span key={finding.id||index} data-demo={demo?"true":"false"} className={"radiographic-board-ai-box "+(confirmed?"is-confirmed":"is-suggested")}
+            style={{left:(x*100)+"%",top:(y*100)+"%",width:(w*100)+"%",height:(h*100)+"%"}}>
+            {showAiLabels&&<span className="radiographic-board-ai-label">
+              <b>{finding.label||"Achado"}</b>{demo&&<em>DEMO</em>}
+              {Number(finding.confidence)>0&&<small>{Math.round(Number(finding.confidence)*100)}%</small>}
+            </span>}
+          </span>;
+        })}
+      </div>}
+    </div>:<span>Sem imagem</span>}
   </button>;
 }
-function RadiographicBoard({gallery,templateMap,itemByKey,onOpen}){
+function RadiographicBoard({gallery,templateMap,itemByKey,onOpen,aiAnalysis,showAiOverlays=false,showAiLabels=true}){
   const patientName=String(gallery?.patient?.name||"Paciente").toUpperCase();
   const birthDate=formatBoardDate(gallery?.patient?.birthDate);
   const examDate=formatBoardDate(gallery?.study?.completedAt||gallery?.study?.createdAt);
@@ -166,8 +225,9 @@ function RadiographicBoard({gallery,templateMap,itemByKey,onOpen}){
   const bw=RADIOGRAPHIC_BOARD_LAYOUT.bitewing;
   const leftRail=[...max.left,...mand.left];
   const rightRail=[...max.right,...mand.right];
+  const boardImageProps={templateMap,itemByKey,onOpen,aiAnalysis,showAiOverlays,showAiLabels};
 
-  return <article className="radiographic-final-board radiographic-final-board-template">
+  return <article className={"radiographic-final-board radiographic-final-board-template "+(showAiOverlays?"has-ai-overlays":"")}>
     <header className="radiographic-board-head">
       <div className="radiographic-board-brand"><span className="radiographic-board-mark">OV</span><strong>OdontoView</strong></div>
       <div className="radiographic-board-patient">
@@ -185,44 +245,45 @@ function RadiographicBoard({gallery,templateMap,itemByKey,onOpen}){
 
     <section className="radiographic-template-montage">
       <aside className="radiographic-template-rail">
-        {leftRail.map((slot,index)=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen} className={index<2?"is-upper":"is-lower"}/>)}
+        {leftRail.map((slot,index)=><BoardImage key={slot} slotId={slot} {...boardImageProps} className={index<2?"is-upper":"is-lower"}/>)}
       </aside>
 
       <div className="radiographic-template-center">
         <div className="radiographic-template-center-section">
           <div className="radiographic-board-label"><span/>MAXILA<span/></div>
           <div className="radiographic-template-center-row">
-            {max.center.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen} className="is-vertical"/>)}
+            {max.center.map(slot=><BoardImage key={slot} slotId={slot} {...boardImageProps} className="is-vertical"/>)}
           </div>
         </div>
 
         <div className="radiographic-template-center-section">
           <div className="radiographic-board-label"><span/>MANDÍBULA<span/></div>
           <div className="radiographic-template-center-row">
-            {mand.center.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen} className="is-vertical"/>)}
+            {mand.center.map(slot=><BoardImage key={slot} slotId={slot} {...boardImageProps} className="is-vertical"/>)}
           </div>
         </div>
 
         <div className="radiographic-template-bw-section">
           <div className="radiographic-board-label"><span/>BITE-WINGS<span/></div>
           <div className="radiographic-template-bw-row">
-            {bw.slots.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
+            {bw.slots.map(slot=><BoardImage key={slot} slotId={slot} {...boardImageProps}/>)}
           </div>
         </div>
       </div>
 
       <aside className="radiographic-template-rail">
-        {rightRail.map((slot,index)=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen} className={index<2?"is-upper":"is-lower"}/>)}
+        {rightRail.map((slot,index)=><BoardImage key={slot} slotId={slot} {...boardImageProps} className={index<2?"is-upper":"is-lower"}/>)}
       </aside>
     </section>
 
     <footer className="radiographic-board-footer">
-      <span>Template radiográfico OdontoView</span><span>18 posições • 14 periapicais + 4 bite-wings</span>
+      <span>Template radiográfico OdontoView</span>
+      <span>{showAiOverlays?"OdontoView AI • marcações visíveis":"18 posições • 14 periapicais + 4 bite-wings"}</span>
     </footer>
   </article>;
 }
 
-async function renderRadiographicBoardCanvas({gallery,templateMap,itemByKey}){
+async function renderRadiographicBoardCanvas({gallery,templateMap,itemByKey,aiAnalysis=null,showAiOverlays=false,showAiLabels=true}){
   const width=3200,height=2400;
   const canvas=document.createElement("canvas");
   canvas.width=width;canvas.height=height;
@@ -263,7 +324,44 @@ async function renderRadiographicBoardCanvas({gallery,templateMap,itemByKey}){
     if(!entry)return;
     const img=await loadCanvasImage(entry.item.url);
     ctx.save();roundedRectPath(ctx,x+5,y+5,w-10,h-10,20);ctx.clip();
-    drawContainedImage(ctx,img,x+8,y+8,w-16,h-16);ctx.restore();
+    const imageRect=drawContainedImage(ctx,img,x+8,y+8,w-16,h-16);
+    if(showAiOverlays){
+      const findings=boardFindingsForEntry(entry,aiAnalysis);
+      for(const finding of findings){
+        const box=finding.bbox||{};
+        const bx=Math.max(0,Math.min(1,Number(box.x)||0));
+        const by=Math.max(0,Math.min(1,Number(box.y)||0));
+        const bw=Math.max(0,Math.min(1-bx,Number(box.w)||0));
+        const bh=Math.max(0,Math.min(1-by,Number(box.h)||0));
+        if(!bw||!bh)continue;
+        const rx=imageRect.x+bx*imageRect.w,ry=imageRect.y+by*imageRect.h,rw=bw*imageRect.w,rh=bh*imageRect.h;
+        const confirmed=String(finding.status||"").toUpperCase()==="CONFIRMED";
+        const demo=Boolean(finding.demo||aiAnalysis?.demo);
+        ctx.save();
+        ctx.strokeStyle=confirmed?"#3bd493":"#27c4df";
+        ctx.lineWidth=Math.max(4,Math.min(9,w/75));
+        if(demo)ctx.setLineDash([18,12]);
+        roundedRectPath(ctx,rx,ry,rw,rh,Math.max(8,w/55));ctx.stroke();
+        ctx.fillStyle=confirmed?"rgba(59,212,147,.10)":"rgba(39,196,223,.10)";ctx.fill();
+        ctx.setLineDash([]);
+        if(showAiLabels){
+          const confidence=Number(finding.confidence)>0?Math.round(Number(finding.confidence)*100)+"%":"";
+          const label=(finding.label||"Achado")+(demo?" · DEMO":"")+(confidence?" · "+confidence:"");
+          ctx.font="700 "+Math.max(14,Math.min(25,w/20))+"px Arial, sans-serif";
+          const padX=12,padY=9,textW=Math.min(ctx.measureText(label).width,w*.92);
+          const labelW=textW+padX*2,labelH=Math.max(34,w/13);
+          const labelX=Math.max(imageRect.x,Math.min(rx,imageRect.x+imageRect.w-labelW));
+          const labelY=Math.max(imageRect.y,ry-labelH-4);
+          roundedRectPath(ctx,labelX,labelY,labelW,labelH,8);
+          ctx.fillStyle=demo?"#8a6a12":confirmed?"#21855d":"#0e809b";ctx.fill();
+          ctx.fillStyle="#ffffff";ctx.textAlign="left";ctx.textBaseline="middle";
+          ctx.fillText(label,labelX+padX,labelY+labelH/2,labelW-padX*2);
+          ctx.textBaseline="alphabetic";
+        }
+        ctx.restore();
+      }
+    }
+    ctx.restore();
   }
   function sectionLabel(label,x,y,w){
     ctx.strokeStyle="#6f8796";ctx.lineWidth=2;
@@ -321,6 +419,8 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const [aiBusy,setAiBusy]=useState("");
  const [aiError,setAiError]=useState("");
  const [showAiOverlays,setShowAiOverlays]=useState(true);
+ const [boardAiVisible,setBoardAiVisible]=useState(true);
+ const [boardLabelsVisible,setBoardLabelsVisible]=useState(true);
  const dragRef=useRef(null);
  const finalBoardRef=useRef(null);
  const collator=useMemo(()=>new Intl.Collator("pt-BR",{numeric:true,sensitivity:"base"}),[]);
@@ -483,7 +583,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    }
    setBusy("download");
    try{
-     const canvas=await renderRadiographicBoardCanvas({gallery,templateMap,itemByKey});
+     const canvas=await renderRadiographicBoardCanvas({gallery,templateMap,itemByKey,aiAnalysis,showAiOverlays:boardAiVisible,showAiLabels:boardLabelsVisible});
      const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error("Falha ao gerar a imagem.")),"image/jpeg",0.96));
      const url=URL.createObjectURL(blob);
      const a=document.createElement("a");
@@ -516,7 +616,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    popup.document.write("<!doctype html><html><head><title>OdontoView</title><style>html,body{margin:0;background:#000;height:100%;display:grid;place-items:center}img{max-width:100%;max-height:100%;object-fit:contain}@media print{body{background:#fff}img{width:100%;max-height:none}}</style></head><body><p style='color:white;font-family:Arial'>Preparando prancha…</p></body></html>");
    setBusy("print");
    try{
-     const canvas=await renderRadiographicBoardCanvas({gallery,templateMap,itemByKey});
+     const canvas=await renderRadiographicBoardCanvas({gallery,templateMap,itemByKey,aiAnalysis,showAiOverlays:boardAiVisible,showAiLabels:boardLabelsVisible});
      const dataUrl=canvas.toDataURL("image/jpeg",0.96);
      popup.document.body.innerHTML='<img src="'+dataUrl+'" alt="Prancha radiográfica">';
      const img=popup.document.querySelector("img");
@@ -641,13 +741,17 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
              <div className="documentation-template-ready-actions">
                <button className="secondary compact" onClick={viewTemplateFullscreen}>◉ Visualizar em tela cheia</button>
                {canManageAi&&<button className="ai-primary compact" disabled={aiBusy==="run"} onClick={runAiAnalysis}>{aiBusy==="run"?"Analisando…":"✨ Analisar com OdontoView AI"}</button>}
+               {aiFindings.some(f=>f?.bbox&&String(f?.status||"SUGGESTED").toUpperCase()!=="REJECTED")&&<div className="documentation-board-ai-controls" aria-label="Controles das marcações da IA">
+                 <button type="button" className={boardAiVisible?"active":""} onClick={()=>setBoardAiVisible(value=>!value)}><span>Marcações IA</span><b>{boardAiVisible?"ON":"OFF"}</b></button>
+                 <button type="button" disabled={!boardAiVisible} className={boardLabelsVisible&&boardAiVisible?"active":""} onClick={()=>setBoardLabelsVisible(value=>!value)}><span>Rótulos</span><b>{boardLabelsVisible&&boardAiVisible?"ON":"OFF"}</b></button>
+               </div>}
                <button className="primary compact" disabled={busy==="download"} onClick={downloadTemplateBoard}>{busy==="download"?"Gerando…":"↓ Baixar template JPG"}</button>
                <button className="ghost compact" disabled={busy==="print"} onClick={printTemplateBoard}>{busy==="print"?"Preparando…":"▣ Imprimir"}</button>
              </div>
            </div>
 
            <div className="documentation-template-delivery-board" ref={finalBoardRef}>
-             <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} onOpen={openInViewer}/>
+             <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} onOpen={openInViewer} aiAnalysis={aiAnalysis} showAiOverlays={boardAiVisible} showAiLabels={boardLabelsVisible}/>
            </div>
          </div>
 
@@ -656,10 +760,10 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
              <div className="documentation-template-side-title"><span>▧</span><strong>Pré-visualização do arquivo</strong></div>
              <div className="documentation-template-preview-frame">
                <div className="documentation-template-preview-scale">
-                 <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey}/>
+                 <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} aiAnalysis={aiAnalysis} showAiOverlays={boardAiVisible} showAiLabels={boardLabelsVisible}/>
                </div>
              </div>
-             <div className="documentation-template-download-note"><span>i</span><p>O arquivo será salvo em formato <b>JPG</b> com o mesmo layout mostrado na tela.</p></div>
+             <div className="documentation-template-download-note"><span>i</span><p>O JPG será salvo <b>igual à prancha exibida</b>: {boardAiVisible?"com marcações da IA":"sem marcações da IA"}{boardAiVisible?boardLabelsVisible?" e com rótulos.":" e sem rótulos.":"."}</p></div>
            </section>
 
            <section className="documentation-template-side-card">
