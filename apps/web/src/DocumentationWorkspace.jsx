@@ -163,7 +163,10 @@ function RadiographicBoard({gallery,templateMap,itemByKey,onOpen}){
   const max=RADIOGRAPHIC_BOARD_LAYOUT.maxilla;
   const mand=RADIOGRAPHIC_BOARD_LAYOUT.mandible;
   const bw=RADIOGRAPHIC_BOARD_LAYOUT.bitewing;
-  return <article className="radiographic-final-board">
+  const leftRail=[...max.left,...mand.left];
+  const rightRail=[...max.right,...mand.right];
+
+  return <article className="radiographic-final-board radiographic-final-board-template">
     <header className="radiographic-board-head">
       <div className="radiographic-board-brand"><span className="radiographic-board-mark">OV</span><strong>OdontoView</strong></div>
       <div className="radiographic-board-patient">
@@ -179,43 +182,37 @@ function RadiographicBoard({gallery,templateMap,itemByKey,onOpen}){
       </div>
     </header>
 
-    <section className="radiographic-board-anatomy">
-      <div className="radiographic-board-band radiographic-board-band-maxilla">
-        <div className="radiographic-board-side-stack">
-          {max.left.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
-        </div>
-        <div className="radiographic-board-center-set">
-          <div className="radiographic-board-label"><span/>{max.label}<span/></div>
-          <div className="radiographic-board-center-images">
+    <section className="radiographic-template-montage">
+      <aside className="radiographic-template-rail">
+        {leftRail.map((slot,index)=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen} className={index<2?"is-upper":"is-lower"}/>)}
+      </aside>
+
+      <div className="radiographic-template-center">
+        <div className="radiographic-template-center-section">
+          <div className="radiographic-board-label"><span/>MAXILA<span/></div>
+          <div className="radiographic-template-center-row">
             {max.center.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen} className="is-vertical"/>)}
           </div>
         </div>
-        <div className="radiographic-board-side-stack">
-          {max.right.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
-        </div>
-      </div>
 
-      <div className="radiographic-board-bitewings">
-        <div className="radiographic-board-label"><span/>{bw.label}<span/></div>
-        <div className="radiographic-board-bw-images">
-          {bw.slots.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
-        </div>
-      </div>
-
-      <div className="radiographic-board-band radiographic-board-band-mandible">
-        <div className="radiographic-board-side-stack">
-          {mand.left.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
-        </div>
-        <div className="radiographic-board-center-set">
-          <div className="radiographic-board-label"><span/>{mand.label}<span/></div>
-          <div className="radiographic-board-center-images">
+        <div className="radiographic-template-center-section">
+          <div className="radiographic-board-label"><span/>MANDÍBULA<span/></div>
+          <div className="radiographic-template-center-row">
             {mand.center.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen} className="is-vertical"/>)}
           </div>
         </div>
-        <div className="radiographic-board-side-stack">
-          {mand.right.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
+
+        <div className="radiographic-template-bw-section">
+          <div className="radiographic-board-label"><span/>BITE-WINGS<span/></div>
+          <div className="radiographic-template-bw-row">
+            {bw.slots.map(slot=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen}/>)}
+          </div>
         </div>
       </div>
+
+      <aside className="radiographic-template-rail">
+        {rightRail.map((slot,index)=><BoardImage key={slot} slotId={slot} templateMap={templateMap} itemByKey={itemByKey} onOpen={onOpen} className={index<2?"is-upper":"is-lower"}/>)}
+      </aside>
     </section>
 
     <footer className="radiographic-board-footer">
@@ -225,11 +222,11 @@ function RadiographicBoard({gallery,templateMap,itemByKey,onOpen}){
 }
 
 async function renderRadiographicBoardCanvas({gallery,templateMap,itemByKey}){
-  const width=3200,height=2200;
+  const width=3200,height=2400;
   const canvas=document.createElement("canvas");
   canvas.width=width;canvas.height=height;
   const ctx=canvas.getContext("2d");
-  ctx.fillStyle="#040a0f";ctx.fillRect(0,0,width,height);
+  ctx.fillStyle="#03080c";ctx.fillRect(0,0,width,height);
 
   const patientName=String(gallery?.patient?.name||"Paciente").toUpperCase();
   const birthDate=formatBoardDate(gallery?.patient?.birthDate);
@@ -240,59 +237,69 @@ async function renderRadiographicBoardCanvas({gallery,templateMap,itemByKey}){
   const orderId=String(gallery?.order?.id||"");
 
   ctx.fillStyle="#71d7f6";ctx.font="700 54px Arial, sans-serif";ctx.fillText("OdontoView",150,105);
-  ctx.fillStyle="#f4f9fc";ctx.font="700 34px Arial, sans-serif";ctx.fillText("Paciente:",530,80);
-  ctx.font="500 34px Arial, sans-serif";ctx.fillText(patientName,720,80);
-  let metaY=128;
+  ctx.fillStyle="#f4f9fc";ctx.font="700 34px Arial, sans-serif";ctx.fillText("Paciente:",520,76);
+  ctx.font="500 34px Arial, sans-serif";ctx.fillText(patientName,710,76);
+  let metaY=124;
   ctx.font="600 24px Arial, sans-serif";
-  if(birthDate){ctx.fillText("Data Nasc.:",530,metaY);ctx.font="400 24px Arial, sans-serif";ctx.fillText(birthDate,680,metaY);metaY+=38;ctx.font="600 24px Arial, sans-serif";}
-  if(examDate){ctx.fillText("Data Ex.:",530,metaY);ctx.font="400 24px Arial, sans-serif";ctx.fillText(examDate,680,metaY);metaY+=38;ctx.font="600 24px Arial, sans-serif";}
-  if(orderId){ctx.fillText("Nº Pedido:",530,metaY);ctx.font="400 24px Arial, sans-serif";ctx.fillText(orderId,680,metaY);}
+  if(birthDate){ctx.fillText("Data Nasc.:",520,metaY);ctx.font="400 24px Arial, sans-serif";ctx.fillText(birthDate,675,metaY);metaY+=38;ctx.font="600 24px Arial, sans-serif";}
+  if(examDate){ctx.fillText("Data Ex.:",520,metaY);ctx.font="400 24px Arial, sans-serif";ctx.fillText(examDate,675,metaY);metaY+=38;ctx.font="600 24px Arial, sans-serif";}
+  if(orderId){ctx.fillText("Nº Pedido:",520,metaY);ctx.font="400 24px Arial, sans-serif";ctx.fillText(orderId,675,metaY);}
 
   ctx.textAlign="right";ctx.font="600 24px Arial, sans-serif";
-  let rightY=80;
+  let rightY=76;
   if(unitName){ctx.fillText("Radiologia: "+unitName,3050,rightY);rightY+=38;}
   if(dentistName){ctx.fillText("Doutor(a): "+dentistName,3050,rightY);rightY+=38;}
   ctx.fillText("Exame: "+examName,3050,rightY);
   ctx.textAlign="left";
 
+  ctx.strokeStyle="#173143";ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(150,260);ctx.lineTo(3050,260);ctx.stroke();
+
   async function drawCard(slotId,x,y,w,h){
     const entry=boardEntry(slotId,templateMap,itemByKey);
-    roundedRectPath(ctx,x,y,w,h,26);ctx.fillStyle="#0a151e";ctx.fill();
+    roundedRectPath(ctx,x,y,w,h,24);ctx.fillStyle="#071119";ctx.fill();
+    ctx.strokeStyle="rgba(222,239,247,.72)";ctx.lineWidth=2;ctx.stroke();
     if(!entry)return;
     const img=await loadCanvasImage(entry.item.url);
-    ctx.save();roundedRectPath(ctx,x+6,y+6,w-12,h-12,22);ctx.clip();
-    drawContainedImage(ctx,img,x+9,y+9,w-18,h-18);ctx.restore();
+    ctx.save();roundedRectPath(ctx,x+5,y+5,w-10,h-10,20);ctx.clip();
+    drawContainedImage(ctx,img,x+8,y+8,w-16,h-16);ctx.restore();
   }
-  function sectionLabel(label,y,x1,x2){
-    ctx.strokeStyle="#78909f";ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(width/2-150,y);ctx.moveTo(width/2+150,y);ctx.lineTo(x2,y);ctx.stroke();
-    ctx.fillStyle="#eef7fb";ctx.font="700 24px Arial, sans-serif";ctx.textAlign="center";ctx.fillText(label,width/2,y+8);ctx.textAlign="left";
-  }
-  async function drawAnatomicBand(layout,y){
-    const sideX=150,sideW=500,sideH=255,sideGap=28;
-    const centerW=430,centerH=538,centerGap=38;
-    const centerTotal=centerW*3+centerGap*2;
-    const centerX=(width-centerTotal)/2;
-    const rightX=width-sideX-sideW;
-    for(let i=0;i<layout.left.length;i++)await drawCard(layout.left[i],sideX,y+i*(sideH+sideGap),sideW,sideH);
-    for(let i=0;i<layout.center.length;i++)await drawCard(layout.center[i],centerX+i*(centerW+centerGap),y,centerW,centerH);
-    for(let i=0;i<layout.right.length;i++)await drawCard(layout.right[i],rightX,y+i*(sideH+sideGap),sideW,sideH);
+  function sectionLabel(label,x,y,w){
+    ctx.strokeStyle="#6f8796";ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+w*.36,y);ctx.moveTo(x+w*.64,y);ctx.lineTo(x+w,y);ctx.stroke();
+    ctx.fillStyle="#eef7fb";ctx.font="700 22px Arial, sans-serif";ctx.textAlign="center";
+    ctx.fillText(label,x+w/2,y+8);ctx.textAlign="left";
   }
 
-  sectionLabel("MAXILA",285,760,2440);
-  await drawAnatomicBand(RADIOGRAPHIC_BOARD_LAYOUT.maxilla,325);
+  const max=RADIOGRAPHIC_BOARD_LAYOUT.maxilla;
+  const mand=RADIOGRAPHIC_BOARD_LAYOUT.mandible;
+  const bw=RADIOGRAPHIC_BOARD_LAYOUT.bitewing;
+  const leftRail=[...max.left,...mand.left];
+  const rightRail=[...max.right,...mand.right];
 
-  sectionLabel("BITE-WINGS",925,620,2580);
-  const bw=RADIOGRAPHIC_BOARD_LAYOUT.bitewing.slots;
-  const bwW=560,bwH=320,bwGap=34,bwTotal=bwW*4+bwGap*3,bwX=(width-bwTotal)/2;
-  for(let i=0;i<bw.length;i++)await drawCard(bw[i],bwX+i*(bwW+bwGap),970,bwW,bwH);
+  const railX=90,railW=520,railH=385,railGap=22,railTop=320;
+  for(let i=0;i<leftRail.length;i++)await drawCard(leftRail[i],railX,railTop+i*(railH+railGap),railW,railH);
+  const rightRailX=width-railX-railW;
+  for(let i=0;i<rightRail.length;i++)await drawCard(rightRail[i],rightRailX,railTop+i*(railH+railGap),railW,railH);
 
-  sectionLabel("MANDÍBULA",1390,760,2440);
-  await drawAnatomicBand(RADIOGRAPHIC_BOARD_LAYOUT.mandible,1430);
+  const centerX=690,centerW=width-centerX*2;
+  const centerCardW=560,centerCardH=470,centerGap=38;
+  const centerTotal=centerCardW*3+centerGap*2;
+  const centerStart=centerX+(centerW-centerTotal)/2;
 
-  ctx.strokeStyle="#173143";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(150,2070);ctx.lineTo(3050,2070);ctx.stroke();
-  ctx.fillStyle="#708897";ctx.font="500 18px Arial, sans-serif";ctx.fillText("Template radiográfico OdontoView",150,2115);
-  ctx.textAlign="right";ctx.fillText("18 posições • 14 periapicais + 4 bite-wings",3050,2115);ctx.textAlign="left";
+  sectionLabel("MAXILA",centerX,335,centerW);
+  for(let i=0;i<max.center.length;i++)await drawCard(max.center[i],centerStart+i*(centerCardW+centerGap),375,centerCardW,centerCardH);
+
+  sectionLabel("MANDÍBULA",centerX,950,centerW);
+  for(let i=0;i<mand.center.length;i++)await drawCard(mand.center[i],centerStart+i*(centerCardW+centerGap),990,centerCardW,centerCardH);
+
+  sectionLabel("BITE-WINGS",centerX,1570,centerW);
+  const bwW=430,bwH=300,bwGap=28,bwTotal=bwW*4+bwGap*3,bwStart=centerX+(centerW-bwTotal)/2;
+  for(let i=0;i<bw.slots.length;i++)await drawCard(bw.slots[i],bwStart+i*(bwW+bwGap),1610,bwW,bwH);
+
+  ctx.strokeStyle="#173143";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(150,2240);ctx.lineTo(3050,2240);ctx.stroke();
+  ctx.fillStyle="#708897";ctx.font="500 18px Arial, sans-serif";ctx.fillText("Template radiográfico OdontoView",150,2288);
+  ctx.textAlign="right";ctx.fillText("18 posições • 14 periapicais + 4 bite-wings",3050,2288);ctx.textAlign="left";
   return canvas;
 }
 
