@@ -83,6 +83,7 @@ async function buildStudyDentistDelivery(req,studyId,{sendEmail=true}={}){
   if(!email){
     await prisma.examStudy.update({where:{id:study.id},data:{
       dentistDeliveryStatus:"NO_EMAIL",dentistDeliveryEmail:null,dentistDeliverySentAt:null,
+      dentistDeliveryOpenedAt:null,dentistDeliveryLastOpenedAt:null,dentistDeliveryOpenCount:0,
       dentistDeliveryError:"Dentista solicitante sem e-mail cadastrado."
     }});
     return {status:"NO_EMAIL",viewerUrl,qrDataUrl,expiresAt,target};
@@ -93,6 +94,7 @@ async function buildStudyDentistDelivery(req,studyId,{sendEmail=true}={}){
   if(!sendEmail||!apiKey||!from){
     await prisma.examStudy.update({where:{id:study.id},data:{
       dentistDeliveryStatus:"READY",dentistDeliveryEmail:email,dentistDeliverySentAt:null,
+      dentistDeliveryOpenedAt:null,dentistDeliveryLastOpenedAt:null,dentistDeliveryOpenCount:0,
       dentistDeliveryError:sendEmail?"Envio automático aguardando configuração de e-mail.":null
     }});
     return {status:"READY",viewerUrl,qrDataUrl,expiresAt,target,emailConfigured:Boolean(apiKey&&from)};
@@ -133,13 +135,17 @@ async function buildStudyDentistDelivery(req,studyId,{sendEmail=true}={}){
       const detail=await response.text();
       throw new Error("Falha no serviço de e-mail ("+response.status+"): "+detail.slice(0,240));
     }
+    const sentAt=new Date();
     await prisma.examStudy.update({where:{id:study.id},data:{
-      dentistDeliveryStatus:"SENT",dentistDeliveryEmail:email,dentistDeliverySentAt:new Date(),dentistDeliveryError:null
+      dentistDeliveryStatus:"SENT",dentistDeliveryEmail:email,dentistDeliverySentAt:sentAt,
+      dentistDeliveryOpenedAt:null,dentistDeliveryLastOpenedAt:null,dentistDeliveryOpenCount:0,
+      dentistDeliveryError:null
     }});
-    return {status:"SENT",viewerUrl,qrDataUrl,expiresAt,target,emailConfigured:true};
+    return {status:"SENT",viewerUrl,qrDataUrl,expiresAt,target,emailConfigured:true,sentAt};
   }catch(error){
     await prisma.examStudy.update({where:{id:study.id},data:{
       dentistDeliveryStatus:"FAILED",dentistDeliveryEmail:email,dentistDeliverySentAt:null,
+      dentistDeliveryOpenedAt:null,dentistDeliveryLastOpenedAt:null,dentistDeliveryOpenCount:0,
       dentistDeliveryError:String(error?.message||"Falha no envio.").slice(0,500)
     }});
     return {status:"FAILED",viewerUrl,qrDataUrl,expiresAt,target,error:String(error?.message||"Falha no envio.")};
@@ -590,7 +596,7 @@ export function createApp(){
           include:{
             examType:true,
             dentist:{include:{user:{select:{name:true}}}},
-            study:{select:{id:true,status:true,sourceType:true,modality:true,fileCount:true,totalBytes:true,completedAt:true,dentistDeliveryStatus:true,dentistDeliveryEmail:true,dentistDeliverySentAt:true,dentistDeliveryError:true}}
+            study:{select:{id:true,status:true,sourceType:true,modality:true,fileCount:true,totalBytes:true,completedAt:true,dentistDeliveryStatus:true,dentistDeliveryEmail:true,dentistDeliverySentAt:true,dentistDeliveryOpenedAt:true,dentistDeliveryLastOpenedAt:true,dentistDeliveryOpenCount:true,dentistDeliveryError:true}}
           },
           orderBy:{requestedAt:"desc"}
         }),
@@ -684,7 +690,7 @@ export function createApp(){
           examType:true,
           dentist:{include:{user:{select:{name:true}}}},
           appointment:{include:{availability:true}},
-          study:{select:{id:true,status:true,sourceType:true,fileCount:true,totalBytes:true,dentistDeliveryStatus:true,dentistDeliveryEmail:true,dentistDeliverySentAt:true,dentistDeliveryError:true}}
+          study:{select:{id:true,status:true,sourceType:true,fileCount:true,totalBytes:true,dentistDeliveryStatus:true,dentistDeliveryEmail:true,dentistDeliverySentAt:true,dentistDeliveryOpenedAt:true,dentistDeliveryLastOpenedAt:true,dentistDeliveryOpenCount:true,dentistDeliveryError:true}}
         }
       });
       orders.sort((a,b)=>new Date(a.appointment.availability.startAt)-new Date(b.appointment.availability.startAt));
@@ -869,6 +875,9 @@ export function createApp(){
           dentistDeliveryStatus:study.dentistDeliveryStatus||null,
           dentistDeliveryEmail:study.dentistDeliveryEmail||null,
           dentistDeliverySentAt:study.dentistDeliverySentAt||null,
+          dentistDeliveryOpenedAt:study.dentistDeliveryOpenedAt||null,
+          dentistDeliveryLastOpenedAt:study.dentistDeliveryLastOpenedAt||null,
+          dentistDeliveryOpenCount:study.dentistDeliveryOpenCount||0,
           dentistDeliveryError:study.dentistDeliveryError||null,
           canDelete:true,canEditLayout:true,canManageAi:true
         },
@@ -1404,6 +1413,21 @@ export function createApp(){
       if(!invite||invite.expiresAt<=new Date()) return res.status(401).json({error:"Link inválido ou expirado."});
       const study=invite.study;
       if(!study||study.status!=="READY") return res.status(404).json({error:"Exame ainda não está disponível."});
+      const openedAt=new Date();
+      await prisma.examStudy.update({
+        where:{id:study.id},
+        data:{
+          dentistDeliveryStatus:"ACCESSED",
+          dentistDeliveryOpenedAt:study.dentistDeliveryOpenedAt||openedAt,
+          dentistDeliveryLastOpenedAt:openedAt,
+          dentistDeliveryOpenCount:{increment:1},
+          dentistDeliveryError:null
+        }
+      });
+      study.dentistDeliveryStatus="ACCESSED";
+      study.dentistDeliveryOpenedAt=study.dentistDeliveryOpenedAt||openedAt;
+      study.dentistDeliveryLastOpenedAt=openedAt;
+      study.dentistDeliveryOpenCount=(study.dentistDeliveryOpenCount||0)+1;
       res.set("Cache-Control","no-store");
       res.set("Referrer-Policy","no-referrer");
       res.json({
@@ -1413,6 +1437,11 @@ export function createApp(){
           fileCount:study.fileCount,totalBytes:study.totalBytes,completedAt:study.completedAt,
           documentationLayout:study.documentationLayout||null,
           aiAnalysis:study.aiAnalysis||null,
+          dentistDeliveryStatus:study.dentistDeliveryStatus||null,
+          dentistDeliverySentAt:study.dentistDeliverySentAt||null,
+          dentistDeliveryOpenedAt:study.dentistDeliveryOpenedAt||null,
+          dentistDeliveryLastOpenedAt:study.dentistDeliveryLastOpenedAt||null,
+          dentistDeliveryOpenCount:study.dentistDeliveryOpenCount||0,
           canDelete:false,canEditLayout:false,canManageAi:false
         },
         patient:study.patient,
