@@ -2274,11 +2274,19 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .documentation-template-actions{justify-content:flex-start}
 }
 @media(max-width:700px){
-  .documentation-workspace{height:96vh;border-radius:18px}
-  .documentation-view-tabs{padding:8px;align-items:stretch;flex-direction:column}
+  .documentation-gallery-backdrop{padding:0;align-items:stretch}
+  .documentation-workspace,
+  .documentation-workspace.mode-template{
+    width:100vw;height:100dvh;max-height:none;border-radius:0;border-left:0;border-right:0
+  }
+  .documentation-workspace .documentation-gallery-head{padding:14px 16px 12px}
+  .documentation-workspace .documentation-gallery-head h2{font-size:22px}
+  .documentation-workspace .documentation-gallery-head p{font-size:10px}
+  .documentation-view-tabs{padding:8px 12px;align-items:stretch;flex-direction:column;gap:8px}
   .documentation-view-tabs-group{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}
-  .documentation-view-tabs-group button{padding:7px 5px}
-  .documentation-view-status{padding-left:4px}
+  .documentation-view-tabs-group button{min-height:42px;padding:8px 5px;font-size:11px}
+  .documentation-view-status{padding-left:4px;font-size:9px}
+
   .documentation-overview{padding:14px 10px 20px}
   .documentation-overview-intro{align-items:flex-start;flex-direction:column}
   .documentation-order-chip{display:none}
@@ -2286,6 +2294,7 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .documentation-overview-media{height:142px}
   .documentation-overview-meta{grid-template-columns:22px minmax(0,1fr)}
   .documentation-overview-meta>span{display:none}
+
   .documentation-template-toolbar{padding:12px}
   .documentation-template-actions{width:100%}
   .documentation-template-actions select{width:100%;max-width:none}
@@ -2294,17 +2303,78 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .documentation-template-row,.documentation-template-section.is-compact .documentation-template-row{grid-template-columns:repeat(2,minmax(0,1fr))}
   .documentation-template-slot{height:150px}
   .documentation-template-savebar{align-items:flex-start;flex-direction:column}
-  .documentation-template-delivery{grid-template-columns:1fr;overflow:auto}
-  .documentation-template-delivery-side{overflow:visible}
-  .documentation-template-ready-card{align-items:flex-start;flex-direction:column}
-  .documentation-template-ready-actions{justify-content:flex-start}
-  .documentation-board-ai-controls{width:100%;justify-content:space-between}
-  .documentation-board-ai-controls button{flex:1;justify-content:center}
 
-  .documentation-template-preview-frame{height:190px}
+  /* Dedicated mobile delivery experience */
+  .documentation-template-delivery{
+    display:block;overflow-y:auto;overflow-x:hidden;padding:10px 8px 24px
+  }
+  .documentation-template-delivery-main{
+    display:flex;flex-direction:column;gap:10px;min-width:0;min-height:auto
+  }
+  .documentation-template-ready-card{
+    align-items:flex-start;flex-direction:column;gap:12px;padding:12px
+  }
+  .documentation-template-ready-copy{width:100%}
+  .documentation-template-ready-copy>div{min-width:0}
+  .documentation-template-ready-copy>div>span{white-space:normal;overflow-wrap:anywhere}
+  .documentation-template-ready-actions{
+    width:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px;justify-content:stretch
+  }
+  .documentation-template-ready-actions>button{
+    width:100%;min-width:0;min-height:46px;white-space:normal;line-height:1.15
+  }
+  .documentation-template-ready-actions>.ai-primary{grid-column:1/-1}
+  .documentation-board-ai-controls{
+    grid-column:1/-1;width:100%;display:grid;grid-template-columns:1fr 1fr;justify-content:stretch
+  }
+  .documentation-board-ai-controls button{width:100%;justify-content:center;min-height:38px}
+
+  .documentation-template-delivery-board{
+    width:100%;min-height:auto;overflow:visible;padding:6px;border-radius:12px
+  }
+  .documentation-template-delivery-board>.radiographic-final-board{
+    width:100%;min-width:0;padding:8px 8px 6px;border-radius:12px;box-shadow:0 10px 28px rgba(2,15,24,.18)
+  }
+  .radiographic-final-board{width:100%;min-width:0}
+  .radiographic-final-board-template{aspect-ratio:4/3}
+  .radiographic-final-board-template .radiographic-board-head{
+    grid-template-columns:.72fr 1.25fr .95fr;gap:6px;padding:0 1px 6px
+  }
+  .radiographic-board-mark{width:18px;height:18px;border-radius:6px;font-size:6px}
+  .radiographic-board-brand{gap:4px}
+  .radiographic-board-brand strong{font-size:10px}
+  .radiographic-board-patient,.radiographic-board-provider{gap:2px}
+  .radiographic-board-patient p,.radiographic-board-provider p{gap:3px;font-size:4.7px;line-height:1.1}
+  .radiographic-template-montage{
+    grid-template-columns:minmax(0,.72fr) minmax(0,2.3fr) minmax(0,.72fr);
+    gap:4px;padding:6px 1px 5px
+  }
+  .radiographic-template-rail{gap:3px}
+  .radiographic-template-center{gap:5px}
+  .radiographic-template-center-section,.radiographic-template-bw-section{gap:2px}
+  .radiographic-template-center-row,.radiographic-template-bw-row{gap:3px}
+  .radiographic-board-label{gap:4px;font-size:4.5px}
+  .radiographic-final-board-template .radiographic-board-image{border-radius:4px}
+  .radiographic-board-ai-box{border-width:1px;border-radius:3px}
+  .radiographic-board-ai-label{
+    min-height:10px;max-width:74px;padding:2px 3px;gap:2px;border-radius:3px;font-size:3.6px
+  }
+  .radiographic-board-ai-label b{font-size:3.6px}
+  .radiographic-board-ai-label em{font-size:3px;padding:1px 2px}
+  .radiographic-board-ai-label small{font-size:3px}
+  .radiographic-board-footer{padding:4px 1px 0;font-size:3.8px}
+
+  .documentation-template-delivery-side{
+    overflow:visible;display:flex;flex-direction:column;gap:10px;margin-top:10px;padding-right:0
+  }
+  .documentation-template-preview-frame{height:180px}
+  .documentation-template-preview-scale{width:1160px;transform:scale(.20)}
+  .documentation-template-side-card{padding:10px}
+  .documentation-template-side-title strong{font-size:11px}
+  .documentation-template-download-note p{font-size:9px}
+  .documentation-template-info-list dt,.documentation-template-info-list dd{font-size:9px}
+
   .documentation-final-board-toolbar{align-items:flex-start;flex-direction:column}
   .documentation-final-board-actions{justify-content:flex-start}
   .documentation-final-board-stage{padding:12px 8px 18px}
-  .radiographic-final-board{min-width:860px}
-  .radiographic-template-montage{grid-template-columns:160px 520px 160px}
 }
