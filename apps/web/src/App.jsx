@@ -146,7 +146,7 @@ function DentistDashboard(){
  const initialTab=["home","new","new-patient","patients","exams","import"].includes(requestedTab)?requestedTab:"home";
  const [data,setData]=useState(null),[types,setTypes]=useState([]),[tab,setTab]=useState(initialTab),[err,setErr]=useState(""),[busy,setBusy]=useState(false),[openingStudy,setOpeningStudy]=useState("");
  const [patientMode,setPatientMode]=useState("existing"),[selectedPatient,setSelectedPatient]=useState(""),[type,setType]=useState("");
- const [p,setP]=useState({name:"",birthDate:"",phone:"",email:""}),[out,setOut]=useState(null),[createdPatient,setCreatedPatient]=useState(null),[patientSaving,setPatientSaving]=useState(false),[orderQr,setOrderQr]=useState(""),[shareMessage,setShareMessage]=useState("");
+ const [p,setP]=useState({name:"",birthDate:"",phone:"",email:"",referringDentistName:"",referringDentistCro:"",referringDentistEmail:""}),[out,setOut]=useState(null),[createdPatient,setCreatedPatient]=useState(null),[patientSaving,setPatientSaving]=useState(false),[orderQr,setOrderQr]=useState(""),[shareMessage,setShareMessage]=useState("");
  const dentistFileInput=useRef(null);
  const [dentistIngest,setDentistIngest]=useState(null),[dentistImportPatient,setDentistImportPatient]=useState(""),[dentistImportType,setDentistImportType]=useState("");
  const [demoAvailable,setDemoAvailable]=useState(null),[demoOpening,setDemoOpening]=useState(false),[demoProgress,setDemoProgress]=useState("");
@@ -188,7 +188,7 @@ function DentistDashboard(){
      setSelectedPatient(patient.id);
      setDentistImportPatient(patient.id);
      setPatientMode("existing");
-     setP({name:"",birthDate:"",phone:"",email:""});
+     setP({name:"",birthDate:"",phone:"",email:"",referringDentistName:"",referringDentistCro:"",referringDentistEmail:""});
      await load();
    }catch(e){setErr(e.message)}
    finally{setPatientSaving(false)}
@@ -217,7 +217,7 @@ function DentistDashboard(){
      const patientId=selectedPatient;
      if(!patientId)throw new Error("Selecione um paciente cadastrado.");
      const order=await api("/api/orders",{method:"POST",body:JSON.stringify({patientId,examTypeId:type})});
-     setOut(order);setP({name:"",birthDate:"",phone:"",email:""});setPatientMode("existing");
+     setOut(order);setP({name:"",birthDate:"",phone:"",email:"",referringDentistName:"",referringDentistCro:"",referringDentistEmail:""});setPatientMode("existing");
      await load();
    }catch(e){setErr(e.message)}finally{setBusy(false)}
  }
@@ -392,7 +392,7 @@ function DentistDashboard(){
  };
  const startNewPatient=()=>{
    setCreatedPatient(null);
-   setP({name:"",birthDate:"",phone:"",email:""});
+   setP({name:"",birthDate:"",phone:"",email:"",referringDentistName:"",referringDentistCro:"",referringDentistEmail:""});
    goDentistTab("new-patient");
  };
  const recentExams=[
@@ -489,7 +489,13 @@ function DentistDashboard(){
        {!createdPatient?<form className="stack" onSubmit={saveStandalonePatient}>
          <input required autoFocus placeholder="Nome completo" value={p.name} onChange={e=>setP({...p,name:e.target.value})}/>
          <div className="two"><input type="date" value={p.birthDate} onChange={e=>setP({...p,birthDate:e.target.value})}/><input placeholder="Telefone / WhatsApp" value={p.phone} onChange={e=>setP({...p,phone:e.target.value})}/></div>
-         <input type="email" placeholder="E-mail (opcional)" value={p.email} onChange={e=>setP({...p,email:e.target.value})}/>
+         <input type="email" placeholder="E-mail do paciente (opcional)" value={p.email} onChange={e=>setP({...p,email:e.target.value})}/>
+         <fieldset className="referring-dentist-fields">
+           <legend>Dentista solicitante <span>(opcional)</span></legend>
+           <p>Preencha se o paciente veio com guia ou informou outro profissional. Se deixar vazio, seu cadastro profissional será usado.</p>
+           <input placeholder="Nome do dentista" value={p.referringDentistName} onChange={e=>setP({...p,referringDentistName:e.target.value})}/>
+           <div className="two"><input placeholder="CRO / UF" value={p.referringDentistCro} onChange={e=>setP({...p,referringDentistCro:e.target.value})}/><input type="email" placeholder="E-mail do dentista" value={p.referringDentistEmail} onChange={e=>setP({...p,referringDentistEmail:e.target.value})}/></div>
+         </fieldset>
          <button className="primary" disabled={patientSaving}>{patientSaving?"Salvando…":"Salvar paciente"}</button>
        </form>:<section className="patient-created-success">
          <div className="patient-created-check">✓</div>
@@ -685,7 +691,7 @@ function Radiology(){
  const initialTab=["home","agenda","patients","exams","import"].includes(requestedTab)?requestedTab:"home";
  const [tab,setTab]=useState(initialTab),[date,setDate]=useState(localDateValue()),[data,setData]=useState(null),[patients,setPatients]=useState(null),[patientSearch,setPatientSearch]=useState(""),[err,setErr]=useState(""),[busy,setBusy]=useState(""),[ingest,setIngest]=useState(null);
  const [radiologyExamTypes,setRadiologyExamTypes]=useState([]),[importPatientId,setImportPatientId]=useState(""),[importExamType,setImportExamType]=useState("");
- const [patientForm,setPatientForm]=useState({name:"",birthDate:"",phone:"",email:""}),[patientSaving,setPatientSaving]=useState(false);
+ const [patientForm,setPatientForm]=useState({name:"",birthDate:"",phone:"",email:"",referringDentistName:"",referringDentistCro:"",referringDentistEmail:""}),[patientSaving,setPatientSaving]=useState(false);
  const [selectedPatient,setSelectedPatient]=useState(null),[patientDetail,setPatientDetail]=useState(null),[patientDetailBusy,setPatientDetailBusy]=useState(false);
  const [patientIngest,setPatientIngest]=useState(null),[patientTarget,setPatientTarget]=useState(null),[patientExamType,setPatientExamType]=useState(""),[examUploadConfirm,setExamUploadConfirm]=useState(null);
  const [openingUnitStudy,setOpeningUnitStudy]=useState(""),[shareInvite,setShareInvite]=useState(null);
@@ -728,7 +734,7 @@ function Radiology(){
    e.preventDefault();setPatientSaving(true);setErr("");
    try{
      const created=await api("/api/unit/patients",{method:"POST",body:JSON.stringify(patientForm)});
-     setPatientForm({name:"",birthDate:"",phone:"",email:""});
+     setPatientForm({name:"",birthDate:"",phone:"",email:"",referringDentistName:"",referringDentistCro:"",referringDentistEmail:""});
      await loadPatients("");
      await openPatient(created);
    }catch(e){setErr(e.message)}finally{setPatientSaving(false)}
@@ -1118,7 +1124,13 @@ function Radiology(){
        <form className="stack" onSubmit={savePatient}>
          <input id="radio-patient-name" required placeholder="Nome completo" value={patientForm.name} onChange={e=>setPatientForm({...patientForm,name:e.target.value})}/>
          <div className="two"><input type="date" value={patientForm.birthDate} onChange={e=>setPatientForm({...patientForm,birthDate:e.target.value})}/><input placeholder="Telefone / WhatsApp" value={patientForm.phone} onChange={e=>setPatientForm({...patientForm,phone:e.target.value})}/></div>
-         <input type="email" placeholder="Email (opcional)" value={patientForm.email} onChange={e=>setPatientForm({...patientForm,email:e.target.value})}/>
+         <input type="email" placeholder="E-mail do paciente (opcional)" value={patientForm.email} onChange={e=>setPatientForm({...patientForm,email:e.target.value})}/>
+         <fieldset className="referring-dentist-fields">
+           <legend>Dentista solicitante <span>(opcional)</span></legend>
+           <p>Se o paciente souber ou trouxer uma guia, informe os dados para receber o exame automaticamente quando ficar pronto.</p>
+           <input placeholder="Nome do dentista" value={patientForm.referringDentistName} onChange={e=>setPatientForm({...patientForm,referringDentistName:e.target.value})}/>
+           <div className="two"><input placeholder="CRO / UF" value={patientForm.referringDentistCro} onChange={e=>setPatientForm({...patientForm,referringDentistCro:e.target.value})}/><input type="email" placeholder="E-mail do dentista" value={patientForm.referringDentistEmail} onChange={e=>setPatientForm({...patientForm,referringDentistEmail:e.target.value})}/></div>
+         </fieldset>
          <button className="primary" disabled={patientSaving}>{patientSaving?"Salvando…":"Cadastrar paciente"}</button>
        </form>
      </section>}
