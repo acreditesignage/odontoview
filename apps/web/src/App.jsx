@@ -8,6 +8,7 @@ import {examUploadPolicy,isDicomStudySource} from "./examUpload.js";
 import {DEMO_EXAM,checkDemoExamAvailability,loadDemoExam} from "./demoExam.js";
 import Viewer2 from "./Viewer2.jsx";
 import DocumentationWorkspace from "./DocumentationWorkspace.jsx";
+import SharedExamAccess from "./SharedExamAccess.jsx";
 import {setViewerSession} from "./viewerSession.js";
 import QRCode from "qrcode";
 
@@ -1264,6 +1265,7 @@ export default function App(){return <Routes>
  <Route path="/" element={<Login/>}/>
  <Route path="/cadastro-dentista" element={<Login initialMode="register"/>}/>
  <Route path="/convite-dentista" element={<DentistInvitePage/>}/>
+ <Route path="/acesso-exame" element={<SharedExamAccess/>}/>
  <Route path="/dentista" element={<DentistDashboard/>}/>
  <Route path="/novo-pedido" element={<Navigate to="/dentista"/>}/>
  <Route path="/radiologia" element={<Radiology/>}/>
