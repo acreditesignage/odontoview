@@ -30,6 +30,20 @@ const dentistPatientWhere=(dentistId,patientId)=>({
 function isDicomSource(value){
   return ["DICOM","ZIP","RAR"].includes(String(value||"").toUpperCase());
 }
+function sanitizeDocumentationLayout(value,files=[]){
+  if(!value||typeof value!=="object"||Array.isArray(value)) return null;
+  const templates=new Set(["PERIAPICAL_14_BW_4","PERIAPICAL_14"]);
+  const template=templates.has(String(value.template||""))?String(value.template):"PERIAPICAL_14_BW_4";
+  const validFiles=new Set((files||[]).map(file=>file.id));
+  const slots={};
+  const raw=value.slots&&typeof value.slots==="object"&&!Array.isArray(value.slots)?value.slots:{};
+  for(const [slotId,fileId] of Object.entries(raw)){
+    const safeSlot=String(slotId||"").slice(0,40);
+    const safeFile=String(fileId||"");
+    if(/^[a-z0-9_-]+$/i.test(safeSlot)&&validFiles.has(safeFile)) slots[safeSlot]=safeFile;
+  }
+  return {version:1,template,slots};
+}
 function safeUploadContentType(value){
   const raw=String(value||"application/octet-stream").trim().toLowerCase().slice(0,120);
   return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(raw)?raw:"application/octet-stream";
@@ -541,13 +555,32 @@ export function createApp(){
           id:study.id,status:study.status,sourceType:study.sourceType,modality:study.modality,
           manufacturer:study.manufacturer,model:study.model,seriesCount:study.seriesCount,
           fileCount:study.fileCount,totalBytes:study.totalBytes,completedAt:study.completedAt,
-          canDelete:true
+          documentationLayout:study.documentationLayout||null,
+          canDelete:true,canEditLayout:true
         },
         patient:study.patient,
         examType:study.examType,
         order:study.order,
         files:study.files
       });
+    }catch(e){next(e);}
+  });
+
+  app.put("/api/unit/studies/:studyId/layout",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const study=await prisma.examStudy.findFirst({
+        where:{id:req.params.studyId,unitId:membership.unitId,status:"READY"},
+        include:{files:{select:{id:true}}}
+      });
+      if(!study) return res.status(404).json({error:"Exame não encontrado nesta unidade."});
+      if(isDicomSource(study.sourceType)) return res.status(409).json({error:"O template radiográfico é destinado às documentações 2D."});
+      const layout=sanitizeDocumentationLayout(req.body?.layout,study.files);
+      if(!layout) return res.status(400).json({error:"Organização do template inválida."});
+      const updated=await prisma.examStudy.update({where:{id:study.id},data:{documentationLayout:layout}});
+      res.json({layout:updated.documentationLayout});
     }catch(e){next(e);}
   });
 
@@ -732,13 +765,33 @@ export function createApp(){
           id:study.id,status:study.status,sourceType:study.sourceType,modality:study.modality,
           manufacturer:study.manufacturer,model:study.model,seriesCount:study.seriesCount,
           fileCount:study.fileCount,totalBytes:study.totalBytes,completedAt:study.completedAt,
-          canDelete:study.ownerDentistId===dentist.id
+          documentationLayout:study.documentationLayout||null,
+          canDelete:study.ownerDentistId===dentist.id,
+          canEditLayout:study.ownerDentistId===dentist.id
         },
         order:study.order
           ? {id:study.order.id,patient:study.order.patient,examType:study.order.examType,unit:study.order.unit}
           : {id:null,patient:study.patient,examType:study.examType||{name:"Exame DICOM"},unit:study.unit},
         files:study.files
       });
+    }catch(e){next(e);}
+  });
+
+  app.put("/api/dentist/studies/:studyId/layout",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      const dentist=await dentistFor(req.auth.sub);
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
+      const study=await prisma.examStudy.findFirst({
+        where:{id:req.params.studyId,ownerDentistId:dentist.id,status:"READY"},
+        include:{files:{select:{id:true}}}
+      });
+      if(!study) return res.status(403).json({error:"A organização oficial desta documentação pertence à radiologia que enviou o exame."});
+      if(isDicomSource(study.sourceType)) return res.status(409).json({error:"O template radiográfico é destinado às documentações 2D."});
+      const layout=sanitizeDocumentationLayout(req.body?.layout,study.files);
+      if(!layout) return res.status(400).json({error:"Organização do template inválida."});
+      const updated=await prisma.examStudy.update({where:{id:study.id},data:{documentationLayout:layout}});
+      res.json({layout:updated.documentationLayout});
     }catch(e){next(e);}
   });
 
