@@ -4,6 +4,7 @@ const STORE="studyFiles";
 const MIN_LIMIT=256*1024*1024;
 const DEFAULT_LIMIT=1024*1024*1024;
 const MAX_LIMIT=2*1024*1024*1024;
+const TOUCH_INTERVAL_MS=6*60*60*1000;
 
 function notifyStudyCacheChange(){
   try{window.dispatchEvent(new CustomEvent("odontoview-study-cache-change"))}catch{}
@@ -140,7 +141,7 @@ export async function cachedStudyBlob({studyId,fileMeta,version,fetcher}){
   try{
     const hit=await getRecord(key);
     if(hit?.blob instanceof Blob){
-      touchRecord(hit);
+      if(Date.now()-(Number(hit.touchedAt)||0)>TOUCH_INTERVAL_MS)touchRecord(hit);
       return new Blob([hit.blob],{type:fileMeta.contentType||hit.contentType||hit.blob.type||"application/octet-stream"});
     }
   }catch{}
