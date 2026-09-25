@@ -259,6 +259,7 @@ model ExamStudy {
   createdAt       DateTime    @default(now())
   completedAt     DateTime?
   documentationLayout Json?
+  aiAnalysis       Json?
 
   order        Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
