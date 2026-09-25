@@ -2011,6 +2011,33 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 4px 0;
   border-top:1px solid rgba(129,167,188,.19);color:#748d9d;font-size:8px;font-weight:650
 }
+.radiographic-final-board-template{aspect-ratio:4/3;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.radiographic-template-montage{
+  min-height:0;display:grid;grid-template-columns:minmax(168px,.72fr) minmax(520px,2.3fr) minmax(168px,.72fr);
+  gap:12px;padding:16px 2px 14px
+}
+.radiographic-template-rail{
+  min-height:0;display:grid;grid-template-rows:repeat(4,minmax(0,1fr));gap:9px
+}
+.radiographic-template-rail .radiographic-board-image{min-height:0}
+.radiographic-template-rail .radiographic-board-image.is-lower{margin-top:2px}
+.radiographic-template-center{
+  min-height:0;display:grid;grid-template-rows:1fr 1fr .7fr;gap:14px
+}
+.radiographic-template-center-section,.radiographic-template-bw-section{
+  min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);gap:7px
+}
+.radiographic-template-center-row{
+  min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px
+}
+.radiographic-template-bw-row{
+  min-height:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px
+}
+.radiographic-template-center-row .radiographic-board-image,
+.radiographic-template-bw-row .radiographic-board-image{min-height:0}
+.radiographic-final-board-template .radiographic-board-image{border-radius:12px}
+.radiographic-final-board-template .radiographic-board-head{padding-bottom:14px}
+.radiographic-final-board-template .radiographic-board-footer{padding-top:8px}
 
 /* Detailed viewer preserved inside the new workspace */
 .documentation-viewer-pane{
@@ -2053,4 +2080,5 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .documentation-final-board-actions{justify-content:flex-start}
   .documentation-final-board-stage{padding:12px 8px 18px}
   .radiographic-final-board{min-width:860px}
+  .radiographic-template-montage{grid-template-columns:160px 520px 160px}
 }
