@@ -2487,3 +2487,14 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .shared-exam-access{grid-template-columns:1fr;padding:14px}
   .shared-exam-access img{width:160px;height:160px;justify-self:center}
 }
+
+
+.delivery-status-line{
+  display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:5px 8px;width:max-content;max-width:100%;
+  border:1px solid #d9e7ef;border-radius:999px;background:#f7fbfd;color:#607786;font-size:8px!important;font-weight:850;line-height:1.2
+}
+.delivery-status-line.status-sent{border-color:#bfe5d4;background:#eefbf5;color:#257452}
+.delivery-status-line.status-accessed{border-color:#a9dfd1;background:#e9faf4;color:#176a4a}
+.delivery-status-line.status-ready{border-color:#cbe2ee;background:#f2f9fc;color:#32718d}
+.delivery-status-line.status-failed{border-color:#efcaca;background:#fff4f4;color:#a24646}
+.delivery-status-line.status-no_email{border-color:#ecdcae;background:#fffaf0;color:#8a6a12}
