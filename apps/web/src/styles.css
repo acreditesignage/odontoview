@@ -1653,6 +1653,31 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 .documentation-gallery-stage>img{
   max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.28)
 }
+.documentation-ai-image-layer{
+  position:relative;display:inline-grid;place-items:center;max-width:100%;max-height:100%;
+  transform-origin:center center;will-change:transform;line-height:0
+}
+.documentation-ai-image-layer>img{
+  display:block;max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;
+  box-shadow:0 16px 44px rgba(0,0,0,.28);transition:filter .12s ease
+}
+.documentation-ai-overlay-box{
+  position:absolute;z-index:4;pointer-events:none;border:2px solid #20c5dc;border-radius:10px;
+  background:rgba(20,183,207,.10);box-shadow:0 0 0 1px rgba(0,0,0,.28),0 0 20px rgba(24,185,213,.22)
+}
+.documentation-ai-overlay-box.status-confirmed{
+  border-color:#38d48c;background:rgba(56,212,140,.10);box-shadow:0 0 0 1px rgba(0,0,0,.28),0 0 20px rgba(56,212,140,.2)
+}
+.documentation-ai-overlay-label{
+  position:absolute;left:-2px;top:-32px;max-width:240px;display:flex;align-items:center;gap:7px;
+  padding:6px 8px;border-radius:8px 8px 8px 2px;background:#0e809b;color:white;
+  font-size:9px;font-weight:850;line-height:1.2;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.25)
+}
+.documentation-ai-overlay-box.status-confirmed .documentation-ai-overlay-label{background:#21855d}
+.documentation-ai-overlay-label span{overflow:hidden;text-overflow:ellipsis}
+.documentation-ai-overlay-label b{
+  flex:none;padding:2px 5px;border-radius:999px;background:rgba(255,255,255,.18);font-size:8px
+}
 .documentation-gallery-stage>iframe{width:100%;height:100%;border:0;border-radius:10px;background:#fff}
 .documentation-gallery-file{
   display:grid;place-items:center;gap:12px;padding:32px;color:#e5f4ff;text-align:center
@@ -1728,8 +1753,8 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   overflow:hidden;touch-action:none;cursor:grab;user-select:none
 }
 .documentation-gallery-stage.is-image:active{cursor:grabbing}
-.documentation-gallery-stage.is-image>img{
-  transition:filter .12s ease;will-change:transform,filter;transform-origin:center center
+.documentation-gallery-stage.is-image>.documentation-ai-image-layer{
+  will-change:transform;transform-origin:center center
 }
 .radiology-exam-actions,
 .patient-order-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
@@ -1738,6 +1763,9 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .documentation-toolbar{gap:6px;padding:8px}
   .documentation-tool{flex:1 1 auto;justify-content:center}
   .documentation-delete-image{margin-left:0}
+  .documentation-ai-overlay-toggle{margin-left:0}
+  .documentation-ai-viewer-summary>span{display:none}
+  .documentation-ai-overlay-label{font-size:8px;max-width:170px}
 }
 
 .documentation-gallery>.documentation-toolbar{grid-row:2;min-height:50px;position:relative;z-index:2}
@@ -2008,6 +2036,27 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 .documentation-template-edit-button{width:100%;margin-top:auto}
 
 /* OdontoView AI 3.0 Alpha */
+.documentation-ai-overlay-toggle{
+  display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:7px 10px;margin-left:auto;
+  border:1px solid #cae7ef;border-radius:10px;background:#f4fbfd;color:#34738a;font-size:9px;font-weight:850
+}
+.documentation-ai-overlay-toggle.active{border-color:#91d9e5;background:#eafafd;color:#147d96}
+.documentation-ai-overlay-toggle b{
+  min-width:20px;height:20px;display:grid;place-items:center;border-radius:999px;background:#dff4f8;color:#147d96;font-size:8px
+}
+.documentation-ai-overlay-dot{
+  width:8px;height:8px;display:inline-block;border-radius:50%;background:#21bfd5;
+  box-shadow:0 0 0 4px rgba(33,191,213,.12)
+}
+.documentation-ai-viewer-summary{
+  min-height:38px;padding:7px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  border-top:1px solid #18303f;border-bottom:1px solid #dfe9ef;background:#f8fcfe;color:#547184
+}
+.documentation-ai-viewer-summary>div{display:flex;align-items:center;gap:8px;min-width:0}
+.documentation-ai-viewer-summary strong{font-size:9px;color:#24526b}
+.documentation-ai-viewer-summary small{font-size:8px;color:#718996}
+.documentation-ai-viewer-summary>span{font-size:7px;font-weight:750;color:#8799a5}
+
 .ai-primary,.ai-secondary{
   border:0;border-radius:10px;font-weight:850;letter-spacing:.01em;transition:.16s ease
 }
@@ -2156,11 +2205,12 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 
 /* Detailed viewer preserved inside the new workspace */
 .documentation-viewer-pane{
-  min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:#09131d
+  min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;background:#09131d
 }
 .documentation-viewer-pane .documentation-toolbar{grid-row:1}
 .documentation-viewer-pane .documentation-gallery-stage{grid-row:2}
-.documentation-viewer-pane .documentation-gallery-grid{grid-row:3}
+.documentation-viewer-pane .documentation-ai-viewer-summary{grid-row:3}
+.documentation-viewer-pane .documentation-gallery-grid{grid-row:4}
 
 @media(max-width:980px){
   .documentation-overview-grid{grid-template-columns:repeat(auto-fill,minmax(145px,1fr))}
