@@ -110,6 +110,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const [busy,setBusy]=useState("");
  const [templateId,setTemplateId]=useState("PERIAPICAL_14_BW_4");
  const [templateMap,setTemplateMap]=useState({});
+ const [complementaryTypes,setComplementaryTypes]=useState({});
  const [templateDirty,setTemplateDirty]=useState(false);
  const [templateState,setTemplateState]=useState("");
  const dragRef=useRef(null);
@@ -147,6 +148,15 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const unassigned=imageEntries.filter(entry=>!assignedKeys.has(entry.key));
  const placedCount=assignedKeys.size;
  const templateComplete=placedCount===slotIds.length;
+ const complementaryGroups=useMemo(()=>{
+   const typeFor=entry=>complementaryTypes[entry.key]||"UNCLASSIFIED";
+   return [
+     {id:"BOARD",label:"Prancha / montagem",hint:"Composição geral da documentação",entries:unassigned.filter(entry=>typeFor(entry)==="BOARD")},
+     {id:"RADIOGRAPH",label:"Radiografias adicionais",hint:"Imagens clínicas fora do template principal",entries:unassigned.filter(entry=>typeFor(entry)==="RADIOGRAPH")},
+     {id:"OTHER",label:"Outros arquivos",hint:"Complementos que não se encaixam nas categorias acima",entries:unassigned.filter(entry=>typeFor(entry)==="OTHER")},
+     {id:"UNCLASSIFIED",label:"A classificar",hint:"Defina o tipo para deixar a entrega organizada",entries:unassigned.filter(entry=>typeFor(entry)==="UNCLASSIFIED")}
+   ].filter(group=>group.entries.length);
+ },[unassigned,complementaryTypes]);
  const hasSavedLayout=Boolean(gallery?.study?.documentationLayout);
 
  function autoMapFor(id=templateId){
@@ -182,10 +192,12 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    setTemplateId(nextTemplate);
    if(saved?.slots&&typeof saved.slots==="object"){
      setTemplateMap(saved.slots);
+     setComplementaryTypes(saved?.complementaryTypes&&typeof saved.complementaryTypes==="object"?saved.complementaryTypes:{});
      setTemplateDirty(false);
      setTemplateState("saved");
    }else{
      setTemplateMap(autoMapFor(nextTemplate));
+     setComplementaryTypes({});
      setTemplateDirty(Boolean(gallery?.study?.canEditLayout&&imageEntries.length));
      setTemplateState("auto");
    }
@@ -226,18 +238,34 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    });
    setTemplateDirty(true);setTemplateState("editing");
  }
+ function setComplementaryType(key,type){
+   if(!canEditLayout||!key)return;
+   setComplementaryTypes(prev=>{
+     const next={...prev};
+     if(!type||type==="UNCLASSIFIED")delete next[key];
+     else next[key]=type;
+     return next;
+   });
+   setTemplateDirty(true);setTemplateState("editing");
+ }
  function organizeByNumber(){setTemplateMap(autoMapFor(templateId));setTemplateDirty(true);setTemplateState("auto")}
  function clearTemplate(){setTemplateMap({});setTemplateDirty(true);setTemplateState("editing")}
  async function saveTemplate(){
    if(!canEditLayout||!onSaveLayout)return;
    const slots={};
    for(const id of slotIds)if(templateMap[id]&&itemByKey.has(templateMap[id]))slots[id]=templateMap[id];
+   const savedComplementaryTypes={};
+   for(const entry of unassigned){
+     const type=complementaryTypes[entry.key];
+     if(["BOARD","RADIOGRAPH","OTHER"].includes(type))savedComplementaryTypes[entry.key]=type;
+   }
    setBusy("layout");
    try{
-     const out=await onSaveLayout({version:1,template:templateId,slots});
-     const layout=out?.layout||{version:1,template:templateId,slots};
+     const payload={version:1,template:templateId,slots,complementaryTypes:savedComplementaryTypes};
+     const out=await onSaveLayout(payload);
+     const layout=out?.layout||payload;
      setGallery(prev=>prev?({...prev,study:{...prev.study,documentationLayout:layout}}):prev);
-     setTemplateMap(layout.slots||slots);setTemplateDirty(false);setTemplateState("saved");
+     setTemplateMap(layout.slots||slots);setComplementaryTypes(layout.complementaryTypes||savedComplementaryTypes);setTemplateDirty(false);setTemplateState("saved");
    }catch(e){alert(e.message||"Não foi possível salvar a organização.")}finally{setBusy("")}
  }
  async function deleteSelected(){
@@ -318,12 +346,31 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
          </section>)}
 
          <section className="documentation-template-tray" onDragOver={e=>{if(canEditLayout)e.preventDefault()}} onDrop={e=>{if(!canEditLayout)return;e.preventDefault();removeFromTemplate(e.dataTransfer.getData("text/odontoview-file"))}}>
-           <div className="documentation-template-tray-title"><div><strong>{templateComplete?"Imagens complementares":"Imagens para revisar"}</strong><span>{unassigned.length?(templateComplete?unassigned.length+" arquivo(s) fora do template principal — continuam disponíveis no exame.":unassigned.length+" imagem(ns) aguardando posição."):"Todas as imagens utilizadas no template."}</span></div>{canEditLayout&&<small>{templateComplete?"Arraste para o template apenas se precisar substituir uma posição.":"Solte aqui para retirar uma imagem do template."}</small>}</div>
-           <div className="documentation-template-tray-grid">
-             {unassigned.length?unassigned.map(entry=><button type="button" key={entry.key} className="documentation-template-tray-card" draggable={canEditLayout} onDragStart={e=>{if(!canEditLayout)return;e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/odontoview-file",entry.key)}} onClick={()=>openInViewer(entry)}>
-               <img src={entry.item.url} alt={entry.item.fileName}/><small title={entry.item.fileName}>{sequenceBadge(entry)} · {entry.item.fileName}</small>
-             </button>):<div className="documentation-template-complete">✓ {templateComplete?"Template completo sem imagens complementares":"Organização completa"}</div>}
-           </div>
+           <div className="documentation-template-tray-title"><div><strong>{templateComplete?"Imagens complementares":"Imagens para revisar"}</strong><span>{unassigned.length?(templateComplete?unassigned.length+" arquivo(s) fora do template principal — continuam disponíveis no exame.":unassigned.length+" imagem(ns) aguardando posição."):"Todas as imagens utilizadas no template."}</span></div>{canEditLayout&&<small>{templateComplete?"Classifique os complementos ou arraste para substituir uma posição do template.":"Solte aqui para retirar uma imagem do template."}</small>}</div>
+           {unassigned.length?(templateComplete?
+             <div className="documentation-complement-groups">
+               {complementaryGroups.map(group=><section className={"documentation-complement-group type-"+group.id.toLowerCase()} key={group.id}>
+                 <div className="documentation-complement-group-title"><div><strong>{group.label}</strong><span>{group.hint}</span></div><small>{group.entries.length}</small></div>
+                 <div className="documentation-template-tray-grid">
+                   {group.entries.map(entry=><div key={entry.key} className="documentation-template-tray-card documentation-complement-card" draggable={canEditLayout} onDragStart={e=>{if(!canEditLayout)return;e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/odontoview-file",entry.key)}}>
+                     <button type="button" className="documentation-complement-open" onClick={()=>openInViewer(entry)}><img src={entry.item.url} alt={entry.item.fileName}/></button>
+                     <small title={entry.item.fileName}>{sequenceBadge(entry)} · {entry.item.fileName}</small>
+                     {canEditLayout?<select aria-label={"Tipo de "+entry.item.fileName} value={complementaryTypes[entry.key]||"UNCLASSIFIED"} onChange={e=>setComplementaryType(entry.key,e.target.value)}>
+                       <option value="UNCLASSIFIED">A classificar</option>
+                       <option value="BOARD">Prancha / montagem</option>
+                       <option value="RADIOGRAPH">Radiografia adicional</option>
+                       <option value="OTHER">Outro</option>
+                     </select>:<span className="documentation-complement-readonly">{group.label}</span>}
+                   </div>)}
+                 </div>
+               </section>)}
+             </div>:
+             <div className="documentation-template-tray-grid">
+               {unassigned.map(entry=><button type="button" key={entry.key} className="documentation-template-tray-card" draggable={canEditLayout} onDragStart={e=>{if(!canEditLayout)return;e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/odontoview-file",entry.key)}} onClick={()=>openInViewer(entry)}>
+                 <img src={entry.item.url} alt={entry.item.fileName}/><small title={entry.item.fileName}>{sequenceBadge(entry)} · {entry.item.fileName}</small>
+               </button>)}
+             </div>
+           ):<div className="documentation-template-complete">✓ {templateComplete?"Template completo sem imagens complementares":"Organização completa"}</div>}
          </section>
        </div>
 
