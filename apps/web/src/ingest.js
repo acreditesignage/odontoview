@@ -1,4 +1,5 @@
 import * as dicomParserModule from "dicom-parser";
+import {examUploadPolicy} from "./examUpload.js";
 
 const dicomParser=dicomParserModule.default||dicomParserModule;
 const scriptLoads=new Map();
@@ -115,5 +116,57 @@ export async function importExam(selectedFiles,{onProgress}={}){
     seriesCount:series.length,
     validSeriesCount:series.filter(item=>item.valid).length,
     report
+  };
+}
+
+
+function inferSingleFileContentType(file){
+  const explicit=String(file?.type||"").trim();
+  if(explicit)return explicit;
+  const ext=String(file?.name||"").toLowerCase().split(".").pop();
+  const byExt={
+    jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",webp:"image/webp",
+    tif:"image/tiff",tiff:"image/tiff",bmp:"image/bmp",pdf:"application/pdf",
+    stl:"model/stl",ply:"application/octet-stream",obj:"model/obj",zip:"application/zip"
+  };
+  return byExt[ext]||"application/octet-stream";
+}
+
+export async function importSingleFileExam(selectedFiles,examType){
+  const incoming=Array.from(selectedFiles||[]);
+  if(incoming.length!==1)throw new Error("Este tipo de exame deve ser enviado em um único arquivo.");
+  const file=incoming[0];
+  const policy=examUploadPolicy(examType);
+  if(policy.kind==="dicom")return importExam(incoming);
+  const ext=(String(file.name||"").toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]||"");
+  const allowed=policy.kind==="scan"
+    ?new Set(["stl","ply","obj","zip"])
+    :new Set(["jpg","jpeg","png","webp","tif","tiff","bmp","pdf"]);
+  if(!allowed.has(ext)){
+    throw new Error(policy.kind==="scan"
+      ?"Escaneamento aceita um único arquivo STL, PLY, OBJ ou ZIP."
+      :"Este exame aceita um único arquivo JPG, PNG, WebP, TIFF, BMP ou PDF.");
+  }
+  const contentType=inferSingleFileContentType(file);
+  return {
+    kind:"single",
+    sourceType:policy.kind==="scan"?"SCAN":"FILE",
+    sourceName:file.name,
+    files:[file],
+    parsedFiles:0,
+    failedFiles:[],
+    totalFiles:1,
+    totalBytes:file.size||0,
+    series:[],
+    seriesCount:0,
+    validSeriesCount:0,
+    report:null,
+    modality:policy.kind==="scan"?"SCAN":"2D",
+    singleFile:{
+      fileName:file.name,
+      contentType,
+      extension:ext,
+      previewKind:contentType.startsWith("image/")?"image":contentType==="application/pdf"?"pdf":"file"
+    }
   };
 }
