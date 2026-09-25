@@ -1637,7 +1637,7 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   background:rgba(3,16,30,.72);backdrop-filter:blur(10px)
 }
 .documentation-gallery{
-  width:min(1180px,96vw);height:min(820px,92vh);display:grid;grid-template-rows:auto minmax(0,1fr) auto;
+  width:min(1180px,96vw);height:min(820px,92vh);display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;
   overflow:hidden;border-radius:24px;background:#f7fbfe;border:1px solid rgba(177,211,233,.6);
   box-shadow:0 34px 100px rgba(0,0,0,.34)
 }
@@ -1739,3 +1739,7 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .documentation-tool{flex:1 1 auto;justify-content:center}
   .documentation-delete-image{margin-left:0}
 }
+
+.documentation-gallery>.documentation-toolbar{grid-row:2;min-height:50px;position:relative;z-index:2}
+.documentation-gallery>.documentation-gallery-stage{grid-row:3}
+.documentation-gallery>.documentation-gallery-grid{grid-row:4}
