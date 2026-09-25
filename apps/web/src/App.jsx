@@ -318,6 +318,34 @@ function DentistDashboard(){
      activeIndex:0
    });
  }
+ async function deleteDentistGalleryFile(item){
+   const studyId=dentistDocumentation?.study?.id;
+   if(!studyId||!item?.id)return;
+   await api("/api/dentist/studies/"+studyId+"/files/"+item.id,{method:"DELETE"});
+   await removeStudyFileFromCache(studyId,item.id);
+   setDentistDocumentation(prev=>{
+     if(!prev)return prev;
+     const removed=prev.items.find(x=>x.id===item.id);
+     if(removed?.url)URL.revokeObjectURL(removed.url);
+     const items=prev.items.filter(x=>x.id!==item.id);
+     return {...prev,items,study:{...prev.study,fileCount:items.length,totalBytes:items.reduce((sum,x)=>sum+(x.sizeBytes||0),0)},activeIndex:Math.min(prev.activeIndex,Math.max(0,items.length-1))};
+   });
+   await load();
+ }
+ async function performDentistStudyDelete(studyId){
+   if(!studyId)return;
+   await api("/api/dentist/studies/"+studyId,{method:"DELETE"});
+   await removeStudyFromCache(studyId);
+   if(dentistDocumentation?.study?.id===studyId)closeDentistDocumentation();
+   await load();
+ }
+ async function deleteDentistStudyFromList(study){
+   if(!study?.id)return;
+   if(!confirm("Excluir definitivamente este exame/documentação importado por você? Esta ação não pode ser desfeita."))return;
+   setOpeningStudy("delete:"+study.id);
+   try{await performDentistStudyDelete(study.id)}catch(e){setErr(e.message||"Não foi possível excluir o exame.")}finally{setOpeningStudy("")}
+ }
+
  async function openStudy(order){
    if(!order?.study?.id)return;
    void requestPersistentStudyStorage();
@@ -383,29 +411,7 @@ function DentistDashboard(){
  const dentistUploadPolicy=examUploadPolicy(selectedDentistImportType);
  return <main className="page dentist-dashboard"><section className="wide">
    <input className="hidden-file" ref={dentistFileInput} type="file" accept={dentistUploadPolicy.accept} multiple={dentistUploadPolicy.multiple} onChange={handleDentistImportFiles}/>
-   {dentistDocumentation&&<div className="documentation-gallery-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)closeDentistDocumentation()}}>
-     <section className="documentation-gallery" role="dialog" aria-modal="true">
-       <header className="documentation-gallery-head">
-         <div><p className="eyebrow">DOCUMENTAÇÃO / IMAGENS</p><h2>{dentistDocumentation.examType?.name||"Documentação"}</h2><p>{dentistDocumentation.patient?.name||"Paciente"} • {dentistDocumentation.items.length} arquivo(s)</p></div>
-         <button className="ghost compact" onClick={closeDentistDocumentation}>Fechar</button>
-       </header>
-       <div className="documentation-gallery-stage">
-         {(()=>{
-           const item=dentistDocumentation.items[dentistDocumentation.activeIndex];
-           if(!item)return <div className="empty">Nenhum arquivo.</div>;
-           if(item.previewKind==="image")return <img src={item.url} alt={item.fileName}/>;
-           if(item.previewKind==="pdf")return <iframe src={item.url} title={item.fileName}/>;
-           return <div className="documentation-gallery-file"><span>3D</span><strong>{item.fileName}</strong><button className="secondary compact" onClick={()=>openBlobFile(item.blob,item.fileName)}>Baixar / abrir modelo 3D</button></div>;
-         })()}
-       </div>
-       <div className="documentation-gallery-grid">
-         {dentistDocumentation.items.map((item,index)=><button type="button" key={item.id||index} className={"documentation-thumb "+(index===dentistDocumentation.activeIndex?"active":"")} onClick={()=>setDentistDocumentation(prev=>({...prev,activeIndex:index}))}>
-           {item.previewKind==="image"?<img src={item.url} alt=""/>:<span>{item.previewKind==="pdf"?"PDF":"3D"}</span>}
-           <small title={item.fileName}>{item.fileName}</small>
-         </button>)}
-       </div>
-     </section>
-   </div>}
+   {dentistDocumentation&&<DocumentationViewer gallery={dentistDocumentation} setGallery={setDentistDocumentation} onClose={closeDentistDocumentation} onDeleteFile={deleteDentistGalleryFile} onDeleteStudy={()=>performDentistStudyDelete(dentistDocumentation.study.id)}/>}
    <header className="topbar"><BrandLockup role="DENTISTA"/><div className="topbar-actions"><HybridStorageBadge/><a className="ghost compact" href="/cadastro-dentista" target="_blank" rel="noreferrer">Link de cadastro</a><button className="ghost" onClick={logout}>Sair</button></div></header>
    <div className="hero-row dentist-hero"><div><p className="eyebrow">ODONTOVIEW NETWORK</p><h1>{data?.dentist?.user?.name||"Seu painel clínico"}</h1><p className="muted">{data?.dentist?("CRO "+data.dentist.cro+"/"+data.dentist.uf+" • pacientes, pedidos e exames em um só lugar."):"Carregando perfil…"}</p></div><div className="hero-actions dentist-hero-actions"><button className="primary" onClick={startNewPatient}>＋ Novo paciente</button><button className="secondary" onClick={()=>goDentistTab("import")}>⬆ Importar exame</button></div></div>
    <nav className="workspace-tabs">
@@ -892,6 +898,34 @@ function Radiology(){
      });
    }finally{setGalleryBusy(false)}
  }
+ async function deleteDocumentationGalleryFile(item){
+   const studyId=documentationGallery?.study?.id;
+   if(!studyId||!item?.id)return;
+   await api("/api/unit/studies/"+studyId+"/files/"+item.id,{method:"DELETE"});
+   await removeStudyFileFromCache(studyId,item.id);
+   setDocumentationGallery(prev=>{
+     if(!prev)return prev;
+     const removed=prev.items.find(x=>x.id===item.id);
+     if(removed?.url)URL.revokeObjectURL(removed.url);
+     const items=prev.items.filter(x=>x.id!==item.id);
+     return {...prev,items,study:{...prev.study,fileCount:items.length,totalBytes:items.reduce((sum,x)=>sum+(x.sizeBytes||0),0)},activeIndex:Math.min(prev.activeIndex,Math.max(0,items.length-1))};
+   });
+   await Promise.all([load(),loadPatients(""),refreshPatientDetail()]);
+ }
+ async function performUnitStudyDelete(studyId){
+   if(!studyId)return;
+   await api("/api/unit/studies/"+studyId,{method:"DELETE"});
+   await removeStudyFromCache(studyId);
+   if(documentationGallery?.study?.id===studyId)closeDocumentationGallery();
+   await Promise.all([load(),loadPatients(""),refreshPatientDetail()]);
+ }
+ async function deleteUnitStudyFromList(study){
+   if(!study?.id)return;
+   if(!confirm("Excluir definitivamente este exame/documentação e todos os arquivos? Esta ação não pode ser desfeita."))return;
+   setOpeningUnitStudy("delete:"+study.id);
+   try{await performUnitStudyDelete(study.id)}catch(e){setErr(e.message||"Não foi possível excluir o exame.")}finally{setOpeningUnitStudy("")}
+ }
+
  async function openUnitStudy(study){
    void requestPersistentStudyStorage();
    setOpeningUnitStudy(study.id);setErr("");
@@ -955,29 +989,7 @@ function Radiology(){
  return <main className="page radiology"><section className="wide">
    <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
    <input className="hidden-file" ref={patientFileInput} type="file" multiple onChange={handlePatientExamFiles}/>
-   {documentationGallery&&<div className="documentation-gallery-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)closeDocumentationGallery()}}>
-     <section className="documentation-gallery" role="dialog" aria-modal="true">
-       <header className="documentation-gallery-head">
-         <div><p className="eyebrow">DOCUMENTAÇÃO / IMAGENS</p><h2>{documentationGallery.examType?.name||"Documentação"}</h2><p>{documentationGallery.patient?.name||"Paciente"} • {documentationGallery.items.length} arquivo(s)</p></div>
-         <button className="ghost compact" onClick={closeDocumentationGallery}>Fechar</button>
-       </header>
-       <div className="documentation-gallery-stage">
-         {(()=>{
-           const item=documentationGallery.items[documentationGallery.activeIndex];
-           if(!item)return <div className="empty">Nenhum arquivo.</div>;
-           if(item.previewKind==="image")return <img src={item.url} alt={item.fileName}/>;
-           if(item.previewKind==="pdf")return <iframe src={item.url} title={item.fileName}/>;
-           return <div className="documentation-gallery-file"><span>3D</span><strong>{item.fileName}</strong><button className="secondary compact" onClick={()=>openBlobFile(item.blob,item.fileName)}>Baixar / abrir modelo 3D</button></div>;
-         })()}
-       </div>
-       <div className="documentation-gallery-grid">
-         {documentationGallery.items.map((item,index)=><button type="button" key={item.id||index} className={"documentation-thumb "+(index===documentationGallery.activeIndex?"active":"")} onClick={()=>setDocumentationGallery(prev=>({...prev,activeIndex:index}))}>
-           {item.previewKind==="image"?<img src={item.url} alt=""/>:<span>{item.previewKind==="pdf"?"PDF":"3D"}</span>}
-           <small title={item.fileName}>{item.fileName}</small>
-         </button>)}
-       </div>
-     </section>
-   </div>}
+   {documentationGallery&&<DocumentationViewer gallery={documentationGallery} setGallery={setDocumentationGallery} onClose={closeDocumentationGallery} onDeleteFile={deleteDocumentationGalleryFile} onDeleteStudy={()=>performUnitStudyDelete(documentationGallery.study.id)}/>}
    {examUploadConfirm&&<div className="exam-upload-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setExamUploadConfirm(null)}}>
      <section className="exam-upload-dialog" role="dialog" aria-modal="true" aria-labelledby="exam-upload-title" onDragOver={e=>e.preventDefault()} onDrop={e=>{dropPatientExamFiles(e,examUploadConfirm.target);setExamUploadConfirm(null)}}>
        <div className="exam-upload-dialog-head"><div><p className="eyebrow">ADICIONAR EXAME</p><h2 id="exam-upload-title">Confirme antes de selecionar o arquivo.</h2></div><button type="button" className="ghost compact" onClick={()=>setExamUploadConfirm(null)}>Fechar</button></div>
