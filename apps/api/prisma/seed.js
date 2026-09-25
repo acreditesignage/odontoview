@@ -7,7 +7,7 @@ const addMinutes = (date, min) => new Date(date.getTime() + min * 60000);
 
 async function main() {
   const examTypes={};
-  for(const name of ["Panorâmica","Tomografia CBCT","Periapical","Fotos","Bite-wing","Escaneamento"]){
+  for(const name of ["Panorâmica","Tomografia CBCT","Periapical","Fotos","Bite-wing","Escaneamento","Documentação ortodôntica"]){
     examTypes[name]=await prisma.examType.upsert({
       where:{name},
       update:{active:true},
