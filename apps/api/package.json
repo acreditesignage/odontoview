@@ -16,7 +16,8 @@
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
-    "@aws-sdk/client-s3": "^3.0.0"
+    "@aws-sdk/client-s3": "^3.0.0",
+    "qrcode": "1.5.4"
   },
   "devDependencies": {
     "prisma": "^6.16.2",
