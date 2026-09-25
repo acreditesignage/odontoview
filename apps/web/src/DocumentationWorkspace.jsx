@@ -111,6 +111,10 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    setPan({x:dragRef.current.panX+(e.clientX-dragRef.current.x),y:dragRef.current.panY+(e.clientY-dragRef.current.y)});
  }
  function stopDrag(){dragRef.current=null}
+ function closeRequested(){
+   if(mode==="viewer"){setMode("overview");return}
+   onClose();
+ }
  function assignToSlot(slotId,key){
    if(!canEditLayout||!key)return;
    setTemplateMap(prev=>{
@@ -152,13 +156,13 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    try{await onDeleteFile(active)}catch(e){alert(e.message||"Não foi possível excluir a imagem.")}finally{setBusy("")}
  }
 
- return <div className="documentation-gallery-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+ return <div className="documentation-gallery-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)closeRequested()}}>
    <section className={"documentation-gallery documentation-workspace mode-"+mode} role="dialog" aria-modal="true">
      <header className="documentation-gallery-head">
        <div><p className="eyebrow">DOCUMENTAÇÃO RADIOGRÁFICA</p><h2>{gallery.examType?.name||"Documentação"}</h2><p>{gallery.patient?.name||"Paciente"} • {gallery.items.length} arquivo(s)</p></div>
        <div className="documentation-gallery-head-actions">
          {mode==="viewer"&&canDelete&&isImage&&<button className="danger-quiet compact" disabled={!active||busy==="file"||gallery.items.length<=1} onClick={deleteSelected}>{busy==="file"?"Excluindo…":"Excluir radiografia"}</button>}
-         <button className="ghost compact" onClick={onClose}>Fechar</button>
+         <button className="ghost compact" onClick={closeRequested}>{mode==="viewer"?"Voltar às imagens":"Fechar"}</button>
        </div>
      </header>
 
