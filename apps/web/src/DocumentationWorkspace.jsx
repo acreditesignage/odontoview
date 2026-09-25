@@ -40,6 +40,19 @@ function openBlobFile(blob,fileName="exame"){
   setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 
+function extractSequenceNumber(fileName){
+  const base=String(fileName||"").replace(/\.[^.]+$/,"");
+  const tokens=[...base.matchAll(/(?:^|[\s._-])(\d{1,3})(?=$|[\s._-])/g)]
+    .map(match=>Number(match[1]))
+    .filter(value=>Number.isInteger(value)&&value>=0&&value<=999);
+  if(tokens.length)return tokens[tokens.length-1];
+  const trailing=base.match(/(\d{1,3})$/);
+  return trailing?Number(trailing[1]):null;
+}
+function sequenceBadge(entry){
+  return Number.isInteger(entry?.sequence)?"#"+String(entry.sequence).padStart(2,"0"):String((entry?.index||0)+1).padStart(2,"0");
+}
+
 export default function DocumentationWorkspace({gallery,setGallery,onClose,onDeleteFile,onSaveLayout}){
  const [mode,setMode]=useState("overview");
  const [brightness,setBrightness]=useState(100);
@@ -53,9 +66,23 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const [templateState,setTemplateState]=useState("");
  const dragRef=useRef(null);
  const collator=useMemo(()=>new Intl.Collator("pt-BR",{numeric:true,sensitivity:"base"}),[]);
- const entries=useMemo(()=>((gallery?.items||[]).map((item,index)=>({item,index,key:item.id||("index-"+index)}))
-   .sort((a,b)=>collator.compare(a.item.fileName||"",b.item.fileName||"")||a.index-b.index)),[gallery?.items,collator]);
+ const entries=useMemo(()=>((gallery?.items||[]).map((item,index)=>({
+   item,index,key:item.id||("index-"+index),sequence:extractSequenceNumber(item.fileName)
+ })).sort((a,b)=>{
+   const aHas=Number.isInteger(a.sequence),bHas=Number.isInteger(b.sequence);
+   if(aHas&&bHas&&a.sequence!==b.sequence)return a.sequence-b.sequence;
+   if(aHas!==bHas)return aHas?-1:1;
+   return collator.compare(a.item.fileName||"",b.item.fileName||"")||a.index-b.index;
+ })),[gallery?.items,collator]);
  const imageEntries=useMemo(()=>entries.filter(entry=>entry.item.previewKind==="image"),[entries]);
+ const sequenceInfo=useMemo(()=>{
+   const numbers=imageEntries.map(entry=>entry.sequence).filter(Number.isInteger);
+   const unique=new Set(numbers);
+   const duplicates=numbers.length-unique.size;
+   const detected=numbers.length,total=imageEntries.length;
+   const reliable=total>0&&detected>=Math.max(3,Math.ceil(total*.75))&&duplicates===0;
+   return {detected,total,duplicates,reliable};
+ },[imageEntries]);
  const itemByKey=useMemo(()=>new Map(entries.map(entry=>[entry.key,entry])),[entries]);
  const active=gallery?.items?.[gallery.activeIndex]||null;
  const isImage=active?.previewKind==="image";
@@ -181,15 +208,15 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
 
      {mode==="overview"&&<div className="documentation-overview">
        <div className="documentation-overview-intro">
-         <div><strong>Veja o conjunto antes de aprofundar.</strong><span>As imagens são exibidas em ordem natural de nome/numeração. Clique em qualquer radiografia para abrir o Viewer.</span></div>
-         <span className="documentation-order-chip">ORDEM CLÍNICA RÁPIDA</span>
+         <div><strong>Veja o conjunto antes de aprofundar.</strong><span>O OdontoView prioriza a numeração detectada no nome do arquivo e mantém os demais itens em ordem natural. Clique em qualquer radiografia para abrir o Viewer.</span></div>
+         <span className={"documentation-order-chip "+(sequenceInfo.reliable?"is-ok":"is-warn")}>{sequenceInfo.detected}/{sequenceInfo.total} NUMERADAS{sequenceInfo.duplicates?" · "+sequenceInfo.duplicates+" DUP.":""}</span>
        </div>
        <div className="documentation-overview-grid">
          {entries.map(entry=><button type="button" key={entry.key} className="documentation-overview-card" onClick={()=>openInViewer(entry)}>
            <div className="documentation-overview-media">
              {entry.item.previewKind==="image"?<img src={entry.item.url} alt={entry.item.fileName}/>:entry.item.previewKind==="pdf"?<span className="documentation-file-badge">PDF</span>:<span className="documentation-file-badge">3D</span>}
            </div>
-           <div className="documentation-overview-meta"><strong>{String(entry.index+1).padStart(2,"0")}</strong><small title={entry.item.fileName}>{entry.item.fileName}</small><span>Examinar →</span></div>
+           <div className="documentation-overview-meta"><strong>{sequenceBadge(entry)}</strong><small title={entry.item.fileName}>{entry.item.fileName}</small><span>Examinar →</span></div>
          </button>)}
        </div>
      </div>}
@@ -198,14 +225,14 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
        <div className="documentation-template-toolbar">
          <div className="documentation-template-copy">
            <p className="eyebrow">ORGANIZAÇÃO ANATÔMICA</p>
-           <strong>{hasSavedLayout&&!templateDirty?"Template salvo na nuvem":"Sequência por nome/numeração • revisar posições"}</strong>
-           <span>Arraste as radiografias para corrigir a posição. A organização acompanha o exame quando for salva.</span>
+           <strong>{hasSavedLayout&&!templateDirty?"Template salvo na nuvem":sequenceInfo.reliable?"Numeração detectada • montagem determinística":"Numeração parcial • revisar posições"}</strong>
+           <span>{sequenceInfo.reliable?"Primeira montagem feita pela sequência numérica dos arquivos. Confira a posição anatômica e ajuste por arraste antes de salvar.":"Nem todos os arquivos possuem numeração confiável. O sistema mantém ordem natural e exige conferência manual."}</span>
          </div>
          <div className="documentation-template-actions">
            <select value={templateId} disabled={!canEditLayout} onChange={e=>{const id=e.target.value;setTemplateId(id);setTemplateMap(autoMapFor(id));setTemplateDirty(true);setTemplateState("auto")}}>
              {Object.entries(DOC_TEMPLATE_PRESETS).map(([id,item])=><option key={id} value={id}>{item.label}</option>)}
            </select>
-           {canEditLayout&&<button className="secondary compact" onClick={organizeByNumber}>Ordenar por numeração</button>}
+           {canEditLayout&&<button className="secondary compact" onClick={organizeByNumber}>Montar por numeração</button>}
            {canEditLayout&&<button className="ghost compact" onClick={clearTemplate}>Limpar</button>}
          </div>
        </div>
@@ -218,7 +245,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
                const key=templateMap[slot.id],entry=key?itemByKey.get(key):null;
                return <div key={slot.id} className={"documentation-template-slot "+(entry?"filled":"empty")} onDragOver={e=>{if(canEditLayout)e.preventDefault()}} onDrop={e=>{if(!canEditLayout)return;e.preventDefault();assignToSlot(slot.id,e.dataTransfer.getData("text/odontoview-file"))}}>
                  {entry?<button type="button" className="documentation-template-image" draggable={canEditLayout} onDragStart={e=>{if(!canEditLayout)return;e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/odontoview-file",entry.key)}} onClick={()=>openInViewer(entry)}>
-                   <img src={entry.item.url} alt={entry.item.fileName}/><span>{slot.label}</span>
+                   <img src={entry.item.url} alt={entry.item.fileName}/><span>{sequenceBadge(entry)} · {slot.label}</span>
                  </button>:<div className="documentation-template-empty"><span>{slot.label}</span><small>{canEditLayout?"Arraste aqui":"Sem imagem"}</small></div>}
                </div>
              })}
@@ -229,7 +256,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
            <div className="documentation-template-tray-title"><div><strong>Não classificadas</strong><span>{unassigned.length?unassigned.length+" imagem(ns) aguardando posição":"Todas as imagens utilizadas no template"}</span></div>{canEditLayout&&<small>Solte aqui para retirar uma imagem do template.</small>}</div>
            <div className="documentation-template-tray-grid">
              {unassigned.length?unassigned.map(entry=><button type="button" key={entry.key} className="documentation-template-tray-card" draggable={canEditLayout} onDragStart={e=>{if(!canEditLayout)return;e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/odontoview-file",entry.key)}} onClick={()=>openInViewer(entry)}>
-               <img src={entry.item.url} alt={entry.item.fileName}/><small title={entry.item.fileName}>{entry.item.fileName}</small>
+               <img src={entry.item.url} alt={entry.item.fileName}/><small title={entry.item.fileName}>{sequenceBadge(entry)} · {entry.item.fileName}</small>
              </button>):<div className="documentation-template-complete">✓ Organização completa</div>}
            </div>
          </section>
