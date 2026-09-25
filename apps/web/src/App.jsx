@@ -522,7 +522,7 @@ function DentistDashboard(){
        </>}
      </section>}
      {tab==="exams"&&<section className="card">
-       <div className="section-title"><div><p className="eyebrow">MEUS EXAMES</p><h2>Exames recebidos.</h2><p className="muted">Estudos enviados pela radiologia ficam disponíveis aqui para abrir no Viewer.</p></div></div>
+       <div className="section-title"><div><p className="eyebrow">MEUS EXAMES</p><h2>Exames recebidos.</h2><p className="muted">Estudos salvos pela radiologia e vinculados a você ficam disponíveis aqui automaticamente.</p></div></div>
        {data.orders.filter(o=>o.study?.status==="READY").length===0&&(!data.directStudies||data.directStudies.length===0)?<div className="empty"><strong>Nenhum exame ainda.</strong><p>Você pode receber da radiologia ou importar seu próprio DICOM.</p></div>:
        <div className="patient-registry">{data.orders.filter(o=>o.study?.status==="READY").map(o=><div className="patient-registry-row is-network" key={o.study.id}>
          <div className="patient-registry-main"><div className="patient-name-line"><strong>{o.patient.name}</strong><span className="source-badge odontoview">Exame disponível</span></div><small>{o.examType.name}{o.unit?" • "+o.unit.name:""}</small><small>{o.study.fileCount} arquivo(s) • {formatBytes(o.study.totalBytes)}{o.study.manufacturer?" • "+o.study.manufacturer:""}</small></div>
@@ -558,7 +558,7 @@ const STATUS={
  IMAGENS_RECEBIDAS:{label:"Imagens recebidas",tone:"green"}
 };
 
-function IngestResult({state,onClear,onOpenViewer,onSend,sendLabel="Enviar exame ao dentista"}){
+function IngestResult({state,onClear,onOpenViewer,onSend,sendLabel="Salvar exame"}){
  if(!state)return null;
  if(state.status==="reading"){
    const p=state.progress||{};
@@ -579,13 +579,13 @@ function IngestResult({state,onClear,onOpenViewer,onSend,sendLabel="Enviar exame
      <span className={"series-status "+(s.valid?"ok":"bad")}>{s.valid?"Série válida":"Revisar"}</span>
    </div>)}</div>}
    {collection&&<LocalFileStrip result={r}/>}
-   {sending&&<div className="cloud-send-progress"><strong>Enviando com segurança… {state.send.done}/{state.send.total}</strong><div className="ingest-bar"><span style={{width:Math.round((state.send.done/Math.max(1,state.send.total))*100)+"%"}}/></div><small>Gravando no storage privado do OdontoView.</small></div>}
-   {sent&&<div className="success cloud-send-done"><strong>Exame enviado ✓</strong><p>Original salvo na nuvem privada. Ao abrir novamente, o OdontoView também pode usar cache local deste usuário para acelerar o carregamento.</p></div>}
-   {state.send?.status==="error"&&<div className="error">Falha no envio: {state.send.message}</div>}
+   {sending&&<div className="cloud-send-progress"><strong>Salvando com segurança… {state.send.done}/{state.send.total}</strong><div className="ingest-bar"><span style={{width:Math.round((state.send.done/Math.max(1,state.send.total))*100)+"%"}}/></div><small>Gravando no storage privado do OdontoView.</small></div>}
+   {sent&&<div className="success cloud-send-done"><strong>Exame salvo ✓</strong><p>Original salvo na nuvem privada. Se houver vínculo com um pedido, o dentista autorizado já terá acesso automaticamente.</p></div>}
+   {state.send?.status==="error"&&<div className="error">Falha ao salvar: {state.send.message}</div>}
    {!state.send&&<p className="privacy-note">{collection?"Arquivos validados localmente.":"Leitura DICOM local concluída."} Clique em “{sendLabel}” para gravar no storage privado e associar ao paciente/pedido.</p>}
    <div className="ingest-actions">
      {onOpenViewer&&<button className="primary" onClick={onOpenViewer} disabled={sending}>{collection?"Pré-visualizar":"Abrir Viewer 2.0"}</button>}
-     <button className="secondary" onClick={onSend} disabled={sending||sent||!onSend}>{sent?"Enviado ✓":sending?"Enviando…":sendLabel}</button>
+     <button className="secondary" onClick={onSend} disabled={sending||sent||!onSend}>{sent?"Salvo ✓":sending?"Salvando…":sendLabel}</button>
    </div>
  </div>;
 }
@@ -1003,7 +1003,7 @@ function Radiology(){
          <span className="documentation-drop-icon">⬆</span><strong>Arraste os arquivos aqui</strong><small>{selectedImportPolicy.help}</small>
          <button className="primary" disabled={!importPatientId} onClick={()=>{setPatientExamType(importExamType);beginPatientExamFileSelection({kind:"patient",id:importPatientId,examTypeId:importExamType})}}>{selectedImportPolicy.buttonLabel}</button>
        </div>
-       {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{if(patientIngest.result?.kind==="collection"){previewLocalExam(patientIngest.result);return}setViewerSession({result:patientIngest.result,order:{patient:selectedImportPatient,examType:selectedImportType||{name:"Tomografia CBCT"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab=import"))}} onSend={sendPatientExam} sendLabel="Salvar exame na radiologia"/>}
+       {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{if(patientIngest.result?.kind==="collection"){previewLocalExam(patientIngest.result);return}setViewerSession({result:patientIngest.result,order:{patient:selectedImportPatient,examType:selectedImportType||{name:"Tomografia CBCT"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab=import"))}} onSend={sendPatientExam} sendLabel="Salvar exame"/>}
      </>}
    </section>}
    {tab==="patients"&&<div className={"radiology-patient-layout"+(selectedPatient?" has-detail":"")}>
