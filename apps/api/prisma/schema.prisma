@@ -66,9 +66,12 @@ model Patient {
   id                 String    @id @default(cuid())
   name               String
   birthDate          DateTime?
-  phone              String?
-  email              String?
-  createdByDentistId String?
+  phone                  String?
+  email                  String?
+  referringDentistName   String?
+  referringDentistCro    String?
+  referringDentistEmail  String?
+  createdByDentistId     String?
   createdByUnitId    String?
   createdAt          DateTime  @default(now())
 
@@ -257,9 +260,13 @@ model ExamStudy {
   fileCount       Int         @default(0)
   totalBytes      Int         @default(0)
   createdAt       DateTime    @default(now())
-  completedAt     DateTime?
-  documentationLayout Json?
-  aiAnalysis       Json?
+  completedAt             DateTime?
+  documentationLayout     Json?
+  aiAnalysis              Json?
+  dentistDeliveryStatus   String?
+  dentistDeliveryEmail    String?
+  dentistDeliverySentAt   DateTime?
+  dentistDeliveryError    String?
 
   order        Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
