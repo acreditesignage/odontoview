@@ -699,7 +699,7 @@ function Radiology(){
      if(patientTarget.kind==="order"){
        created=await api("/api/unit/orders/"+patientTarget.id+"/study",{method:"POST",body:JSON.stringify(body)});
      }else{
-       created=await api("/api/unit/patients/"+patientTarget.id+"/studies",{method:"POST",body:JSON.stringify({...body,examTypeId:patientExamType||null})});
+       created=await api("/api/unit/patients/"+patientTarget.id+"/studies",{method:"POST",body:JSON.stringify({...body,examTypeId:patientTarget.examTypeId||patientExamType||null})});
      }
      await uploadStudyFiles(created.study.id,r,setPatientIngest);
      await api("/api/unit/studies/"+created.study.id+"/complete",{method:"POST",body:"{}"});
@@ -924,7 +924,7 @@ function Radiology(){
          <label><span>Paciente</span><select value={importPatientId} onChange={e=>setImportPatientId(e.target.value)}><option value="">Selecione o paciente</option>{localImportPatients.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
          <label><span>Tipo de exame</span><select value={importExamType} onChange={e=>{setImportExamType(e.target.value);setPatientExamType(e.target.value);setPatientIngest(null)}}>{radiologyExamTypes.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
        </div>
-       <div className={"documentation-dropzone "+(!importPatientId?"disabled":"")} onDragOver={e=>e.preventDefault()} onDrop={e=>{if(importPatientId){setPatientExamType(importExamType);dropPatientExamFiles(e,{kind:"patient",id:importPatientId,examTypeId:importExamType})}}}>
+       <div className={"documentation-dropzone "+(!importPatientId?"disabled":"")} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(importPatientId){setPatientExamType(importExamType);dropPatientExamFiles(e,{kind:"patient",id:importPatientId,examTypeId:importExamType})}}}>
          <span className="documentation-drop-icon">⬆</span><strong>Arraste os arquivos aqui</strong><small>{selectedImportPolicy.help}</small>
          <button className="primary" disabled={!importPatientId} onClick={()=>{setPatientExamType(importExamType);beginPatientExamFileSelection({kind:"patient",id:importPatientId,examTypeId:importExamType})}}>{selectedImportPolicy.buttonLabel}</button>
        </div>
@@ -964,7 +964,7 @@ function Radiology(){
            {patientDetail.orders.map(o=><div className="patient-order-card" key={o.id}>
              <div><strong>{o.examType.name}</strong><small>Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</small><small>Status: {STATUS[o.status]?.label||o.status}</small></div>
              <div className="patient-order-actions">
-               {o.study?.status==="READY"?<button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy({...o.study,examType:o.examType})}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":"Abrir exame"}</button>:
+               {o.study?.status==="READY"?<button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy({...o.study,examType:o.examType})}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":isDicomStudySource(o.study.sourceType)?"Abrir Viewer":"Ver imagens"}</button>:
                o.status==="AGENDADO"?<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Confirmar chegada"}</button>:
                o.status==="PACIENTE_CHEGOU"?<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Marcar exame realizado"}</button>:
                o.status==="EXAME_REALIZADO"?<button className="primary compact" onClick={()=>confirmOrderExamUpload(o)}>＋ Adicionar exame</button>:
@@ -974,7 +974,7 @@ function Radiology(){
            </div>)}
            {patientDetail.studies.filter(s=>!s.orderId).map(s=><div className="patient-order-card local-study" key={s.id}>
              <div><strong>{s.examType?.name||s.modality||"Exame DICOM"}</strong><small>{s.fileCount} arquivo(s) • {formatBytes(s.totalBytes)}</small><small>{s.completedAt?new Date(s.completedAt).toLocaleString("pt-BR"):""}</small></div>
-             <button className="secondary compact" disabled={openingUnitStudy.startsWith(s.id)} onClick={()=>openUnitStudy(s)}>{openingUnitStudy.startsWith(s.id)?"Abrindo…":"Abrir exame"}</button>
+             <button className="secondary compact" disabled={openingUnitStudy.startsWith(s.id)} onClick={()=>openUnitStudy(s)}>{openingUnitStudy.startsWith(s.id)?"Abrindo…":isDicomStudySource(s.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
            </div>)}
          </section>
          {patientDetail.source==="RADIOLOGIA"&&<section className="patient-detail-section add-local-exam">
