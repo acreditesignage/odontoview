@@ -436,8 +436,8 @@ function DentistDashboard(){
        </section>}
      </section>}
      {tab==="import"&&<section className="card dentist-import-card">
-       <div className="section-title"><div><p className="eyebrow">IMPORTAR EXAME</p><h2>Adicione o exame ao OdontoView.</h2><p className="muted">Tomografia CBCT usa DICOM. Os demais tipos usam um único arquivo de imagem, PDF ou modelo 3D compatível.</p></div></div>
-       {data.patients.length===0?<div className="empty"><strong>Cadastre um paciente primeiro.</strong><p>Depois você poderá associar qualquer DICOM a ele.</p></div>:<>
+       <div className="section-title"><div><p className="eyebrow">IMPORTAR EXAME</p><h2>Adicione o exame ao OdontoView.</h2><p className="muted">Tomografia CBCT usa DICOM. Os demais tipos podem reunir várias imagens, PDFs ou modelos 3D na mesma documentação.</p></div></div>
+       {data.patients.length===0?<div className="empty"><strong>Cadastre um paciente primeiro.</strong><p>Depois você poderá associar qualquer exame ou documentação a ele.</p></div>:<>
          <div className="dentist-import-grid">
            <label><span>Paciente</span><select value={dentistImportPatient} onChange={e=>setDentistImportPatient(e.target.value)}>{data.patients.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label>
            <label><span>Tipo de exame</span><select value={dentistImportType} onChange={e=>{setDentistImportType(e.target.value);setDentistIngest(null)}}>{types.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
