@@ -42,7 +42,15 @@ function sanitizeDocumentationLayout(value,files=[]){
     const safeFile=String(fileId||"");
     if(/^[a-z0-9_-]+$/i.test(safeSlot)&&validFiles.has(safeFile)) slots[safeSlot]=safeFile;
   }
-  return {version:1,template,slots};
+  const complementaryTypes={};
+  const allowedComplementaryTypes=new Set(["BOARD","RADIOGRAPH","OTHER"]);
+  const rawComplementary=value.complementaryTypes&&typeof value.complementaryTypes==="object"&&!Array.isArray(value.complementaryTypes)?value.complementaryTypes:{};
+  for(const [fileId,type] of Object.entries(rawComplementary)){
+    const safeFile=String(fileId||"");
+    const safeType=String(type||"").toUpperCase();
+    if(validFiles.has(safeFile)&&allowedComplementaryTypes.has(safeType)) complementaryTypes[safeFile]=safeType;
+  }
+  return {version:1,template,slots,complementaryTypes};
 }
 function safeUploadContentType(value){
   const raw=String(value||"application/octet-stream").trim().toLowerCase().slice(0,120);
