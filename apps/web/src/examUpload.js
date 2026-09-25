@@ -18,19 +18,23 @@ export function examUploadPolicy(examType){
   }
   if(isScan){
     return {
-      kind:"scan",
+      kind:"collection",
+      subtype:"scan",
       accept:".stl,.ply,.obj,.zip,model/stl,model/obj,application/zip,application/x-zip-compressed",
-      multiple:false,
-      buttonLabel:"Selecionar arquivo 3D",
-      help:"Escaneamento: envie um único STL, PLY, OBJ ou ZIP."
+      multiple:true,
+      maxFiles:12,
+      buttonLabel:"Selecionar arquivos 3D",
+      help:"Escaneamento: envie maxila, mandíbula, oclusão e outros STL/PLY/OBJ juntos. ZIP também é aceito."
     };
   }
   return {
-    kind:"single",
+    kind:"collection",
+    subtype:"images",
     accept:".jpg,.jpeg,.png,.webp,.tif,.tiff,.bmp,.pdf,image/jpeg,image/png,image/webp,image/tiff,image/bmp,application/pdf",
-    multiple:false,
-    buttonLabel:"Selecionar arquivo",
-    help:"Envie um único arquivo de imagem ou PDF."
+    multiple:true,
+    maxFiles:80,
+    buttonLabel:"Selecionar imagens / PDF",
+    help:"Envie uma ou várias imagens/PDFs da mesma documentação de uma vez."
   };
 }
 
