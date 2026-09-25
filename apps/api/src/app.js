@@ -825,7 +825,20 @@ export function createApp(){
         }
         return updated;
       });
-      res.json({study:completed});
+      const delivery=await buildStudyDentistDelivery(req,completed.id,{sendEmail:true});
+      res.json({study:completed,delivery});
+    }catch(e){next(e);}
+  });
+
+  app.post("/api/unit/studies/:studyId/deliver-dentist",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const study=await prisma.examStudy.findFirst({where:{id:req.params.studyId,unitId:membership.unitId,status:"READY"}});
+      if(!study) return res.status(404).json({error:"Exame pronto não encontrado nesta unidade."});
+      const delivery=await buildStudyDentistDelivery(req,study.id,{sendEmail:req.body?.sendEmail!==false});
+      res.json({delivery});
     }catch(e){next(e);}
   });
 
@@ -853,6 +866,10 @@ export function createApp(){
           fileCount:study.fileCount,totalBytes:study.totalBytes,completedAt:study.completedAt,
           documentationLayout:study.documentationLayout||null,
           aiAnalysis:study.aiAnalysis||null,
+          dentistDeliveryStatus:study.dentistDeliveryStatus||null,
+          dentistDeliveryEmail:study.dentistDeliveryEmail||null,
+          dentistDeliverySentAt:study.dentistDeliverySentAt||null,
+          dentistDeliveryError:study.dentistDeliveryError||null,
           canDelete:true,canEditLayout:true,canManageAi:true
         },
         patient:study.patient,
