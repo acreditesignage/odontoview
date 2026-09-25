@@ -411,7 +411,7 @@ function DentistDashboard(){
  const dentistUploadPolicy=examUploadPolicy(selectedDentistImportType);
  return <main className="page dentist-dashboard"><section className="wide">
    <input className="hidden-file" ref={dentistFileInput} type="file" accept={dentistUploadPolicy.accept} multiple={dentistUploadPolicy.multiple} onChange={handleDentistImportFiles}/>
-   {dentistDocumentation&&<DocumentationViewer gallery={dentistDocumentation} setGallery={setDentistDocumentation} onClose={closeDentistDocumentation} onDeleteFile={deleteDentistGalleryFile} onDeleteStudy={()=>performDentistStudyDelete(dentistDocumentation.study.id)}/>}
+   {dentistDocumentation&&<DocumentationViewer gallery={dentistDocumentation} setGallery={setDentistDocumentation} onClose={closeDentistDocumentation} onDeleteFile={deleteDentistGalleryFile}/>}
    <header className="topbar"><BrandLockup role="DENTISTA"/><div className="topbar-actions"><HybridStorageBadge/><a className="ghost compact" href="/cadastro-dentista" target="_blank" rel="noreferrer">Link de cadastro</a><button className="ghost" onClick={logout}>Sair</button></div></header>
    <div className="hero-row dentist-hero"><div><p className="eyebrow">ODONTOVIEW NETWORK</p><h1>{data?.dentist?.user?.name||"Seu painel clínico"}</h1><p className="muted">{data?.dentist?("CRO "+data.dentist.cro+"/"+data.dentist.uf+" • pacientes, pedidos e exames em um só lugar."):"Carregando perfil…"}</p></div><div className="hero-actions dentist-hero-actions"><button className="primary" onClick={startNewPatient}>＋ Novo paciente</button><button className="secondary" onClick={()=>goDentistTab("import")}>⬆ Importar exame</button></div></div>
    <nav className="workspace-tabs">
@@ -567,7 +567,7 @@ const STATUS={
  IMAGENS_RECEBIDAS:{label:"Imagens recebidas",tone:"green"}
 };
 
-function DocumentationViewer({gallery,setGallery,onClose,onDeleteFile,onDeleteStudy}){
+function DocumentationViewer({gallery,setGallery,onClose,onDeleteFile}){
  const [brightness,setBrightness]=useState(100);
  const [contrast,setContrast]=useState(100);
  const [zoom,setZoom]=useState(1);
@@ -606,19 +606,13 @@ function DocumentationViewer({gallery,setGallery,onClose,onDeleteFile,onDeleteSt
    setBusy("file");
    try{await onDeleteFile(active)}catch(e){alert(e.message||"Não foi possível excluir a imagem.")}finally{setBusy("")}
  }
- async function deleteWhole(){
-   if(!canDelete||!onDeleteStudy)return;
-   if(!confirm("Excluir definitivamente esta documentação/exame e todos os seus arquivos? Esta ação não pode ser desfeita."))return;
-   setBusy("study");
-   try{await onDeleteStudy()}catch(e){alert(e.message||"Não foi possível excluir a documentação.")}finally{setBusy("")}
- }
 
  return <div className="documentation-gallery-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
    <section className="documentation-gallery" role="dialog" aria-modal="true">
      <header className="documentation-gallery-head">
        <div><p className="eyebrow">DOCUMENTAÇÃO / IMAGENS</p><h2>{gallery.examType?.name||"Documentação"}</h2><p>{gallery.patient?.name||"Paciente"} • {gallery.items.length} arquivo(s)</p></div>
        <div className="documentation-gallery-head-actions">
-         {canDelete&&<button className="danger-quiet compact" disabled={busy==="study"} onClick={deleteWhole}>{busy==="study"?"Excluindo…":"Excluir conjunto"}</button>}
+         {canDelete&&isImage&&<button className="danger-quiet compact" disabled={!active||busy==="file"||gallery.items.length<=1} onClick={deleteSelected}>{busy==="file"?"Excluindo…":"Excluir radiografia"}</button>}
          <button className="ghost compact" onClick={onClose}>Fechar</button>
        </div>
      </header>
@@ -627,7 +621,6 @@ function DocumentationViewer({gallery,setGallery,onClose,onDeleteFile,onDeleteSt
        <div className="documentation-tool"><span>Contraste</span><button disabled={!isImage} onClick={()=>setContrast(v=>Math.max(40,v-10))}>−</button><strong>{contrast}%</strong><button disabled={!isImage} onClick={()=>setContrast(v=>Math.min(220,v+10))}>+</button></div>
        <div className="documentation-tool"><span>Zoom</span><button disabled={!isImage} onClick={()=>setZoom(v=>Math.max(.5,Number((v-.15).toFixed(2))))}>−</button><strong>{Math.round(zoom*100)}%</strong><button disabled={!isImage} onClick={()=>setZoom(v=>Math.min(5,Number((v+.15).toFixed(2))))}>+</button></div>
        <button className="ghost compact" disabled={!isImage} onClick={resetView}>Restaurar</button>
-       {canDelete&&<button className="danger-quiet compact documentation-delete-image" disabled={!active||busy==="file"||gallery.items.length<=1} onClick={deleteSelected}>{busy==="file"?"Excluindo…":"Excluir imagem"}</button>}
      </div>
      <div className={"documentation-gallery-stage "+(isImage?"is-image":"")} onWheel={e=>{if(!isImage)return;e.preventDefault();setZoom(v=>Math.min(5,Math.max(.5,Number((v+(e.deltaY<0?.12:-.12)).toFixed(2)))))}}
        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
@@ -992,7 +985,7 @@ function Radiology(){
  return <main className="page radiology"><section className="wide">
    <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
    <input className="hidden-file" ref={patientFileInput} type="file" multiple onChange={handlePatientExamFiles}/>
-   {documentationGallery&&<DocumentationViewer gallery={documentationGallery} setGallery={setDocumentationGallery} onClose={closeDocumentationGallery} onDeleteFile={deleteDocumentationGalleryFile} onDeleteStudy={()=>performUnitStudyDelete(documentationGallery.study.id)}/>}
+   {documentationGallery&&<DocumentationViewer gallery={documentationGallery} setGallery={setDocumentationGallery} onClose={closeDocumentationGallery} onDeleteFile={deleteDocumentationGalleryFile}/>}
    {examUploadConfirm&&<div className="exam-upload-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setExamUploadConfirm(null)}}>
      <section className="exam-upload-dialog" role="dialog" aria-modal="true" aria-labelledby="exam-upload-title" onDragOver={e=>e.preventDefault()} onDrop={e=>{dropPatientExamFiles(e,examUploadConfirm.target);setExamUploadConfirm(null)}}>
        <div className="exam-upload-dialog-head"><div><p className="eyebrow">ADICIONAR EXAME</p><h2 id="exam-upload-title">Confirme antes de selecionar o arquivo.</h2></div><button type="button" className="ghost compact" onClick={()=>setExamUploadConfirm(null)}>Fechar</button></div>
