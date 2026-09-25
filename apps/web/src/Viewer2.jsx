@@ -170,11 +170,16 @@ export default function Viewer2(){
   const curveDragRef=useRef(null);
   const navDragRef=useRef(null);
   const implantDragRef=useRef(null);
+  const touchTapRef=useRef(null);
   const [loading,setLoading]=useState(true);
   const [loadProgress,setLoadProgress]=useState({current:0,total:0,label:"Preparando DICOM…"});
   const [error,setError]=useState("");
   const [meta,setMeta]=useState(null);
   const [threeDEnabled,setThreeDEnabled]=useState(deviceProfile==="desktop");
+  const [showAdvancedTools,setShowAdvancedTools]=useState(false);
+  const [archSetupOpen,setArchSetupOpen]=useState(false);
+  const [archSetupBusy,setArchSetupBusy]=useState(false);
+  const [dentalArchType,setDentalArchType]=useState("unknown");
   const [cursor,setCursor]=useState({x:0,y:0,z:0});
   const [curvePoints,setCurvePoints]=useState([]);
   const curve=useMemo(()=>catmullRom(curvePoints,18),[curvePoints]);
@@ -350,6 +355,7 @@ export default function Viewer2(){
         setCurvePoints(arch);
         const sampled=catmullRom(arch,18);setCurveIndex(Math.floor(sampled.length/2));
         setLoading(false);
+        setArchSetupOpen(true);
       }catch(e){if(!cancelled){setError(e.message||"Falha ao montar o volume.");setLoading(false)}}
     }
     build();
@@ -1107,7 +1113,7 @@ export default function Viewer2(){
     const m=metaRef.current,v=volumeRef.current;
     const last=Math.max(0,curve.length-1);
     if(!m||!v||curve.length<10)return {start:0,end:last,label:"Arcada completa",confidence:.25};
-    const z=clamp(Math.round(cursor.z),0,m.d-1);
+    const z=clamp(Math.round(Number.isFinite(zOverride)?zOverride:cursor.z),0,m.d-1);
     const samples=[];
     const sampleCount=25;
     for(let s=0;s<sampleCount;s++){
@@ -1190,8 +1196,30 @@ export default function Viewer2(){
     }
     return count?total/count:-Infinity;
   }
-  function suggestArchFromAxial(){
-    const m=metaRef.current,v=volumeRef.current;if(!m||!v||curve.length<7)return;
+  function findBestArchAxialSlice(){
+    const m=metaRef.current,v=volumeRef.current;
+    if(!m||!v||!defaultCurveRef.current?.length)return Math.floor((m?.d||1)/2);
+    const base=catmullRom(defaultCurveRef.current,10);
+    const zStart=Math.max(0,Math.round((m.d-1)*.12)),zEnd=Math.min(m.d-1,Math.round((m.d-1)*.88));
+    const samples=18;
+    let bestZ=Math.floor((zStart+zEnd)/2),bestScore=-Infinity;
+    for(let s=0;s<samples;s++){
+      const z=Math.round(zStart+(zEnd-zStart)*(s/Math.max(1,samples-1)));
+      const scores=[];
+      for(let i=0;i<base.length;i+=Math.max(1,Math.floor(base.length/22))){
+        const score=localDensityScore(base[i].x,base[i].y,z);
+        if(Number.isFinite(score))scores.push(score);
+      }
+      if(!scores.length)continue;
+      scores.sort((a,b)=>b-a);
+      const take=Math.max(3,Math.floor(scores.length*.45));
+      const score=scores.slice(0,take).reduce((sum,n)=>sum+n,0)/take;
+      if(score>bestScore){bestScore=score;bestZ=z}
+    }
+    return bestZ;
+  }
+  function suggestArchFromAxial(zOverride=null){
+    const m=metaRef.current,v=volumeRef.current;if(!m||!v||curve.length<7)return false;
     if(archMode==="auto")analyzeArchScope();
     const z=clamp(Math.round(cursor.z),0,m.d-1);
     const base=curve;
@@ -1230,6 +1258,27 @@ export default function Viewer2(){
     curveBeforeAssistRef.current=curvePoints.map(p=>({...p}));
     setCurvePoints(nextPoints);
     setCurveAssistMessage(`Sugestão aplicada no axial Z ${z+1}. Confira os 7 pontos antes de usar para planejamento.`);
+    return true;
+  }
+  async function prepareArchAutomatically(kind){
+    if(archSetupBusy)return;
+    setArchSetupBusy(true);
+    setDentalArchType(kind);
+    try{
+      await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+      const z=findBestArchAxialSlice();
+      setCursor(current=>({...current,z}));
+      const ok=suggestArchFromAxial(z);
+      if(ok){
+        setCurveAssistMessage(`${kind==="maxilla"?"Maxila":kind==="mandible"?"Mandíbula":kind==="both"?"Ambas as arcadas":"Arcada não informada"} • curva inicial sugerida automaticamente no axial Z ${z+1}. Revise antes do planejamento.`);
+        setArchSetupOpen(false);
+        setTool("navigate");
+      }else{
+        setCurveAssistMessage("Não foi possível sugerir a curva com segurança. Ajuste os pontos manualmente no axial.");
+        setTool("curve");
+        setArchSetupOpen(false);
+      }
+    }finally{setArchSetupBusy(false)}
   }
   function undoSuggestedArch(){
     if(!curveBeforeAssistRef.current)return;
@@ -1363,6 +1412,10 @@ export default function Viewer2(){
 
   function onPointerDown(plane,e){
     const canvas=e.currentTarget,pt=toImagePoint(canvas,e);
+    if(deviceProfile!=="desktop"&&e.pointerType==="touch"&&tool==="navigate"){
+      if(pt)touchTapRef.current={plane,canvas,pt,startX:e.clientX,startY:e.clientY,moved:false};
+      return;
+    }
     if(tool==="pan"){beginPan(plane,e);return}
     if(!pt)return;
     if(tool==="measure"){handleMeasurement(plane,pt);return}
@@ -1393,6 +1446,11 @@ export default function Viewer2(){
     }
   }
   function onPointerMove(plane,e){
+    if(touchTapRef.current&&e.pointerType==="touch"){
+      const t=touchTapRef.current;
+      if(Math.hypot(e.clientX-t.startX,e.clientY-t.startY)>10)t.moved=true;
+      return;
+    }
     if(dragRef.current){movePan(e);return}
     if(implantDragRef.current&&tool==="navigate"&&implantDragRef.current.plane===plane){
       const pt=toImagePoint(e.currentTarget,e);if(pt)moveActiveImplantToPoint(plane,pt);
@@ -1407,7 +1465,14 @@ export default function Viewer2(){
     const i=curveDragRef.current,m=metaRef.current;
     setCurvePoints(ps=>ps.map((p,index)=>index===i?{x:clamp(pt.a,0,m.w-1),y:clamp(pt.b,0,m.h-1)}:p));
   }
-  function onPointerUp(){dragRef.current=null;curveDragRef.current=null;navDragRef.current=null;implantDragRef.current=null}
+  function onPointerUp(plane,e){
+    const tap=touchTapRef.current;
+    if(tap&&e?.pointerType==="touch"){
+      if(!tap.moved&&tap.plane===plane)navigateAt(plane,tap.canvas,tap.pt);
+      touchTapRef.current=null;
+    }
+    dragRef.current=null;curveDragRef.current=null;navDragRef.current=null;implantDragRef.current=null;
+  }
 
   function planeControl(id){
     const m=metaRef.current;if(!m)return {min:0,max:0,value:0,label:""};
@@ -1445,15 +1510,17 @@ export default function Viewer2(){
   return <main className={"viewer2 is-"+deviceProfile} data-device-profile={deviceProfile}>
     {showIntro&&<ViewerBootIntro loading={false}/>} 
     {session?.isDemo&&<div className="viewer2-demo-banner"><strong>DEMONSTRAÇÃO</strong><span>Paciente fictício • alterações desta sessão não afetam sua conta</span></div>}
-    <header className="viewer2-top">
+    <header className="viewer2-top" id="viewer2-top">
       <div><button type="button" className="brand light viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}} title="Ir para a página inicial">OdontoView</button><span className="viewer2-beta">VIEWER 2.0 BETA</span>{session?.isDemo&&<span className="viewer2-demo-badge">DEMO</span>}</div>
       <div className="viewer2-study"><strong>{session?.order?.patient?.name||"Exame local"}</strong><span>{session?.order?.examType?.name||session?.result?.series?.[meta.seriesIndex]?.description} • {meta.manufacturer}{meta.model?" "+meta.model:""}</span>{deviceProfile!=="desktop"&&<small className="viewer2-device-mode">{deviceProfile==="tablet"?"Modo tablet • desempenho otimizado":"Modo celular • desempenho otimizado"}</small>}</div>
       <button className="viewer2-exit" onClick={()=>{clearViewerSession();nav(returnTo)}}>← {returnLabel}</button>
     </header>
     <section className="viewer2-toolbar">
-      {[
-        ["navigate","⌖","Cruzeta"],["pan","✋","Pan"],["measure","↔","Medir"],["curve","⌒","Curva"],["nerve","●","Nervo"],["foramen","◉","Forame"]
-      ].map(([id,icon,label])=><button key={id} className={tool===id?"active":""} onClick={()=>{setTool(id);setPendingMeasure(null)}}><span>{icon}</span>{label}</button>)}
+      {(deviceProfile==="desktop"||showAdvancedTools
+        ?[["navigate","⌖","Cruzeta"],["pan","✋","Pan"],["measure","↔","Medir"],["curve","⌒","Curva"],["nerve","●","Nervo"],["foramen","◉","Forame"]]
+        :[["navigate","⌖","Cruzeta"],["pan","✋","Pan"],["measure","↔","Medir"],["curve","⌒","Curva"]]
+      ).map(([id,icon,label])=><button key={id} className={tool===id?"active":""} onClick={()=>{setTool(id);setPendingMeasure(null)}}><span>{icon}</span>{label}</button>)}
+      {deviceProfile!=="desktop"&&<button type="button" className={"viewer2-more-tools "+(showAdvancedTools?"active":"")} onClick={()=>setShowAdvancedTools(v=>!v)}><span>•••</span>{showAdvancedTools?"Menos":"Mais"}</button>}
       <button type="button" className={"viewer2-cursor-toggle "+(crosshairVisible?"is-on":"is-off")} onClick={()=>setCrosshairVisible(v=>!v)} aria-pressed={crosshairVisible}>
         {crosshairVisible?"⌖ Cursor visível":"○ Cursor oculto"}
       </button>
@@ -1473,9 +1540,9 @@ export default function Viewer2(){
       ].map(([id,label,ref])=><article className={"viewer2-pane "+id+(expandedPanel===id?" is-expanded":"")} key={id}>
         <div className="viewer2-pane-head"><strong>{label}</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane(id)}>1:1</button>{expandButton(id,label)}</div></div>
         {renderSliceControl(id,label)}
-        <div className="viewer2-canvas-wrap"><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
+        <div className={"viewer2-canvas-wrap "+(deviceProfile!=="desktop"&&tool==="navigate"?"touch-scroll-friendly":"touch-tool-active")}><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={e=>onPointerUp(id,e)} onPointerCancel={e=>onPointerUp(id,e)}/></div>
       </article>)}
-      <article className={"viewer2-pane panoramic visual3d-composite"+(expandedPanel==="3d"?" is-expanded":"")}>
+      <article id="viewer2-panorama" className={"viewer2-pane panoramic visual3d-composite"+(expandedPanel==="3d"?" is-expanded":"")}>
         <div className="viewer2-pane-head"><strong>Modelo 3D • Planejamento</strong><div className="viewer2-pane-actions"><span className="viewer3d-badge">3D PROFISSIONAL</span>{expandButton("3d","3D")}</div></div>
         <div className="viewer3d-split">
           <div className="viewer3d-primary">
@@ -1506,13 +1573,14 @@ export default function Viewer2(){
           <div className={"viewer3d-mini-pano"+(expandedPanel==="panoramic"?" is-expanded":"")}>
             <div className="viewer3d-mini-head"><strong>Panorâmica reconstruída</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane("panoramic")}>1:1</button>{expandButton("panoramic","Panorâmica")}</div></div>
             {renderSliceControl("panoramic","Panorâmica reconstruída")}
-            <div className="viewer2-canvas-wrap viewer3d-pano-canvas"><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.panoramic} onWheel={e=>onWheel("panoramic",e)} onPointerDown={e=>onPointerDown("panoramic",e)} onPointerMove={e=>onPointerMove("panoramic",e)} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}/></div>
+            <div className={"viewer2-canvas-wrap viewer3d-pano-canvas "+(deviceProfile!=="desktop"&&tool==="navigate"?"touch-scroll-friendly":"touch-tool-active")}><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.panoramic} onWheel={e=>onWheel("panoramic",e)} onPointerDown={e=>onPointerDown("panoramic",e)} onPointerMove={e=>onPointerMove("panoramic",e)} onPointerUp={e=>onPointerUp("panoramic",e)} onPointerCancel={e=>onPointerUp("panoramic",e)}/></div>
           </div>
         </div>
       </article>
       <aside className="viewer2-side">
         <section>
           <p className="eyebrow">CURVA DA ARCADA</p><strong>{archRange.label}</strong>
+          <small className="viewer2-arch-type">Arcada informada: {dentalArchType==="maxilla"?"Maxila":dentalArchType==="mandible"?"Mandíbula":dentalArchType==="both"?"Ambas":"A confirmar"}</small>
           <div className="arch-scope" role="group" aria-label="Tipo de arcada">
             <button className={archMode==="auto"?"active":""} onClick={()=>setArchMode("auto")}>Auto</button>
             <button className={archMode==="full"?"active":""} onClick={()=>setArchMode("full")}>Completa</button>
@@ -1523,7 +1591,8 @@ export default function Viewer2(){
           <input type="range" min={archRange.start} max={archRange.end} value={curveIndex} onChange={e=>setCurveIndex(Number(e.target.value))}/>
           <small>Corte tangencial {curveIndex-archRange.start+1}/{archRange.end-archRange.start+1}. A faixa azul mostra os {PANORAMIC_BAND_HALF_MM*2} mm usados na reconstrução. Em Auto, o OdontoView tenta distinguir arcada completa de semi-arcada pelo axial atual; o profissional pode sobrescrever a escolha.</small>
           <div className="curve-assist-actions">
-            <button className="viewer2-small assist" onClick={suggestArchFromAxial}>Sugerir curva pelo axial atual</button>
+            <button className="viewer2-small assist" onClick={()=>suggestArchFromAxial()}>Sugerir curva pelo axial atual</button>
+            <button className="viewer2-small" onClick={()=>{setTool("curve");document.getElementById("viewer2-top")?.scrollIntoView({behavior:"smooth"})}}>Ajustar curva manualmente</button>
             {curveBeforeAssistRef.current&&<button className="viewer2-small" onClick={undoSuggestedArch}>Desfazer sugestão</button>}
             <button className="viewer2-small" onClick={resetArch}>Restaurar curva inicial</button>
           </div>
@@ -1602,5 +1671,28 @@ export default function Viewer2(){
         </section>
       </aside>
     </section>
+
+    {archSetupOpen&&<div className="viewer2-arch-setup" role="dialog" aria-modal="true" aria-label="Preparar curva panorâmica">
+      <section>
+        <span className="viewer2-arch-setup-icon">⌒</span>
+        <p className="eyebrow">PREPARAÇÃO DA PANORÂMICA</p>
+        <h2>Qual arcada este DICOM representa?</h2>
+        <p>Isso ajuda o OdontoView a preparar a primeira curva antes de abrir o planejamento. A sugestão é heurística e deve ser revisada pelo profissional.</p>
+        <div className="viewer2-arch-choices">
+          <button disabled={archSetupBusy} onClick={()=>prepareArchAutomatically("maxilla")}><strong>Maxila</strong><span>Arcada superior</span></button>
+          <button disabled={archSetupBusy} onClick={()=>prepareArchAutomatically("mandible")}><strong>Mandíbula</strong><span>Arcada inferior</span></button>
+          <button disabled={archSetupBusy} onClick={()=>prepareArchAutomatically("both")}><strong>Ambas</strong><span>Volume com as duas arcadas</span></button>
+          <button disabled={archSetupBusy} onClick={()=>prepareArchAutomatically("unknown")}><strong>Não sei</strong><span>Deixe o sistema tentar</span></button>
+        </div>
+        {archSetupBusy&&<div className="viewer2-arch-preparing">Analisando o volume e preparando a curva…</div>}
+        <button className="viewer2-arch-manual" disabled={archSetupBusy} onClick={()=>{setDentalArchType("unknown");setArchSetupOpen(false);setTool("curve")}}>Pular e ajustar manualmente</button>
+      </section>
+    </div>}
+
+    {deviceProfile==="tablet"&&<nav className="viewer2-tablet-scroll" aria-label="Navegação rápida no Viewer">
+      <button type="button" onClick={()=>document.getElementById("viewer2-top")?.scrollIntoView({behavior:"smooth"})}>↑</button>
+      <button type="button" onClick={()=>window.scrollBy({top:Math.round(window.innerHeight*.72),behavior:"smooth"})}>↓</button>
+      <button type="button" className="wide" onClick={()=>document.getElementById("viewer2-panorama")?.scrollIntoView({behavior:"smooth",block:"start"})}>Panorâmica</button>
+    </nav>}
   </main>;
 }
