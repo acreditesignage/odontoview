@@ -400,10 +400,18 @@ export function createApp(){
   app.post("/api/patients",auth,async(req,res,next)=>{
     try{
       if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
-      const dentist=await dentistFor(req.auth.sub); if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
+      const dentist=await prisma.dentist.findUnique({where:{userId:req.auth.sub},include:{user:true}});
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
       if(!req.body.name) return res.status(400).json({error:"Nome do paciente é obrigatório."});
       const patient=await prisma.patient.create({data:{
-        name:req.body.name.trim(),birthDate:req.body.birthDate?new Date(req.body.birthDate):null,phone:req.body.phone||null,email:req.body.email||null,createdByDentistId:dentist.id
+        name:req.body.name.trim(),
+        birthDate:req.body.birthDate?new Date(req.body.birthDate):null,
+        phone:cleanOptionalText(req.body.phone,80),
+        email:cleanOptionalEmail(req.body.email),
+        referringDentistName:cleanOptionalText(req.body.referringDentistName)||dentist.user.name,
+        referringDentistCro:cleanOptionalText(req.body.referringDentistCro,60)||[dentist.cro,dentist.uf].filter(Boolean).join("/"),
+        referringDentistEmail:cleanOptionalEmail(req.body.referringDentistEmail)||cleanOptionalEmail(dentist.user.email),
+        createdByDentistId:dentist.id
       }});
       res.status(201).json(patient);
     }catch(e){next(e);}
@@ -515,7 +523,10 @@ export function createApp(){
 
       const byId=new Map();
       for(const p of localPatients){
-        byId.set(p.id,{...p,source:"RADIOLOGIA",sourceLabel:"Radiologia",dentist:null,lastNetworkAt:null});
+        const referring=p.referringDentistName||p.referringDentistCro||p.referringDentistEmail
+          ?{name:p.referringDentistName||"Dentista informado",cro:p.referringDentistCro||"",email:p.referringDentistEmail||null,uf:""}
+          :null;
+        byId.set(p.id,{...p,source:"RADIOLOGIA",sourceLabel:"Radiologia",dentist:referring,lastNetworkAt:null});
       }
       for(const o of networkOrders){
         const current=byId.get(o.patient.id);
@@ -547,8 +558,11 @@ export function createApp(){
       const patient=await prisma.patient.create({data:{
         name,
         birthDate:req.body.birthDate?new Date(req.body.birthDate):null,
-        phone:req.body.phone||null,
-        email:req.body.email||null,
+        phone:cleanOptionalText(req.body.phone,80),
+        email:cleanOptionalEmail(req.body.email),
+        referringDentistName:cleanOptionalText(req.body.referringDentistName),
+        referringDentistCro:cleanOptionalText(req.body.referringDentistCro,60),
+        referringDentistEmail:cleanOptionalEmail(req.body.referringDentistEmail),
         createdByUnitId:membership.unitId
       }});
       res.status(201).json({...patient,source:"RADIOLOGIA",sourceLabel:"Radiologia"});
