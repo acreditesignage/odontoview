@@ -2414,3 +2414,76 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .documentation-final-board-actions{justify-content:flex-start}
   .documentation-final-board-stage{padding:12px 8px 18px}
 }
+
+
+/* Referring dentist + secure exam delivery */
+.referring-dentist-fields{
+  margin:2px 0 4px;padding:13px;border:1px solid #d9e7ef;border-radius:14px;background:#f8fbfd
+}
+.referring-dentist-fields legend{
+  padding:0 6px;color:#214b67;font-size:10px;font-weight:900
+}
+.referring-dentist-fields legend span{color:#7d909e;font-weight:700}
+.referring-dentist-fields>p{margin:0 0 10px;color:#718696;font-size:9px;line-height:1.45}
+.referring-dentist-fields>input,.referring-dentist-fields .two input{background:#fff}
+.referring-dentist-card{
+  margin:10px 0 14px;padding:12px 14px;display:flex;align-items:center;gap:11px;
+  border:1px solid #d8e7ef;border-radius:14px;background:linear-gradient(135deg,#fff,#f4fbfd)
+}
+.referring-dentist-card-icon{
+  width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:10px;
+  background:#e8f6fb;color:#147d96;font-size:10px;font-weight:950
+}
+.referring-dentist-card>div{display:grid;gap:2px}
+.referring-dentist-card .eyebrow{margin:0;font-size:7px}
+.referring-dentist-card strong{font-size:12px;color:#17384f}
+.referring-dentist-card small{font-size:9px;color:#718696}
+
+.dentist-delivery-banner{
+  margin:0 0 14px;padding:13px 14px;display:flex;align-items:center;justify-content:space-between;gap:14px;
+  border:1px solid #cde5ee;border-radius:16px;background:linear-gradient(135deg,#fff,#f2fbfd);
+  box-shadow:0 8px 24px rgba(18,57,83,.05)
+}
+.dentist-delivery-banner.status-sent{border-color:#bfe5d4;background:linear-gradient(135deg,#fff,#eefbf5)}
+.dentist-delivery-banner.status-failed{border-color:#edd1d1;background:linear-gradient(135deg,#fff,#fff5f5)}
+.dentist-delivery-copy{display:flex;align-items:center;gap:10px;min-width:0}
+.dentist-delivery-copy>div{display:grid;gap:3px}
+.dentist-delivery-copy .eyebrow{margin:0;font-size:7px}
+.dentist-delivery-copy strong{font-size:12px;color:#17384f}
+.dentist-delivery-copy small{font-size:9px;color:#718696;line-height:1.35}
+.dentist-delivery-icon{
+  width:35px;height:35px;display:grid;place-items:center;flex:none;border-radius:11px;
+  background:linear-gradient(135deg,#0f6fc3,#18b4c9);color:#fff;font-size:18px;font-weight:900
+}
+.dentist-delivery-actions{display:flex;align-items:center;gap:10px}
+.dentist-delivery-actions>img{
+  width:72px;height:72px;padding:4px;border:1px solid #d9e7ef;border-radius:10px;background:#fff
+}
+.dentist-delivery-actions>div{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+
+.shared-exam-page{min-height:100vh;background:radial-gradient(circle at 50% 0%,#edf9ff,#eef4f8 52%,#e7eff4)}
+.shared-exam-card{width:min(760px,94vw);padding:28px;border-radius:22px}
+.shared-exam-brand{font-size:25px;font-weight:950;letter-spacing:-.04em;color:#102b42;margin-bottom:18px}
+.shared-exam-brand span{color:#1497d6}
+.shared-exam-card h1{margin:6px 0 8px;color:#102b42}
+.shared-exam-access{
+  margin-top:20px;padding:18px;display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:18px;align-items:center;
+  border:1px solid #d7e7ef;border-radius:17px;background:#f8fcfe
+}
+.shared-exam-access>div{display:grid;gap:8px}
+.shared-exam-access strong{font-size:15px;color:#17384f}
+.shared-exam-access p{margin:0;color:#718696;line-height:1.45}
+.shared-exam-access img{width:150px;height:150px;padding:6px;border-radius:12px;background:#fff;border:1px solid #dce8ef}
+.shared-exam-expiry{margin:14px 0 0;color:#8295a2;font-size:9px;text-align:center}
+
+@media(max-width:700px){
+  .referring-dentist-fields{padding:11px}
+  .referring-dentist-fields .two{grid-template-columns:1fr}
+  .dentist-delivery-banner{align-items:flex-start;flex-direction:column}
+  .dentist-delivery-actions{width:100%;align-items:flex-start}
+  .dentist-delivery-actions>div{flex:1;display:grid;grid-template-columns:1fr;justify-content:stretch}
+  .dentist-delivery-actions button,.dentist-delivery-actions a{width:100%;text-align:center}
+  .shared-exam-card{width:100%;min-height:100dvh;border-radius:0;padding:22px 16px}
+  .shared-exam-access{grid-template-columns:1fr;padding:14px}
+  .shared-exam-access img{width:160px;height:160px;justify-self:center}
+}
