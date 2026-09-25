@@ -585,6 +585,7 @@ export function createApp(){
         ownerDentistId:dentist.id,
         examTypeId:examType?.id||null,
         sourceType:String(meta.sourceType||"DICOM").slice(0,24),
+        sourceName:meta.sourceName?String(meta.sourceName).slice(0,180):null,
         modality:meta.modality?String(meta.modality).slice(0,32):null,
         manufacturer:meta.manufacturer?String(meta.manufacturer).slice(0,120):null,
         model:meta.model?String(meta.model).slice(0,120):null,
