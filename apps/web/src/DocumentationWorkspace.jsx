@@ -146,6 +146,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const assignedKeys=new Set(slotIds.map(id=>templateMap[id]).filter(key=>key&&itemByKey.has(key)));
  const unassigned=imageEntries.filter(entry=>!assignedKeys.has(entry.key));
  const placedCount=assignedKeys.size;
+ const templateComplete=placedCount===slotIds.length;
  const hasSavedLayout=Boolean(gallery?.study?.documentationLayout);
 
  function autoMapFor(id=templateId){
@@ -265,7 +266,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
        </div>
        <div className="documentation-view-status">
          {mode==="overview"&&<><span className="status-dot ok"/>Leitura rápida • {imageEntries.length} imagem(ns)</>}
-         {mode==="template"&&<><span className={"status-dot "+(placedCount===slotIds.length?"ok":"warn")}/>{placedCount}/{slotIds.length} posições{unassigned.length?" · "+unassigned.length+" extras":""}</>}
+         {mode==="template"&&<><span className={"status-dot "+(templateComplete?"ok":"warn")}/>{placedCount}/{slotIds.length} posições{unassigned.length?" · "+unassigned.length+(templateComplete?" complementares":" para revisar"):""}</>}
          {mode==="viewer"&&<><span className="status-dot ok"/>{gallery.activeIndex+1} de {gallery.items.length}</>}
        </div>
      </div>
@@ -273,7 +274,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
      {mode==="overview"&&<div className="documentation-overview">
        <div className="documentation-overview-intro">
          <div><strong>Veja o conjunto antes de aprofundar.</strong><span>O OdontoView prioriza a numeração detectada no nome do arquivo e mantém os demais itens em ordem natural. Clique em qualquer radiografia para abrir o Viewer.</span></div>
-         <span className={"documentation-order-chip "+(sequenceInfo.reliable?"is-ok":"is-warn")}>{sequenceInfo.recognized}/{sequenceInfo.total} RECONHECIDAS{sequenceInfo.review?" · "+sequenceInfo.review+" REVISAR":""}</span>
+         <span className={"documentation-order-chip "+(sequenceInfo.reliable?"is-ok":"is-warn")}>{sequenceInfo.recognized}/{sequenceInfo.total} DO TEMPLATE{sequenceInfo.review?" · "+sequenceInfo.review+(sequenceInfo.reliable?" COMPLEMENTARES":" REVISAR"):""}</span>
        </div>
        <div className="documentation-overview-grid">
          {entries.map(entry=><button type="button" key={entry.key} className="documentation-overview-card" onClick={()=>openInViewer(entry)}>
@@ -317,11 +318,11 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
          </section>)}
 
          <section className="documentation-template-tray" onDragOver={e=>{if(canEditLayout)e.preventDefault()}} onDrop={e=>{if(!canEditLayout)return;e.preventDefault();removeFromTemplate(e.dataTransfer.getData("text/odontoview-file"))}}>
-           <div className="documentation-template-tray-title"><div><strong>Não classificadas</strong><span>{unassigned.length?unassigned.length+" imagem(ns) aguardando posição":"Todas as imagens utilizadas no template"}</span></div>{canEditLayout&&<small>Solte aqui para retirar uma imagem do template.</small>}</div>
+           <div className="documentation-template-tray-title"><div><strong>{templateComplete?"Imagens complementares":"Imagens para revisar"}</strong><span>{unassigned.length?(templateComplete?unassigned.length+" arquivo(s) fora do template principal — continuam disponíveis no exame.":unassigned.length+" imagem(ns) aguardando posição."):"Todas as imagens utilizadas no template."}</span></div>{canEditLayout&&<small>{templateComplete?"Arraste para o template apenas se precisar substituir uma posição.":"Solte aqui para retirar uma imagem do template."}</small>}</div>
            <div className="documentation-template-tray-grid">
              {unassigned.length?unassigned.map(entry=><button type="button" key={entry.key} className="documentation-template-tray-card" draggable={canEditLayout} onDragStart={e=>{if(!canEditLayout)return;e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/odontoview-file",entry.key)}} onClick={()=>openInViewer(entry)}>
                <img src={entry.item.url} alt={entry.item.fileName}/><small title={entry.item.fileName}>{sequenceBadge(entry)} · {entry.item.fileName}</small>
-             </button>):<div className="documentation-template-complete">✓ Organização completa</div>}
+             </button>):<div className="documentation-template-complete">✓ {templateComplete?"Template completo sem imagens complementares":"Organização completa"}</div>}
            </div>
          </section>
        </div>
