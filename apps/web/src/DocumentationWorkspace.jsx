@@ -53,6 +53,43 @@ function sequenceBadge(entry){
   return Number.isInteger(entry?.sequence)?"#"+String(entry.sequence).padStart(2,"0"):String((entry?.index||0)+1).padStart(2,"0");
 }
 
+function isFdiCode(value){
+  if(!Number.isInteger(value))return false;
+  const quadrant=Math.floor(value/10),tooth=value%10;
+  return quadrant>=1&&quadrant<=4&&tooth>=1&&tooth<=8;
+}
+function isBitewingCode(value){return Number.isInteger(value)&&value>=1&&value<=4}
+function fdiArc(value){
+  if(!isFdiCode(value))return null;
+  const quadrant=Math.floor(value/10);
+  return quadrant<=2?"maxilla":"mandible";
+}
+function fdiAnatomicPosition(value){
+  if(!isFdiCode(value))return null;
+  const quadrant=Math.floor(value/10),tooth=value%10;
+  if(quadrant===1||quadrant===4)return 8-tooth;
+  return 7+tooth;
+}
+function mapCandidatesToSlots(candidates,slotIds){
+  const next={};
+  if(!slotIds.length||!candidates.length)return next;
+  const sorted=[...candidates].sort((a,b)=>fdiAnatomicPosition(a.sequence)-fdiAnatomicPosition(b.sequence)||a.index-b.index);
+  if(sorted.length===slotIds.length){
+    sorted.forEach((entry,index)=>{next[slotIds[index]]=entry.key});
+    return next;
+  }
+  const available=new Set(slotIds.map((_,index)=>index));
+  for(const entry of sorted){
+    const pos=fdiAnatomicPosition(entry.sequence);
+    const ideal=Math.round((pos/15)*Math.max(0,slotIds.length-1));
+    const target=[...available].sort((a,b)=>Math.abs(a-ideal)-Math.abs(b-ideal)||a-b)[0];
+    if(target===undefined)break;
+    next[slotIds[target]]=entry.key;
+    available.delete(target);
+  }
+  return next;
+}
+
 export default function DocumentationWorkspace({gallery,setGallery,onClose,onDeleteFile,onSaveLayout}){
  const [mode,setMode]=useState("overview");
  const [brightness,setBrightness]=useState(100);
@@ -80,8 +117,12 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    const unique=new Set(numbers);
    const duplicates=numbers.length-unique.size;
    const detected=numbers.length,total=imageEntries.length;
-   const reliable=total>0&&detected>=Math.max(3,Math.ceil(total*.75))&&duplicates===0;
-   return {detected,total,duplicates,reliable};
+   const maxilla=imageEntries.filter(entry=>fdiArc(entry.sequence)==="maxilla").length;
+   const mandible=imageEntries.filter(entry=>fdiArc(entry.sequence)==="mandible").length;
+   const bitewings=imageEntries.filter(entry=>isBitewingCode(entry.sequence)).length;
+   const recognized=imageEntries.filter(entry=>isFdiCode(entry.sequence)||isBitewingCode(entry.sequence)).length;
+   const reliable=recognized>=14&&maxilla>=6&&mandible>=6&&duplicates===0;
+   return {detected,total,duplicates,reliable,maxilla,mandible,bitewings,recognized,review:Math.max(0,total-recognized)};
  },[imageEntries]);
  const itemByKey=useMemo(()=>new Map(entries.map(entry=>[entry.key,entry])),[entries]);
  const active=gallery?.items?.[gallery.activeIndex]||null;
@@ -97,9 +138,18 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
 
  function autoMapFor(id=templateId){
    const target=DOC_TEMPLATE_PRESETS[id]||DOC_TEMPLATE_PRESETS.PERIAPICAL_14_BW_4;
-   const ids=target.groups.flatMap(group=>group.slots.map(slot=>slot.id));
    const next={};
-   imageEntries.slice(0,ids.length).forEach((entry,index)=>{next[ids[index]]=entry.key});
+   const maxSlots=target.groups.find(group=>group.id==="maxilla")?.slots.map(slot=>slot.id)||[];
+   const mandSlots=target.groups.find(group=>group.id==="mandible")?.slots.map(slot=>slot.id)||[];
+   const bwSlots=target.groups.find(group=>group.id==="bitewing")?.slots.map(slot=>slot.id)||[];
+   Object.assign(next,mapCandidatesToSlots(imageEntries.filter(entry=>fdiArc(entry.sequence)==="maxilla"),maxSlots));
+   Object.assign(next,mapCandidatesToSlots(imageEntries.filter(entry=>fdiArc(entry.sequence)==="mandible"),mandSlots));
+   imageEntries.filter(entry=>isBitewingCode(entry.sequence)).sort((a,b)=>a.sequence-b.sequence||a.index-b.index).slice(0,bwSlots.length)
+     .forEach((entry,index)=>{next[bwSlots[index]]=entry.key});
+   if(!Object.keys(next).length){
+     const ids=target.groups.flatMap(group=>group.slots.map(slot=>slot.id));
+     imageEntries.slice(0,ids.length).forEach((entry,index)=>{next[ids[index]]=entry.key});
+   }
    return next;
  }
  function resetView(){
@@ -116,11 +166,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
      setTemplateDirty(false);
      setTemplateState("saved");
    }else{
-     const target=DOC_TEMPLATE_PRESETS[nextTemplate];
-     const ids=target.groups.flatMap(group=>group.slots.map(slot=>slot.id));
-     const next={};
-     imageEntries.slice(0,ids.length).forEach((entry,index)=>{next[ids[index]]=entry.key});
-     setTemplateMap(next);
+     setTemplateMap(autoMapFor(nextTemplate));
      setTemplateDirty(Boolean(gallery?.study?.canEditLayout&&imageEntries.length));
      setTemplateState("auto");
    }
@@ -209,7 +255,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
      {mode==="overview"&&<div className="documentation-overview">
        <div className="documentation-overview-intro">
          <div><strong>Veja o conjunto antes de aprofundar.</strong><span>O OdontoView prioriza a numeração detectada no nome do arquivo e mantém os demais itens em ordem natural. Clique em qualquer radiografia para abrir o Viewer.</span></div>
-         <span className={"documentation-order-chip "+(sequenceInfo.reliable?"is-ok":"is-warn")}>{sequenceInfo.detected}/{sequenceInfo.total} NUMERADAS{sequenceInfo.duplicates?" · "+sequenceInfo.duplicates+" DUP.":""}</span>
+         <span className={"documentation-order-chip "+(sequenceInfo.reliable?"is-ok":"is-warn")}>{sequenceInfo.recognized}/{sequenceInfo.total} RECONHECIDAS{sequenceInfo.review?" · "+sequenceInfo.review+" REVISAR":""}</span>
        </div>
        <div className="documentation-overview-grid">
          {entries.map(entry=><button type="button" key={entry.key} className="documentation-overview-card" onClick={()=>openInViewer(entry)}>
@@ -225,14 +271,14 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
        <div className="documentation-template-toolbar">
          <div className="documentation-template-copy">
            <p className="eyebrow">ORGANIZAÇÃO ANATÔMICA</p>
-           <strong>{hasSavedLayout&&!templateDirty?"Template salvo na nuvem":sequenceInfo.reliable?"Numeração detectada • montagem determinística":"Numeração parcial • revisar posições"}</strong>
-           <span>{sequenceInfo.reliable?"Primeira montagem feita pela sequência numérica dos arquivos. Confira a posição anatômica e ajuste por arraste antes de salvar.":"Nem todos os arquivos possuem numeração confiável. O sistema mantém ordem natural e exige conferência manual."}</span>
+           <strong>{hasSavedLayout&&!templateDirty?"Template salvo na nuvem":sequenceInfo.reliable?"FDI + bite-wings detectados • montagem anatômica":"Classificação parcial • revisar posições"}</strong>
+           <span>{sequenceInfo.reliable?"O OdontoView separou maxila, mandíbula e bite-wings pelos códigos detectados. Confira a anatomia e ajuste por arraste antes de salvar.":"O OdontoView reconheceu parte da série. As imagens sem código anatômico confiável permanecem em Não classificadas para revisão manual."}</span>
          </div>
          <div className="documentation-template-actions">
            <select value={templateId} disabled={!canEditLayout} onChange={e=>{const id=e.target.value;setTemplateId(id);setTemplateMap(autoMapFor(id));setTemplateDirty(true);setTemplateState("auto")}}>
              {Object.entries(DOC_TEMPLATE_PRESETS).map(([id,item])=><option key={id} value={id}>{item.label}</option>)}
            </select>
-           {canEditLayout&&<button className="secondary compact" onClick={organizeByNumber}>Montar por numeração</button>}
+           {canEditLayout&&<button className="secondary compact" onClick={organizeByNumber}>Montar automaticamente</button>}
            {canEditLayout&&<button className="ghost compact" onClick={clearTemplate}>Limpar</button>}
          </div>
        </div>
