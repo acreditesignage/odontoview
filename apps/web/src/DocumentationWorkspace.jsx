@@ -53,6 +53,36 @@ function sequenceBadge(entry){
   return Number.isInteger(entry?.sequence)?"#"+String(entry.sequence).padStart(2,"0"):String((entry?.index||0)+1).padStart(2,"0");
 }
 
+function loadCanvasImage(src){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>resolve(img);
+    img.onerror=()=>reject(new Error("Não foi possível carregar uma das radiografias."));
+    img.src=src;
+  });
+}
+function drawContainedImage(ctx,img,x,y,w,h){
+  const scale=Math.min(w/img.width,h/img.height);
+  const dw=img.width*scale,dh=img.height*scale;
+  const dx=x+(w-dw)/2,dy=y+(h-dh)/2;
+  ctx.drawImage(img,dx,dy,dw,dh);
+}
+function roundedRectPath(ctx,x,y,w,h,r){
+  const radius=Math.min(r,w/2,h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+radius,y);
+  ctx.arcTo(x+w,y,x+w,y+h,radius);
+  ctx.arcTo(x+w,y+h,x,y+h,radius);
+  ctx.arcTo(x,y+h,x,y,radius);
+  ctx.arcTo(x,y,x+w,y,radius);
+  ctx.closePath();
+}
+function safeTemplateFileName(value){
+  const base=String(value||"paciente").normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/[^a-z0-9]+/gi,"-").replace(/^-+|-+$/g,"").toLowerCase();
+  return base||"paciente";
+}
+
 function isFdiCode(value){
   if(!Number.isInteger(value))return false;
   const quadrant=Math.floor(value/10),tooth=value%10;
@@ -250,6 +280,130 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  }
  function organizeByNumber(){setTemplateMap(autoMapFor(templateId));setTemplateDirty(true);setTemplateState("auto")}
  function clearTemplate(){setTemplateMap({});setTemplateDirty(true);setTemplateState("editing")}
+ async function downloadTemplateBoard(){
+   if(!templateComplete){
+     alert("Complete as posições do template antes de gerar a prancha.");
+     return;
+   }
+   setBusy("download");
+   try{
+     const width=3200,height=2200;
+     const canvas=document.createElement("canvas");
+     canvas.width=width;canvas.height=height;
+     const ctx=canvas.getContext("2d");
+     ctx.fillStyle="#050b10";ctx.fillRect(0,0,width,height);
+
+     const patientName=String(gallery?.patient?.name||"Paciente").toUpperCase();
+     const examName=String(gallery?.examType?.name||"Documentação radiográfica");
+     const rawDate=gallery?.study?.completedAt||gallery?.study?.createdAt||null;
+     const examDate=rawDate?new Date(rawDate).toLocaleDateString("pt-BR"):"";
+     const birthDate=gallery?.patient?.birthDate?new Date(gallery.patient.birthDate+"T12:00:00").toLocaleDateString("pt-BR"):"";
+
+     ctx.fillStyle="#f4f9fc";
+     ctx.font="700 34px Arial, sans-serif";
+     ctx.fillText("DOCUMENTAÇÃO RADIOGRÁFICA",180,92);
+     ctx.font="700 52px Arial, sans-serif";
+     ctx.fillText(patientName,180,160);
+     ctx.font="400 28px Arial, sans-serif";
+     ctx.fillStyle="#a9bfce";
+     const details=[examName,examDate&&("Exame: "+examDate),birthDate&&("Nascimento: "+birthDate)].filter(Boolean).join("   •   ");
+     ctx.fillText(details,180,212);
+
+     ctx.textAlign="right";
+     ctx.fillStyle="#71d7f6";
+     ctx.font="700 54px Arial, sans-serif";
+     ctx.fillText("OdontoView",3020,130);
+     ctx.fillStyle="#829aaa";
+     ctx.font="600 20px Arial, sans-serif";
+     ctx.fillText("IMAGEM ODONTOLÓGICA SEM LIMITES",3020,171);
+     ctx.textAlign="left";
+
+     async function drawGroup(groupId,title,y,imageH,columns){
+       const group=preset.groups.find(item=>item.id===groupId);
+       if(!group)return;
+       const margin=180,gap=28;
+       const totalW=width-(margin*2);
+       const cellW=(totalW-gap*(columns-1))/columns;
+       ctx.textAlign="center";
+       ctx.fillStyle="#6fd6f7";
+       ctx.font="700 22px Arial, sans-serif";
+       ctx.fillText(title,width/2,y-34);
+       for(let i=0;i<group.slots.length;i++){
+         const slot=group.slots[i];
+         const key=templateMap[slot.id];
+         const entry=key?itemByKey.get(key):null;
+         if(!entry)continue;
+         const img=await loadCanvasImage(entry.item.url);
+         const x=margin+i*(cellW+gap);
+         roundedRectPath(ctx,x,y,cellW,imageH,24);
+         ctx.fillStyle="#09151e";ctx.fill();
+         ctx.save();
+         roundedRectPath(ctx,x+5,y+5,cellW-10,imageH-52,20);
+         ctx.clip();
+         drawContainedImage(ctx,img,x+8,y+8,cellW-16,imageH-58);
+         ctx.restore();
+         ctx.fillStyle="#dbe8ef";
+         ctx.font="600 18px Arial, sans-serif";
+         ctx.fillText(slot.label,x+cellW/2,y+imageH-18);
+       }
+       ctx.textAlign="left";
+     }
+
+     await drawGroup("maxilla","MAXILA",330,430,7);
+     await drawGroup("mandible","MANDÍBULA",895,430,7);
+
+     const bwGroup=preset.groups.find(item=>item.id==="bitewing");
+     if(bwGroup){
+       const gap=34,cellW=620,imageH=385;
+       const total=cellW*bwGroup.slots.length+gap*(bwGroup.slots.length-1);
+       const startX=(width-total)/2;
+       ctx.textAlign="center";
+       ctx.fillStyle="#6fd6f7";
+       ctx.font="700 22px Arial, sans-serif";
+       ctx.fillText("BITE-WINGS",width/2,1430);
+       for(let i=0;i<bwGroup.slots.length;i++){
+         const slot=bwGroup.slots[i];
+         const key=templateMap[slot.id];
+         const entry=key?itemByKey.get(key):null;
+         if(!entry)continue;
+         const img=await loadCanvasImage(entry.item.url);
+         const x=startX+i*(cellW+gap),y=1470;
+         roundedRectPath(ctx,x,y,cellW,imageH,24);
+         ctx.fillStyle="#09151e";ctx.fill();
+         ctx.save();
+         roundedRectPath(ctx,x+5,y+5,cellW-10,imageH-50,20);
+         ctx.clip();
+         drawContainedImage(ctx,img,x+8,y+8,cellW-16,imageH-56);
+         ctx.restore();
+         ctx.fillStyle="#dbe8ef";
+         ctx.font="600 18px Arial, sans-serif";
+         ctx.fillText(slot.label,x+cellW/2,y+imageH-17);
+       }
+       ctx.textAlign="left";
+     }
+
+     ctx.strokeStyle="#163246";ctx.lineWidth=2;
+     ctx.beginPath();ctx.moveTo(180,2050);ctx.lineTo(3020,2050);ctx.stroke();
+     ctx.fillStyle="#718c9e";ctx.font="500 18px Arial, sans-serif";
+     ctx.fillText("Template gerado pelo OdontoView",180,2094);
+     ctx.textAlign="right";
+     ctx.fillText("18 posições • 14 periapicais + 4 bite-wings",3020,2094);
+     ctx.textAlign="left";
+
+     const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error("Falha ao gerar a imagem.")),"image/jpeg",0.96));
+     const url=URL.createObjectURL(blob);
+     const a=document.createElement("a");
+     a.href=url;
+     a.download=safeTemplateFileName(gallery?.patient?.name)+"-template-radiografico-odontoview.jpg";
+     document.body.appendChild(a);a.click();a.remove();
+     setTimeout(()=>URL.revokeObjectURL(url),60000);
+   }catch(e){
+     alert(e.message||"Não foi possível gerar o template.");
+   }finally{
+     setBusy("");
+   }
+ }
+
  async function saveTemplate(){
    if(!canEditLayout||!onSaveLayout)return;
    const slots={};
@@ -326,6 +480,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
              {Object.entries(DOC_TEMPLATE_PRESETS).map(([id,item])=><option key={id} value={id}>{item.label}</option>)}
            </select>
            {canEditLayout&&<button className="secondary compact" onClick={organizeByNumber}>Montar automaticamente</button>}
+           <button className="primary compact" disabled={!templateComplete||busy==="download"} onClick={downloadTemplateBoard}>{busy==="download"?"Gerando…":"⬇ Baixar template JPG"}</button>
            {canEditLayout&&<button className="ghost compact" onClick={clearTemplate}>Limpar</button>}
          </div>
        </div>
