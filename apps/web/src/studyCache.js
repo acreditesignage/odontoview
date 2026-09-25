@@ -5,6 +5,10 @@ const MIN_LIMIT=256*1024*1024;
 const DEFAULT_LIMIT=1024*1024*1024;
 const MAX_LIMIT=2*1024*1024*1024;
 
+function notifyStudyCacheChange(){
+  try{window.dispatchEvent(new CustomEvent("odontoview-study-cache-change"))}catch{}
+}
+
 function decodeJwtPayload(token){
   try{
     const part=String(token||"").split(".")[1];
@@ -76,6 +80,7 @@ async function putRecord(record){
       tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
     });
   }finally{db.close()}
+  notifyStudyCacheChange();
 }
 
 async function deleteKeys(keys){
@@ -89,6 +94,7 @@ async function deleteKeys(keys){
       tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
     });
   }finally{db.close()}
+  notifyStudyCacheChange();
 }
 
 async function recordsForScope(scope){
