@@ -315,7 +315,9 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const [complementaryTypes,setComplementaryTypes]=useState({});
  const [templateDirty,setTemplateDirty]=useState(false);
  const [templateState,setTemplateState]=useState("");
+ const [templateEditing,setTemplateEditing]=useState(false);
  const dragRef=useRef(null);
+ const finalBoardRef=useRef(null);
  const collator=useMemo(()=>new Intl.Collator("pt-BR",{numeric:true,sensitivity:"base"}),[]);
  const entries=useMemo(()=>((gallery?.items||[]).map((item,index)=>({
    item,index,key:item.id||("index-"+index),sequence:extractSequenceNumber(item.fileName)
@@ -350,6 +352,8 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const unassigned=imageEntries.filter(entry=>!assignedKeys.has(entry.key));
  const placedCount=assignedKeys.size;
  const templateComplete=placedCount===slotIds.length;
+ const hasSavedLayout=Boolean(gallery?.study?.documentationLayout);
+ const templatePresentation=templateComplete&&hasSavedLayout&&!templateDirty&&!templateEditing;
  const complementaryGroups=useMemo(()=>{
    const typeFor=entry=>complementaryTypes[entry.key]||"UNCLASSIFIED";
    return [
@@ -359,7 +363,6 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
      {id:"UNCLASSIFIED",label:"A classificar",hint:"Defina o tipo para deixar a entrega organizada",entries:unassigned.filter(entry=>typeFor(entry)==="UNCLASSIFIED")}
    ].filter(group=>group.entries.length);
  },[unassigned,complementaryTypes]);
- const hasSavedLayout=Boolean(gallery?.study?.documentationLayout);
 
  function autoMapFor(id=templateId){
    const target=DOC_TEMPLATE_PRESETS[id]||DOC_TEMPLATE_PRESETS.PERIAPICAL_14_BW_4;
@@ -397,11 +400,13 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
      setComplementaryTypes(saved?.complementaryTypes&&typeof saved.complementaryTypes==="object"?saved.complementaryTypes:{});
      setTemplateDirty(false);
      setTemplateState("saved");
+     setTemplateEditing(false);
    }else{
      setTemplateMap(autoMapFor(nextTemplate));
      setComplementaryTypes({});
      setTemplateDirty(Boolean(gallery?.study?.canEditLayout&&imageEntries.length));
      setTemplateState("auto");
+     setTemplateEditing(true);
    }
  },[gallery?.study?.id]);
 
@@ -478,6 +483,35 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    }
  }
 
+ async function viewTemplateFullscreen(){
+   const target=finalBoardRef.current;
+   if(!target)return;
+   try{
+     if(document.fullscreenElement){await document.exitFullscreen();return;}
+     await target.requestFullscreen?.();
+   }catch(e){alert("Não foi possível abrir em tela cheia neste navegador.")}
+ }
+ async function printTemplateBoard(){
+   if(!templateComplete||templateDirty){
+     alert("Salve a organização antes de imprimir a prancha final.");
+     return;
+   }
+   const popup=window.open("","_blank","noopener,noreferrer");
+   if(!popup){alert("O navegador bloqueou a janela de impressão.");return;}
+   popup.document.write("<!doctype html><html><head><title>OdontoView</title><style>html,body{margin:0;background:#000;height:100%;display:grid;place-items:center}img{max-width:100%;max-height:100%;object-fit:contain}@media print{body{background:#fff}img{width:100%;max-height:none}}</style></head><body><p style='color:white;font-family:Arial'>Preparando prancha…</p></body></html>");
+   setBusy("print");
+   try{
+     const canvas=await renderRadiographicBoardCanvas({gallery,templateMap,itemByKey});
+     const dataUrl=canvas.toDataURL("image/jpeg",0.96);
+     popup.document.body.innerHTML='<img src="'+dataUrl+'" alt="Prancha radiográfica">';
+     const img=popup.document.querySelector("img");
+     img.onload=()=>{popup.focus();popup.print();};
+   }catch(e){
+     popup.close();
+     alert(e.message||"Não foi possível preparar a impressão.");
+   }finally{setBusy("")}
+ }
+
  async function saveTemplate(){
    if(!canEditLayout||!onSaveLayout)return;
    const slots={};
@@ -493,7 +527,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
      const out=await onSaveLayout(payload);
      const layout=out?.layout||payload;
      setGallery(prev=>prev?({...prev,study:{...prev.study,documentationLayout:layout}}):prev);
-     setTemplateMap(layout.slots||slots);setComplementaryTypes(layout.complementaryTypes||savedComplementaryTypes);setTemplateDirty(false);setTemplateState("saved");
+     setTemplateMap(layout.slots||slots);setComplementaryTypes(layout.complementaryTypes||savedComplementaryTypes);setTemplateDirty(false);setTemplateState("saved");setTemplateEditing(false);
    }catch(e){alert(e.message||"Não foi possível salvar a organização.")}finally{setBusy("")}
  }
  async function deleteSelected(){
@@ -517,14 +551,12 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
      <div className="documentation-view-tabs">
        <div className="documentation-view-tabs-group" role="tablist" aria-label="Modo de visualização">
          <button className={mode==="overview"?"active":""} onClick={()=>setMode("overview")}>Visão geral</button>
-         <button className={mode==="template"?"active":""} onClick={()=>setMode("template")}>Template</button>
-         <button className={mode==="board"?"active":""} disabled={!templateComplete} onClick={()=>setMode("board")}>Prancha final</button>
+         <button className={mode==="template"?"active":""} onClick={()=>{setMode("template");if(!hasSavedLayout)setTemplateEditing(true)}}>Template</button>
          <button className={mode==="viewer"?"active":""} onClick={()=>setMode("viewer")}>Viewer</button>
        </div>
        <div className="documentation-view-status">
          {mode==="overview"&&<><span className="status-dot ok"/>Leitura rápida • {imageEntries.length} imagem(ns)</>}
-         {mode==="template"&&<><span className={"status-dot "+(templateComplete?"ok":"warn")}/>{placedCount}/{slotIds.length} posições{unassigned.length?" · "+unassigned.length+(templateComplete?" complementares":" para revisar"):""}</>}
-         {mode==="board"&&<><span className={"status-dot "+(!templateDirty&&hasSavedLayout?"ok":"warn")}/>{!templateDirty&&hasSavedLayout?"Prancha salva na nuvem":"Salve a organização para finalizar"}</>}
+         {mode==="template"&&<><span className={"status-dot "+(templatePresentation?"ok":templateComplete?"ok":"warn")}/>{templatePresentation?"Template salvo na nuvem":placedCount+"/"+slotIds.length+" posições"+(unassigned.length?" · "+unassigned.length+(templateComplete?" complementares":" para revisar"):"")}</>}
          {mode==="viewer"&&<><span className="status-dot ok"/>{gallery.activeIndex+1} de {gallery.items.length}</>}
        </div>
      </div>
@@ -544,7 +576,62 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
        </div>
      </div>}
 
-     {mode==="template"&&<div className="documentation-template">
+     {mode==="template"&&(templatePresentation?
+       <div className="documentation-template-delivery">
+         <div className="documentation-template-delivery-main">
+           <div className="documentation-template-ready-card">
+             <div className="documentation-template-ready-copy">
+               <span className="documentation-ready-check">✓</span>
+               <div>
+                 <p className="eyebrow">TEMPLATE SALVO</p>
+                 <strong>Template pronto para entrega</strong>
+                 <span>O mesmo layout exibido na tela será usado no download JPG e na impressão.</span>
+               </div>
+             </div>
+             <div className="documentation-template-ready-actions">
+               <button className="secondary compact" onClick={viewTemplateFullscreen}>◉ Visualizar em tela cheia</button>
+               <button className="primary compact" disabled={busy==="download"} onClick={downloadTemplateBoard}>{busy==="download"?"Gerando…":"↓ Baixar template JPG"}</button>
+               <button className="ghost compact" disabled={busy==="print"} onClick={printTemplateBoard}>{busy==="print"?"Preparando…":"▣ Imprimir"}</button>
+             </div>
+           </div>
+
+           <div className="documentation-template-delivery-board" ref={finalBoardRef}>
+             <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} onOpen={openInViewer}/>
+           </div>
+         </div>
+
+         <aside className="documentation-template-delivery-side">
+           <section className="documentation-template-side-card">
+             <div className="documentation-template-side-title"><span>▧</span><strong>Pré-visualização do arquivo</strong></div>
+             <div className="documentation-template-preview-frame">
+               <div className="documentation-template-preview-scale">
+                 <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey}/>
+               </div>
+             </div>
+             <div className="documentation-template-download-note"><span>i</span><p>O arquivo será salvo em formato <b>JPG</b> com o mesmo layout mostrado na tela.</p></div>
+           </section>
+
+           <section className="documentation-template-side-card">
+             <div className="documentation-template-side-title"><span>☷</span><strong>Informações do template</strong></div>
+             <dl className="documentation-template-info-list">
+               <div><dt>Tipo</dt><dd>{gallery.examType?.name||"Documentação"} (Completo)</dd></div>
+               <div><dt>Radiografias</dt><dd>{gallery.items.length} imagens</dd></div>
+               <div><dt>Criado em</dt><dd>{formatBoardDate(gallery.study?.completedAt||gallery.study?.createdAt)||"—"}</dd></div>
+               <div><dt>Salvo na nuvem</dt><dd className="is-success">Sim</dd></div>
+               <div><dt>Formato do download</dt><dd>JPG (alta qualidade)</dd></div>
+             </dl>
+           </section>
+
+           <section className="documentation-template-ready-side">
+             <span className="documentation-ready-check large">✓</span>
+             <div><strong>Template pronto</strong><p>Seu template está montado e pode ser baixado, impresso ou visualizado a qualquer momento.</p></div>
+           </section>
+
+           {canEditLayout&&<button className="secondary documentation-template-edit-button" onClick={()=>setTemplateEditing(true)}>Editar organização</button>}
+         </aside>
+       </div>
+       :
+       <div className="documentation-template">
        <div className="documentation-template-toolbar">
          <div className="documentation-template-copy">
            <p className="eyebrow">ORGANIZAÇÃO ANATÔMICA</p>
@@ -556,7 +643,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
              {Object.entries(DOC_TEMPLATE_PRESETS).map(([id,item])=><option key={id} value={id}>{item.label}</option>)}
            </select>
            {canEditLayout&&<button className="secondary compact" onClick={organizeByNumber}>Montar automaticamente</button>}
-           <button className="secondary compact" disabled={!templateComplete} onClick={()=>setMode("board")}>Ver prancha final</button>
+           <button className="secondary compact" disabled={!templateComplete||templateDirty||!hasSavedLayout} onClick={()=>setTemplateEditing(false)}>Concluir edição</button>
            {canEditLayout&&<button className="ghost compact" onClick={clearTemplate}>Limpar</button>}
          </div>
        </div>
@@ -609,25 +696,8 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
          <div><span className={"documentation-save-indicator "+(templateState==="saved"&&!templateDirty?"saved":"")}/><p>{canEditLayout?(templateDirty?"Há alterações ainda não salvas.":"Organização oficial salva na nuvem."):"Template oficial em modo de leitura."}</p></div>
          {canEditLayout&&<button className="primary compact" disabled={!templateDirty||busy==="layout"} onClick={saveTemplate}>{busy==="layout"?"Salvando…":templateDirty?"Salvar organização":"Salvo ✓"}</button>}
        </div>
-     </div>}
-
-     {mode==="board"&&<div className="documentation-final-board-view">
-       <div className="documentation-final-board-toolbar">
-         <div>
-           <p className="eyebrow">PRANCHA RADIOGRÁFICA FINAL</p>
-           <strong>{!templateDirty&&hasSavedLayout?"Template montado e salvo":"Pré-visualização da organização atual"}</strong>
-           <span>Esta é a composição usada também no arquivo JPG.</span>
-         </div>
-         <div className="documentation-final-board-actions">
-           {canEditLayout&&<button className="ghost compact" onClick={()=>setMode("template")}>Editar organização</button>}
-           <button className="primary compact" disabled={!templateComplete||templateDirty||busy==="download"} onClick={downloadTemplateBoard}>{busy==="download"?"Gerando…":"⬇ Baixar prancha JPG"}</button>
-         </div>
-       </div>
-       <div className="documentation-final-board-stage">
-         <RadiographicBoard gallery={gallery} templateMap={templateMap} itemByKey={itemByKey} onOpen={openInViewer}/>
-       </div>
-       {templateDirty&&<div className="documentation-final-board-warning">Salve a organização para liberar o download da prancha final.</div>}
-     </div>}
+     </div>
+     )}
 
      {mode==="viewer"&&<div className="documentation-viewer-pane">
        <div className="documentation-toolbar">
