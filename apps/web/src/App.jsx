@@ -729,6 +729,9 @@ function Radiology(){
  const localImportPatients=(patients?.patients||[]).filter(p=>p.source==="RADIOLOGIA");
  const selectedImportPatient=localImportPatients.find(p=>p.id===importPatientId)||null;
  const selectedImportType=radiologyExamTypes.find(t=>t.id===importExamType)||null;
+ const selectedImportPolicy=examUploadPolicy(selectedImportType);
+ const selectedPatientExamType=(patientDetail?.examTypes||radiologyExamTypes).find(t=>t.id===patientExamType)||null;
+ const selectedPatientUploadPolicy=examUploadPolicy(selectedPatientExamType);
  const operationalOrders=data?.orders||[];
  const tomorrow=()=>{const x=new Date();x.setDate(x.getDate()+1);setDate(localDateValue(x))};
  return <main className="page radiology"><section className="wide">
@@ -739,16 +742,16 @@ function Radiology(){
        <div className="exam-upload-dialog-head"><div><p className="eyebrow">ADICIONAR EXAME</p><h2 id="exam-upload-title">Confirme antes de selecionar o arquivo.</h2></div><button type="button" className="ghost compact" onClick={()=>setExamUploadConfirm(null)}>Fechar</button></div>
        <div className="exam-upload-summary">
          <label><span>Paciente</span><strong>{examUploadConfirm.patientName}</strong></label>
-         <label><span>Tipo de exame</span><strong>{examUploadConfirm.examTypeName}</strong><small>Este tipo vem do pedido e será mantido no vínculo com o dentista.</small></label>
+         <label><span>Tipo de exame</span><strong>{examUploadConfirm.examTypeName}</strong><small>Este tipo vem do pedido e será mantido no vínculo com o dentista. {examUploadPolicy(examUploadConfirm.examTypeName).help}</small></label>
        </div>
        <div className="exam-upload-dialog-actions">
          <button type="button" className="ghost" onClick={()=>setExamUploadConfirm(null)}>Cancelar</button>
-         <button type="button" className="primary" onClick={()=>beginPatientExamFileSelection(examUploadConfirm.target)}>Selecionar ZIP / DICOM</button>
+         <button type="button" className="primary" onClick={()=>beginPatientExamFileSelection(examUploadConfirm.target)}>{examUploadPolicy(examUploadConfirm.examTypeName).buttonLabel}</button>
        </div>
      </section>
    </div>}
    <header className="topbar"><BrandLockup role="RADIOLOGIA"/><button className="ghost" onClick={logout}>Sair</button></header>
-   <div className="hero-row radiology-hero"><div><p className="eyebrow">OPERAÇÃO DA RADIOLOGIA</p><h1>{tab==="home"?"Visão geral da unidade.":tab==="agenda"?"Agenda da unidade.":tab==="patients"?"Pacientes da unidade.":tab==="exams"?"Exames em andamento.":"Importar DICOM."}</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:patients?.unit?patients.unit.organization.name+" • "+patients.unit.name:"Carregando unidade…"}</p></div><div className="radiology-hero-actions"><button className="primary" onClick={startRadiologyPatient}>＋ Novo paciente</button><button className="secondary" onClick={startLocalImport}>⬆ Importar exame</button></div></div>
+   <div className="hero-row radiology-hero"><div><p className="eyebrow">OPERAÇÃO DA RADIOLOGIA</p><h1>{tab==="home"?"Visão geral da unidade.":tab==="agenda"?"Agenda da unidade.":tab==="patients"?"Pacientes da unidade.":tab==="exams"?"Exames em andamento.":"Importar exame."}</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:patients?.unit?patients.unit.organization.name+" • "+patients.unit.name:"Carregando unidade…"}</p></div><div className="radiology-hero-actions"><button className="primary" onClick={startRadiologyPatient}>＋ Novo paciente</button><button className="secondary" onClick={startLocalImport}>⬆ Importar exame</button></div></div>
    <nav className="workspace-tabs radiology-tabs">
      <button className={tab==="home"?"active":""} onClick={()=>goRadiologyTab("home")}>Visão geral</button>
      <button className={tab==="agenda"?"active":""} onClick={()=>goRadiologyTab("agenda")}>Agenda</button>
@@ -785,7 +788,7 @@ function Radiology(){
              {o.status==="EXAME_REALIZADO"&&<button className="primary compact" onClick={()=>pickExam(o)}>Importar exame</button>}
              {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Disponível no OdontoView</span>}
            </div>
-           {ingest?.orderId===o.id&&<div className="radiology-ops-ingest"><IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=home"))}} onSend={()=>sendExamToDentist(o)}/></div>}
+           {ingest?.orderId===o.id&&<div className="radiology-ops-ingest"><IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{if(ingest.result?.kind==="single"){previewLocalExam(ingest.result);return}setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=home"))}} onSend={()=>sendExamToDentist(o)}/></div>}
          </article>
        })}</div>}
      </section>
@@ -806,7 +809,7 @@ function Radiology(){
            {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Exame recebido pelo OdontoView</span>}
          </div>
        </div>
-       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=agenda"))}} onSend={()=>sendExamToDentist(o)}/>}
+       {ingest?.orderId===o.id&&<IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{if(ingest.result?.kind==="single"){previewLocalExam(ingest.result);return}setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=agenda"))}} onSend={()=>sendExamToDentist(o)}/>}
      </article>
    })}</div>)}
    {tab==="exams"&&<section className="card radiology-exams-card">
@@ -819,22 +822,23 @@ function Radiology(){
          <div className="radiology-exam-actions">
            {o.status==="AGENDADO"&&<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>Confirmar chegada</button>}
            {o.status==="PACIENTE_CHEGOU"&&<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>Marcar realizado</button>}
-           {o.status==="EXAME_REALIZADO"&&<button className="primary compact" onClick={()=>pickExam(o)}>Selecionar DICOM</button>}
+           {o.status==="EXAME_REALIZADO"&&<button className="primary compact" onClick={()=>pickExam(o)}>Selecionar exame</button>}
            {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Imagens recebidas</span>}
          </div>
-         {ingest?.orderId===o.id&&<div className="radiology-exam-ingest"><IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=exams"))}} onSend={()=>sendExamToDentist(o)}/></div>}
+         {ingest?.orderId===o.id&&<div className="radiology-exam-ingest"><IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{if(ingest.result?.kind==="single"){previewLocalExam(ingest.result);return}setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=exams"))}} onSend={()=>sendExamToDentist(o)}/></div>}
        </article>
      })}</div>}
    </section>}
    {tab==="import"&&<section className="card radiology-import-card">
-     <div className="section-title"><div><p className="eyebrow">IMPORTAR DICOM</p><h2>Adicionar exame local.</h2><p className="muted">Este fluxo é para pacientes cadastrados diretamente pela radiologia. Pedidos vindos do OdontoView devem receber as imagens pela Agenda/Exames para manter o vínculo com o dentista.</p></div><button className="secondary compact" onClick={startRadiologyPatient}>＋ Novo paciente</button></div>
-     {!patients?<div className="empty">Carregando pacientes…</div>:localImportPatients.length===0?<div className="dentist-home-empty"><strong>Nenhum paciente local disponível.</strong><p>Cadastre um paciente da radiologia antes de importar o DICOM.</p><button className="primary compact" onClick={startRadiologyPatient}>Cadastrar paciente</button></div>:<>
+     <div className="section-title"><div><p className="eyebrow">IMPORTAR EXAME</p><h2>Adicionar exame local.</h2><p className="muted">CBCT usa série DICOM. Os demais exames usam um único arquivo. Pedidos vindos do OdontoView devem receber o arquivo pela Agenda/Exames para manter o vínculo com o dentista.</p></div><button className="secondary compact" onClick={startRadiologyPatient}>＋ Novo paciente</button></div>
+     {!patients?<div className="empty">Carregando pacientes…</div>:localImportPatients.length===0?<div className="dentist-home-empty"><strong>Nenhum paciente local disponível.</strong><p>Cadastre um paciente da radiologia antes de importar o exame.</p><button className="primary compact" onClick={startRadiologyPatient}>Cadastrar paciente</button></div>:<>
        <div className="radiology-import-grid">
          <label><span>Paciente</span><select value={importPatientId} onChange={e=>setImportPatientId(e.target.value)}><option value="">Selecione o paciente</option>{localImportPatients.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-         <label><span>Tipo de exame</span><select value={importExamType} onChange={e=>{setImportExamType(e.target.value);setPatientExamType(e.target.value)}}>{radiologyExamTypes.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
-         <button className="primary" disabled={!importPatientId} onClick={()=>{setPatientExamType(importExamType);beginPatientExamFileSelection({kind:"patient",id:importPatientId,examTypeId:importExamType})}}>Selecionar ZIP / DICOM</button>
+         <label><span>Tipo de exame</span><select value={importExamType} onChange={e=>{setImportExamType(e.target.value);setPatientExamType(e.target.value);setPatientIngest(null)}}>{radiologyExamTypes.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
+         <button className="primary" disabled={!importPatientId} onClick={()=>{setPatientExamType(importExamType);beginPatientExamFileSelection({kind:"patient",id:importPatientId,examTypeId:importExamType})}}>{selectedImportPolicy.buttonLabel}</button>
        </div>
-       {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{setViewerSession({result:patientIngest.result,order:{patient:selectedImportPatient,examType:selectedImportType||{name:"Exame DICOM"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab=import"))}} onSend={sendPatientExam} sendLabel="Salvar exame na radiologia"/>}
+       <p className="muted upload-policy-note">{selectedImportPolicy.help}</p>
+       {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{if(patientIngest.result?.kind==="single"){previewLocalExam(patientIngest.result);return}setViewerSession({result:patientIngest.result,order:{patient:selectedImportPatient,examType:selectedImportType||{name:"Tomografia CBCT"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab=import"))}} onSend={sendPatientExam} sendLabel="Salvar exame na radiologia"/>}
      </>}
    </section>}
    {tab==="patients"&&<div className={"radiology-patient-layout"+(selectedPatient?" has-detail":"")}>
@@ -866,7 +870,7 @@ function Radiology(){
          {shareInvite&&<div className="share-invite-box"><strong>Link seguro para o dentista</strong><code>{shareInvite}</code><div className="share-actions"><button className="secondary compact" onClick={()=>navigator.clipboard.writeText(shareInvite)}>Copiar link</button><a className="secondary compact" target="_blank" rel="noreferrer" href={"https://wa.me/?text="+encodeURIComponent("Olá! "+selectedPatient.name+" compartilhou um exame no OdontoView. Acesse ou crie seu cadastro: "+shareInvite)}>WhatsApp</a><a className="secondary compact" href={"mailto:?subject="+encodeURIComponent("Exame compartilhado no OdontoView")+"&body="+encodeURIComponent("Olá! "+selectedPatient.name+" compartilhou um exame com você no OdontoView. Acesse: "+shareInvite)}>Email</a></div><small>O convite expira em 7 dias e vincula o paciente ao cadastro do dentista que aceitar.</small></div>}
          <section className="patient-detail-section">
            <div className="section-title"><div><p className="eyebrow">PEDIDOS / EXAMES</p><h3>Histórico clínico da unidade</h3></div></div>
-           {patientDetail.orders.length===0&&patientDetail.studies.length===0&&<div className="empty"><strong>Nenhum exame ainda.</strong><p>Você já pode adicionar o primeiro DICOM deste paciente.</p></div>}
+           {patientDetail.orders.length===0&&patientDetail.studies.length===0&&<div className="empty"><strong>Nenhum exame ainda.</strong><p>Você já pode adicionar o primeiro exame deste paciente.</p></div>}
            {patientDetail.orders.map(o=><div className="patient-order-card" key={o.id}>
              <div><strong>{o.examType.name}</strong><small>Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</small><small>Status: {STATUS[o.status]?.label||o.status}</small></div>
              <div className="patient-order-actions">
@@ -884,10 +888,10 @@ function Radiology(){
            </div>)}
          </section>
          {patientDetail.source==="RADIOLOGIA"&&<section className="patient-detail-section add-local-exam">
-           <div><p className="eyebrow">NOVO EXAME LOCAL</p><h3>Adicionar DICOM ao paciente</h3></div>
-           <div className="patient-local-exam-actions"><select value={patientExamType} onChange={e=>setPatientExamType(e.target.value)}>{patientDetail.examTypes.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button className="primary" onClick={()=>beginPatientExamFileSelection({kind:"patient",id:patientDetail.patient.id,examTypeId:patientExamType})}>Selecionar ZIP / DICOM</button></div>
+           <div><p className="eyebrow">NOVO EXAME LOCAL</p><h3>Adicionar exame ao paciente</h3><p className="muted">{selectedPatientUploadPolicy.help}</p></div>
+           <div className="patient-local-exam-actions"><select value={patientExamType} onChange={e=>{setPatientExamType(e.target.value);setPatientIngest(null)}}>{patientDetail.examTypes.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select><button className="primary" onClick={()=>beginPatientExamFileSelection({kind:"patient",id:patientDetail.patient.id,examTypeId:patientExamType})}>{selectedPatientUploadPolicy.buttonLabel}</button></div>
          </section>}
-         {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{setViewerSession({result:patientIngest.result,order:{patient:patientDetail.patient,examType:patientDetail.examTypes.find(t=>t.id===(patientTarget?.examTypeId||patientExamType))||{name:"Exame DICOM"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab="+tab))}} onSend={sendPatientExam}/>}
+         {patientIngest&&<IngestResult state={patientIngest} onClear={()=>setPatientIngest(null)} onOpenViewer={()=>{if(patientIngest.result?.kind==="single"){previewLocalExam(patientIngest.result);return}setViewerSession({result:patientIngest.result,order:{patient:patientDetail.patient,examType:patientDetail.examTypes.find(t=>t.id===(patientTarget?.examTypeId||patientExamType))||{name:"Tomografia CBCT"},unit:data?.unit}});nav(viewerRoute("radiology","/radiologia?tab="+tab))}} onSend={sendPatientExam}/>}
        </>}
      </section>}
    </div>}
