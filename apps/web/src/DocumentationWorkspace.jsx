@@ -1,4 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
+import {api} from "./api.js";
 
 const DOC_TEMPLATE_PRESETS={
   PERIAPICAL_14_BW_4:{
@@ -316,6 +317,9 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const [templateDirty,setTemplateDirty]=useState(false);
  const [templateState,setTemplateState]=useState("");
  const [templateEditing,setTemplateEditing]=useState(false);
+ const [aiAnalysis,setAiAnalysis]=useState(gallery?.study?.aiAnalysis||null);
+ const [aiBusy,setAiBusy]=useState("");
+ const [aiError,setAiError]=useState("");
  const dragRef=useRef(null);
  const finalBoardRef=useRef(null);
  const collator=useMemo(()=>new Intl.Collator("pt-BR",{numeric:true,sensitivity:"base"}),[]);
@@ -346,6 +350,10 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  const isImage=active?.previewKind==="image";
  const canDelete=Boolean(gallery?.study?.canDelete);
  const canEditLayout=Boolean(gallery?.study?.canEditLayout&&onSaveLayout);
+ const canManageAi=Boolean(gallery?.study?.canManageAi);
+ const aiFindings=Array.isArray(aiAnalysis?.findings)?aiAnalysis.findings:[];
+ const aiConfirmed=aiFindings.filter(item=>item.status==="CONFIRMED").length;
+ const aiSuggested=aiFindings.filter(item=>item.status==="SUGGESTED").length;
  const preset=DOC_TEMPLATE_PRESETS[templateId]||DOC_TEMPLATE_PRESETS.PERIAPICAL_14_BW_4;
  const slotIds=preset.groups.flatMap(group=>group.slots.map(slot=>slot.id));
  const assignedKeys=new Set(slotIds.map(id=>templateMap[id]).filter(key=>key&&itemByKey.has(key)));
@@ -390,6 +398,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    setBrightness(100);setContrast(100);setZoom(1);setPan({x:0,y:0});dragRef.current=null;
  }
  useEffect(()=>{resetView()},[gallery?.activeIndex,gallery?.study?.id]);
+ useEffect(()=>{setAiAnalysis(gallery?.study?.aiAnalysis||null);setAiError("");setAiBusy("")},[gallery?.study?.id]);
  useEffect(()=>{
    const saved=gallery?.study?.documentationLayout;
    const nextTemplate=DOC_TEMPLATE_PRESETS[saved?.template]?saved.template:"PERIAPICAL_14_BW_4";
@@ -512,6 +521,41 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    }finally{setBusy("")}
  }
 
+ function aiApiBase(){
+   const role=localStorage.getItem("odontoview_role");
+   const scope=role==="UNIT_USER"?"unit":"dentist";
+   return "/api/"+scope+"/studies/"+gallery.study.id+"/ai-analysis";
+ }
+ async function runAiAnalysis(){
+   if(!gallery?.study?.id||!canManageAi)return;
+   setAiBusy("run");setAiError("");
+   try{
+     const out=await api(aiApiBase(),{method:"POST"});
+     setAiAnalysis(out.analysis||null);
+     setGallery(prev=>prev?({...prev,study:{...prev.study,aiAnalysis:out.analysis||null}}):prev);
+   }catch(e){
+     setAiError(e.message||"Não foi possível iniciar a análise.");
+   }finally{setAiBusy("")}
+ }
+ async function reviewAiFinding(findingId,status){
+   if(!canManageAi||!findingId)return;
+   setAiBusy(findingId);setAiError("");
+   try{
+     const out=await api(aiApiBase()+"/findings/"+encodeURIComponent(findingId),{
+       method:"PATCH",body:JSON.stringify({status})
+     });
+     setAiAnalysis(out.analysis||null);
+     setGallery(prev=>prev?({...prev,study:{...prev.study,aiAnalysis:out.analysis||null}}):prev);
+   }catch(e){
+     setAiError(e.message||"Não foi possível revisar o achado.");
+   }finally{setAiBusy("")}
+ }
+ function openAiFinding(finding){
+   const index=(gallery?.items||[]).findIndex(item=>String(item.id)===String(finding?.fileId));
+   if(index<0){alert("A radiografia vinculada a este achado não está disponível.");return}
+   setActive(index);setMode("viewer");
+ }
+
  async function saveTemplate(){
    if(!canEditLayout||!onSaveLayout)return;
    const slots={};
@@ -590,6 +634,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
              </div>
              <div className="documentation-template-ready-actions">
                <button className="secondary compact" onClick={viewTemplateFullscreen}>◉ Visualizar em tela cheia</button>
+               {canManageAi&&<button className="ai-primary compact" disabled={aiBusy==="run"} onClick={runAiAnalysis}>{aiBusy==="run"?"Analisando…":"✨ Analisar com OdontoView AI"}</button>}
                <button className="primary compact" disabled={busy==="download"} onClick={downloadTemplateBoard}>{busy==="download"?"Gerando…":"↓ Baixar template JPG"}</button>
                <button className="ghost compact" disabled={busy==="print"} onClick={printTemplateBoard}>{busy==="print"?"Preparando…":"▣ Imprimir"}</button>
              </div>
@@ -620,6 +665,35 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
                <div><dt>Salvo na nuvem</dt><dd className="is-success">Sim</dd></div>
                <div><dt>Formato do download</dt><dd>JPG (alta qualidade)</dd></div>
              </dl>
+           </section>
+
+           <section className="documentation-template-side-card documentation-ai-card">
+             <div className="documentation-template-side-title ai"><span>AI</span><strong>OdontoView AI 3.0 Alpha</strong></div>
+             <div className="documentation-ai-summary">
+               {!aiAnalysis&&<><strong>Achados radiográficos assistidos</strong><p>Analisa radiografias 2D e organiza regiões sugeridas para revisão profissional.</p></>}
+               {aiAnalysis?.status==="RUNNING"&&<><strong>Análise em processamento</strong><p>Preparando as radiografias para o motor clínico.</p></>}
+               {aiAnalysis?.status==="NOT_CONFIGURED"&&<><strong>Infraestrutura pronta</strong><p>{aiAnalysis.message}</p></>}
+               {aiAnalysis?.status==="FAILED"&&<><strong>Não foi possível concluir</strong><p>{aiAnalysis.message||"Falha no motor de IA."}</p></>}
+               {aiAnalysis?.status==="COMPLETED"&&<><strong>{aiFindings.length} achado(s) sugerido(s)</strong><p>{aiConfirmed} confirmado(s) · {aiSuggested} aguardando revisão</p></>}
+             </div>
+             {aiError&&<div className="documentation-ai-error">{aiError}</div>}
+             {aiAnalysis?.status==="COMPLETED"&&<div className="documentation-ai-findings">
+               {aiFindings.length?aiFindings.map(finding=><article className={"documentation-ai-finding status-"+String(finding.status||"SUGGESTED").toLowerCase()} key={finding.id}>
+                 <button type="button" className="documentation-ai-finding-main" onClick={()=>openAiFinding(finding)}>
+                   <div><strong>{finding.label}</strong><span>{finding.summary||"Região sugerida para revisão profissional."}</span></div>
+                   {Number(finding.confidence)>0&&<b>{Math.round(Number(finding.confidence)*100)}%</b>}
+                 </button>
+                 <div className="documentation-ai-finding-actions">
+                   <span>{finding.status==="CONFIRMED"?"Confirmado":finding.status==="REJECTED"?"Descartado":"Sugerido"}</span>
+                   {canManageAi&&<div>
+                     <button disabled={aiBusy===finding.id} className={finding.status==="CONFIRMED"?"active":""} onClick={()=>reviewAiFinding(finding.id,"CONFIRMED")}>Confirmar</button>
+                     <button disabled={aiBusy===finding.id} className={finding.status==="REJECTED"?"active reject":""} onClick={()=>reviewAiFinding(finding.id,"REJECTED")}>Descartar</button>
+                   </div>}
+                 </div>
+               </article>):<div className="documentation-ai-empty">Nenhum achado foi sugerido pelo motor conectado.</div>}
+             </div>}
+             {canManageAi&&aiAnalysis?.status!=="COMPLETED"&&<button className="ai-secondary compact" disabled={aiBusy==="run"} onClick={runAiAnalysis}>{aiBusy==="run"?"Analisando…":"Executar análise"}</button>}
+             <p className="documentation-ai-disclaimer">Apoio à revisão profissional. Não substitui diagnóstico, laudo ou julgamento clínico.</p>
            </section>
 
            <section className="documentation-template-ready-side">
