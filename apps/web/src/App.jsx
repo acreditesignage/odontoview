@@ -532,11 +532,14 @@ function DentistDashboard(){
        {data.orders.filter(o=>o.study?.status==="READY").length===0&&(!data.directStudies||data.directStudies.length===0)?<div className="empty"><strong>Nenhum exame ainda.</strong><p>Você pode receber da radiologia ou importar seu próprio DICOM.</p></div>:
        <div className="patient-registry">{data.orders.filter(o=>o.study?.status==="READY").map(o=><div className="patient-registry-row is-network" key={o.study.id}>
          <div className="patient-registry-main"><div className="patient-name-line"><strong>{o.patient.name}</strong><span className="source-badge odontoview">Exame disponível</span></div><small>{o.examType.name}{o.unit?" • "+o.unit.name:""}</small><small>{o.study.fileCount} arquivo(s) • {formatBytes(o.study.totalBytes)}{o.study.manufacturer?" • "+o.study.manufacturer:""}</small></div>
-         <button className="primary compact" disabled={openingStudy.startsWith(o.study.id)} onClick={()=>openStudy(o)}>{openingStudy.startsWith(o.study.id)?("Abrindo "+(openingStudy.split(":")[1]||"…")):"Abrir Viewer"}</button>
+         <button className="primary compact" disabled={openingStudy.startsWith(o.study.id)} onClick={()=>openStudy(o)}>{openingStudy.startsWith(o.study.id)?("Abrindo "+(openingStudy.split(":")[1]||"…")):isDicomStudySource(o.study.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
        </div>)}
        {(data.directStudies||[]).map(s=><div className="patient-registry-row is-local" key={s.id}>
          <div className="patient-registry-main"><div className="patient-name-line"><strong>{s.patient.name}</strong><span className="source-badge radiology">Importado por você</span></div><small>{s.examType?.name||s.modality||"Exame DICOM"}</small><small>{s.fileCount} arquivo(s) • {formatBytes(s.totalBytes)}</small></div>
-         <button className="primary compact" disabled={openingStudy.startsWith(s.id)} onClick={()=>openStudy({study:s,patient:s.patient,examType:s.examType||{name:"Exame DICOM"},unit:null})}>{openingStudy.startsWith(s.id)?("Abrindo "+(openingStudy.split(":")[1]||"…")):"Abrir Viewer"}</button>
+         <div className="exam-row-actions">
+           <button className="primary compact" disabled={openingStudy.startsWith(s.id)} onClick={()=>openStudy({study:s,patient:s.patient,examType:s.examType||{name:"Exame DICOM"},unit:null})}>{openingStudy.startsWith(s.id)?("Abrindo "+(openingStudy.split(":")[1]||"…")):isDicomStudySource(s.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
+           <button className="danger-quiet compact" disabled={openingStudy==="delete:"+s.id} onClick={()=>deleteDentistStudyFromList(s)}>{openingStudy==="delete:"+s.id?"Excluindo…":"Excluir"}</button>
+         </div>
        </div>)}</div>}
      </section>}
      {tab==="patients"&&<section className="card">
@@ -1077,7 +1080,11 @@ function Radiology(){
            {o.status==="AGENDADO"&&<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>Confirmar chegada</button>}
            {o.status==="PACIENTE_CHEGOU"&&<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>Marcar realizado</button>}
            {o.status==="EXAME_REALIZADO"&&<button className="primary compact" onClick={()=>pickExam(o)}>Selecionar exame</button>}
-           {o.status==="IMAGENS_RECEBIDAS"&&<span className="done">✓ Imagens recebidas</span>}
+           {o.status==="IMAGENS_RECEBIDAS"&&o.study&&<>
+             <button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy(o.study)}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":isDicomStudySource(o.study.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
+             <button className="danger-quiet compact" disabled={openingUnitStudy==="delete:"+o.study.id} onClick={()=>deleteUnitStudyFromList(o.study)}>{openingUnitStudy==="delete:"+o.study.id?"Excluindo…":"Excluir"}</button>
+           </>}
+           {o.status==="IMAGENS_RECEBIDAS"&&!o.study&&<span className="done">✓ Imagens recebidas</span>}
          </div>
          {ingest?.orderId===o.id&&<div className="radiology-exam-ingest"><IngestResult state={ingest} onClear={()=>setIngest(null)} onOpenViewer={()=>{if(ingest.result?.kind==="collection"){previewLocalExam(ingest.result);return}setViewerSession({result:ingest.result,order:o});nav(viewerRoute("radiology","/radiologia?tab=exams"))}} onSend={()=>sendExamToDentist(o)}/></div>}
        </article>
@@ -1130,7 +1137,10 @@ function Radiology(){
            {patientDetail.orders.map(o=><div className="patient-order-card" key={o.id}>
              <div><strong>{o.examType.name}</strong><small>Solicitante: {o.dentist.name} • CRO {o.dentist.cro}/{o.dentist.uf}</small><small>Status: {STATUS[o.status]?.label||o.status}</small></div>
              <div className="patient-order-actions">
-               {o.study?.status==="READY"?<button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy({...o.study,examType:o.examType})}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":isDicomStudySource(o.study.sourceType)?"Abrir Viewer":"Ver imagens"}</button>:
+               {o.study?.status==="READY"?<>
+                 <button className="secondary compact" disabled={openingUnitStudy.startsWith(o.study.id)} onClick={()=>openUnitStudy({...o.study,examType:o.examType})}>{openingUnitStudy.startsWith(o.study.id)?"Abrindo…":isDicomStudySource(o.study.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
+                 <button className="danger-quiet compact" disabled={openingUnitStudy==="delete:"+o.study.id} onClick={()=>deleteUnitStudyFromList(o.study)}>{openingUnitStudy==="delete:"+o.study.id?"Excluindo…":"Excluir"}</button>
+               </>:
                o.status==="AGENDADO"?<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Confirmar chegada"}</button>:
                o.status==="PACIENTE_CHEGOU"?<button className="secondary compact" disabled={busy===o.id} onClick={()=>advance(o)}>{busy===o.id?"Atualizando…":"Marcar exame realizado"}</button>:
                o.status==="EXAME_REALIZADO"?<button className="primary compact" onClick={()=>confirmOrderExamUpload(o)}>＋ Adicionar exame</button>:
@@ -1140,7 +1150,10 @@ function Radiology(){
            </div>)}
            {patientDetail.studies.filter(s=>!s.orderId).map(s=><div className="patient-order-card local-study" key={s.id}>
              <div><strong>{s.examType?.name||s.modality||"Exame DICOM"}</strong><small>{s.fileCount} arquivo(s) • {formatBytes(s.totalBytes)}</small><small>{s.completedAt?new Date(s.completedAt).toLocaleString("pt-BR"):""}</small></div>
-             <button className="secondary compact" disabled={openingUnitStudy.startsWith(s.id)} onClick={()=>openUnitStudy(s)}>{openingUnitStudy.startsWith(s.id)?"Abrindo…":isDicomStudySource(s.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
+             <div className="exam-row-actions">
+               <button className="secondary compact" disabled={openingUnitStudy.startsWith(s.id)} onClick={()=>openUnitStudy(s)}>{openingUnitStudy.startsWith(s.id)?"Abrindo…":isDicomStudySource(s.sourceType)?"Abrir Viewer":"Ver imagens"}</button>
+               <button className="danger-quiet compact" disabled={openingUnitStudy==="delete:"+s.id} onClick={()=>deleteUnitStudyFromList(s)}>{openingUnitStudy==="delete:"+s.id?"Excluindo…":"Excluir"}</button>
+             </div>
            </div>)}
          </section>
          {patientDetail.source==="RADIOLOGIA"&&<section className="patient-detail-section add-local-exam">
