@@ -2,6 +2,7 @@ import React from "react";
 import {useEffect,useMemo,useRef,useState} from "react";
 import {Navigate,Route,Routes,useNavigate,useSearchParams} from "react-router-dom";
 import {api,apiBinary,apiBlob} from "./api.js";
+import {cachedStudyBlob,requestPersistentStudyStorage} from "./studyCache.js";
 import {importExam,importSingleFileExam} from "./ingest.js";
 import {examUploadPolicy,isDicomStudySource} from "./examUpload.js";
 import {DEMO_EXAM,checkDemoExamAvailability,loadDemoExam} from "./demoExam.js";
@@ -13,6 +14,18 @@ function routeForRole(role){return role==="UNIT_USER"?"/radiologia":"/dentista"}
 function viewerRoute(origin,returnTo){const params=new URLSearchParams({from:origin,returnTo});return "/viewer2?"+params.toString()}
 function logout(){localStorage.removeItem("odontoview_token");localStorage.removeItem("odontoview_role");location.href="/"}
 function formatBytes(value){if(!value)return "0 MB";return (value/1024/1024).toFixed(value>10*1024*1024?1:2)+" MB"}
+function studyCacheVersion(manifest){
+  const study=manifest?.study||{};
+  return [study.completedAt||"",study.totalBytes||"",study.fileCount||manifest?.files?.length||0].join(":");
+}
+async function studyBlobFromCloudOrCache({manifest,meta,path}){
+  return cachedStudyBlob({
+    studyId:manifest?.study?.id,
+    fileMeta:meta,
+    version:studyCacheVersion(manifest),
+    fetcher:()=>apiBlob(path)
+  });
+}
 function openBlobFile(blob,fileName="exame"){
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
@@ -275,7 +288,7 @@ function DentistDashboard(){
  }
  async function openDentistDocumentation(manifest){
    const items=await Promise.all((manifest.files||[]).map(async meta=>{
-     const blob=await apiBlob("/api/dentist/studies/"+manifest.study.id+"/files/"+meta.id);
+     const blob=await studyBlobFromCloudOrCache({manifest,meta,path:"/api/dentist/studies/"+manifest.study.id+"/files/"+meta.id});
      const typed=new Blob([blob],{type:meta.contentType||blob.type||"application/octet-stream"});
      return {
        ...meta,blob:typed,contentType:typed.type||meta.contentType||"application/octet-stream",
@@ -293,6 +306,7 @@ function DentistDashboard(){
  }
  async function openStudy(order){
    if(!order?.study?.id)return;
+   void requestPersistentStudyStorage();
    setOpeningStudy(order.study.id);setErr("");
    try{
      const manifest=await api("/api/dentist/studies/"+order.study.id);
@@ -308,7 +322,7 @@ function DentistDashboard(){
          const i=cursor++;
          if(i>=manifest.files.length)return;
          const meta=manifest.files[i];
-         const blob=await apiBlob("/api/dentist/studies/"+order.study.id+"/files/"+meta.id);
+         const blob=await studyBlobFromCloudOrCache({manifest,meta,path:"/api/dentist/studies/"+manifest.study.id+"/files/"+meta.id});
          files[i]=new File([blob],meta.fileName||("dicom-"+String(i+1).padStart(4,"0")+".dcm"),{type:"application/dicom"});
          done++;
          setOpeningStudy(order.study.id+":"+done+"/"+manifest.files.length);
@@ -766,7 +780,7 @@ function Radiology(){
    try{
      const files=manifest.files||[];
      const items=await Promise.all(files.map(async meta=>{
-       const blob=await apiBlob("/api/unit/studies/"+manifest.study.id+"/files/"+meta.id);
+       const blob=await studyBlobFromCloudOrCache({manifest,meta,path:"/api/unit/studies/"+manifest.study.id+"/files/"+meta.id});
        const typed=new Blob([blob],{type:meta.contentType||blob.type||"application/octet-stream"});
        return {
          ...meta,
@@ -786,6 +800,7 @@ function Radiology(){
    }finally{setGalleryBusy(false)}
  }
  async function openUnitStudy(study){
+   void requestPersistentStudyStorage();
    setOpeningUnitStudy(study.id);setErr("");
    try{
      const manifest=await api("/api/unit/studies/"+study.id);
@@ -801,7 +816,7 @@ function Radiology(){
          const i=cursor++;
          if(i>=manifest.files.length)return;
          const meta=manifest.files[i];
-         const blob=await apiBlob("/api/unit/studies/"+study.id+"/files/"+meta.id);
+         const blob=await studyBlobFromCloudOrCache({manifest,meta,path:"/api/unit/studies/"+manifest.study.id+"/files/"+meta.id});
          files[i]=new File([blob],meta.fileName||("dicom-"+String(i+1).padStart(4,"0")+".dcm"),{type:"application/dicom"});
          done++;setOpeningUnitStudy(study.id+":"+done+"/"+manifest.files.length);
        }
