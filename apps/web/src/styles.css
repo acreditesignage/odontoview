@@ -1592,3 +1592,93 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   .viewer3d-presentation-action{grid-template-columns:1fr}
   .viewer3d-presentation-action button{min-height:40px;font-size:11px}
 }
+
+
+/* Radiology documentation module */
+.documentation-dropzone{
+  display:grid;place-items:center;gap:8px;min-height:170px;margin-top:14px;padding:24px;
+  border:1.5px dashed #9fc9e6;border-radius:20px;background:linear-gradient(180deg,#fafdff,#f2f8fd);
+  text-align:center;transition:.18s ease;
+}
+.documentation-dropzone:hover{border-color:#168fda;background:#f4fbff;box-shadow:0 14px 32px rgba(25,108,164,.08)}
+.documentation-dropzone.disabled{opacity:.55;pointer-events:none}
+.documentation-dropzone.compact{min-height:135px;margin-top:12px}
+.documentation-drop-icon{
+  width:46px;height:46px;border-radius:15px;display:grid;place-items:center;
+  background:#e7f4fd;color:#0e79c5;font-size:22px;font-weight:900;
+}
+.documentation-dropzone strong{font-size:16px;color:#13314d}
+.documentation-dropzone small{max-width:620px;color:#71879a;line-height:1.45}
+.documentation-dropzone button{margin-top:4px}
+
+.exam-upload-drop-hint{
+  margin:0 0 10px;padding:12px 14px;border:1px dashed #aacde5;border-radius:12px;
+  background:#f6fbff;color:#56738a;text-align:center;font-size:11px;font-weight:700
+}
+
+.local-document-strip{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:9px;margin:12px 0
+}
+.local-document-thumb{
+  min-width:0;display:grid;grid-template-rows:86px auto;gap:6px;padding:7px;
+  border:1px solid #dce8f2;border-radius:12px;background:#fff;text-align:left
+}
+.local-document-thumb img{
+  width:100%;height:86px;object-fit:contain;border-radius:8px;background:#0d1720
+}
+.local-document-fileicon{
+  height:86px;display:grid;place-items:center;border-radius:8px;background:#eef5fa;
+  color:#235b82;font-weight:900;font-size:18px
+}
+.local-document-thumb small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64798b}
+
+.documentation-gallery-backdrop{
+  position:fixed;inset:0;z-index:5100;padding:24px;display:grid;place-items:center;
+  background:rgba(3,16,30,.72);backdrop-filter:blur(10px)
+}
+.documentation-gallery{
+  width:min(1180px,96vw);height:min(820px,92vh);display:grid;grid-template-rows:auto minmax(0,1fr) auto;
+  overflow:hidden;border-radius:24px;background:#f7fbfe;border:1px solid rgba(177,211,233,.6);
+  box-shadow:0 34px 100px rgba(0,0,0,.34)
+}
+.documentation-gallery-head{
+  display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:20px 22px;
+  background:#fff;border-bottom:1px solid #dfebf3
+}
+.documentation-gallery-head h2{margin:.1em 0 .2em;color:#112f49}
+.documentation-gallery-head p:not(.eyebrow){margin:0;color:#6f8495;font-size:12px}
+.documentation-gallery-stage{
+  min-height:0;display:grid;place-items:center;padding:18px;background:#09131d;overflow:auto
+}
+.documentation-gallery-stage>img{
+  max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.28)
+}
+.documentation-gallery-stage>iframe{width:100%;height:100%;border:0;border-radius:10px;background:#fff}
+.documentation-gallery-file{
+  display:grid;place-items:center;gap:12px;padding:32px;color:#e5f4ff;text-align:center
+}
+.documentation-gallery-file>span{
+  width:90px;height:90px;border-radius:24px;display:grid;place-items:center;
+  border:1px solid #2f769e;background:#102a3b;color:#83d8ff;font-size:24px;font-weight:900
+}
+.documentation-gallery-grid{
+  display:grid;grid-auto-flow:column;grid-auto-columns:132px;gap:9px;padding:13px 16px;
+  overflow-x:auto;background:#fff;border-top:1px solid #dfebf3
+}
+.documentation-thumb{
+  display:grid;grid-template-rows:88px auto;gap:5px;padding:6px;border:1px solid #dbe6ef;
+  border-radius:12px;background:#f9fcfe;min-width:0
+}
+.documentation-thumb.active{border-color:#158fe0;box-shadow:0 0 0 2px rgba(21,143,224,.12)}
+.documentation-thumb img{width:100%;height:88px;object-fit:cover;border-radius:7px;background:#0b141d}
+.documentation-thumb>span{height:88px;display:grid;place-items:center;border-radius:7px;background:#edf5fa;color:#28648c;font-weight:900}
+.documentation-thumb small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#5f7485;text-align:left}
+
+@media(max-width:700px){
+  .documentation-gallery-backdrop{padding:8px}
+  .documentation-gallery{width:100%;height:96vh;border-radius:18px}
+  .documentation-gallery-head{padding:15px}
+  .documentation-gallery-grid{grid-auto-columns:104px}
+  .documentation-thumb{grid-template-rows:70px auto}
+  .documentation-thumb img,.documentation-thumb>span{height:70px}
+}
