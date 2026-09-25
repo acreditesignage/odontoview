@@ -263,10 +263,13 @@ model ExamStudy {
   completedAt             DateTime?
   documentationLayout     Json?
   aiAnalysis              Json?
-  dentistDeliveryStatus   String?
-  dentistDeliveryEmail    String?
-  dentistDeliverySentAt   DateTime?
-  dentistDeliveryError    String?
+  dentistDeliveryStatus        String?
+  dentistDeliveryEmail         String?
+  dentistDeliverySentAt        DateTime?
+  dentistDeliveryOpenedAt      DateTime?
+  dentistDeliveryLastOpenedAt  DateTime?
+  dentistDeliveryOpenCount     Int       @default(0)
+  dentistDeliveryError         String?
 
   order        Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
