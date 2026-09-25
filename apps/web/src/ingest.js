@@ -105,6 +105,7 @@ export async function importExam(selectedFiles,{onProgress}={}){
   const report=window.OdontoDicomMetadata.validateImport(parsed);
   const series=report.series.map(seriesSummary);
   return {
+    kind:"dicom",
     sourceType,
     sourceName:archives[0]?.name||(`${files.length} arquivo(s) DICOM`),
     files,
@@ -134,39 +135,47 @@ function inferSingleFileContentType(file){
 
 export async function importSingleFileExam(selectedFiles,examType){
   const incoming=Array.from(selectedFiles||[]);
-  if(incoming.length!==1)throw new Error("Este tipo de exame deve ser enviado em um único arquivo.");
-  const file=incoming[0];
   const policy=examUploadPolicy(examType);
   if(policy.kind==="dicom")return importExam(incoming);
-  const ext=(String(file.name||"").toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]||"");
-  const allowed=policy.kind==="scan"
+  if(!incoming.length)throw new Error("Selecione pelo menos um arquivo.");
+  if(policy.maxFiles&&incoming.length>policy.maxFiles)throw new Error(`Selecione no máximo ${policy.maxFiles} arquivos por documentação.`);
+
+  const scan=policy.subtype==="scan";
+  const allowed=scan
     ?new Set(["stl","ply","obj","zip"])
     :new Set(["jpg","jpeg","png","webp","tif","tiff","bmp","pdf"]);
-  if(!allowed.has(ext)){
-    throw new Error(policy.kind==="scan"
-      ?"Escaneamento aceita um único arquivo STL, PLY, OBJ ou ZIP."
-      :"Este exame aceita um único arquivo JPG, PNG, WebP, TIFF, BMP ou PDF.");
-  }
-  const contentType=inferSingleFileContentType(file);
+  const fileItems=incoming.map((file,index)=>{
+    const ext=(String(file.name||"").toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]||"");
+    if(!allowed.has(ext)){
+      throw new Error(scan
+        ?`Arquivo ${index+1}: escaneamento aceita STL, PLY, OBJ ou ZIP.`
+        :`Arquivo ${index+1}: documentação aceita JPG, PNG, WebP, TIFF, BMP ou PDF.`);
+    }
+    const contentType=inferSingleFileContentType(file);
+    return {
+      index,
+      fileName:file.name,
+      contentType,
+      extension:ext,
+      sizeBytes:file.size||0,
+      previewKind:contentType.startsWith("image/")?"image":contentType==="application/pdf"?"pdf":"file"
+    };
+  });
+
   return {
-    kind:"single",
-    sourceType:policy.kind==="scan"?"SCAN":"FILE",
-    sourceName:file.name,
-    files:[file],
+    kind:"collection",
+    sourceType:scan?"SCAN":"DOCUMENT",
+    sourceName:incoming.length===1?incoming[0].name:`${incoming.length} arquivos`,
+    files:incoming,
+    fileItems,
     parsedFiles:0,
     failedFiles:[],
-    totalFiles:1,
-    totalBytes:file.size||0,
+    totalFiles:incoming.length,
+    totalBytes:incoming.reduce((sum,file)=>sum+(file.size||0),0),
     series:[],
     seriesCount:0,
     validSeriesCount:0,
     report:null,
-    modality:policy.kind==="scan"?"SCAN":"2D",
-    singleFile:{
-      fileName:file.name,
-      contentType,
-      extension:ext,
-      previewKind:contentType.startsWith("image/")?"image":contentType==="application/pdf"?"pdf":"file"
-    }
+    modality:scan?"SCAN":"2D"
   };
 }
