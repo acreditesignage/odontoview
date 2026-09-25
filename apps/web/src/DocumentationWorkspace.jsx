@@ -59,6 +59,17 @@ function isFdiCode(value){
   return quadrant>=1&&quadrant<=4&&tooth>=1&&tooth<=8;
 }
 function isBitewingCode(value){return Number.isInteger(value)&&value>=1&&value<=4}
+const NUMBERED_18_SLOT_BY_CODE={
+  17:"max-1",14:"max-2",13:"max-3",21:"max-4",23:"max-5",26:"max-6",28:"max-7",
+  1:"bw-1",2:"bw-2",3:"bw-3",4:"bw-4",
+  47:"mand-1",44:"mand-2",43:"mand-3",32:"mand-4",33:"mand-5",36:"mand-6",38:"mand-7"
+};
+function exactTemplateSlot(value,templateId){
+  const slot=NUMBERED_18_SLOT_BY_CODE[value]||null;
+  if(!slot)return null;
+  if(templateId==="PERIAPICAL_14"&&slot.startsWith("bw-"))return null;
+  return slot;
+}
 function fdiArc(value){
   if(!isFdiCode(value))return null;
   const quadrant=Math.floor(value/10);
@@ -117,10 +128,11 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
    const unique=new Set(numbers);
    const duplicates=numbers.length-unique.size;
    const detected=numbers.length,total=imageEntries.length;
-   const maxilla=imageEntries.filter(entry=>fdiArc(entry.sequence)==="maxilla").length;
-   const mandible=imageEntries.filter(entry=>fdiArc(entry.sequence)==="mandible").length;
-   const bitewings=imageEntries.filter(entry=>isBitewingCode(entry.sequence)).length;
-   const recognized=imageEntries.filter(entry=>isFdiCode(entry.sequence)||isBitewingCode(entry.sequence)).length;
+   const exact=imageEntries.filter(entry=>exactTemplateSlot(entry.sequence,"PERIAPICAL_14_BW_4")).length;
+   const maxilla=imageEntries.filter(entry=>String(exactTemplateSlot(entry.sequence,"PERIAPICAL_14_BW_4")||"").startsWith("max-")).length;
+   const mandible=imageEntries.filter(entry=>String(exactTemplateSlot(entry.sequence,"PERIAPICAL_14_BW_4")||"").startsWith("mand-")).length;
+   const bitewings=imageEntries.filter(entry=>String(exactTemplateSlot(entry.sequence,"PERIAPICAL_14_BW_4")||"").startsWith("bw-")).length;
+   const recognized=exact;
    const reliable=recognized>=14&&maxilla>=6&&mandible>=6&&duplicates===0;
    return {detected,total,duplicates,reliable,maxilla,mandible,bitewings,recognized,review:Math.max(0,total-recognized)};
  },[imageEntries]);
@@ -139,6 +151,12 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
  function autoMapFor(id=templateId){
    const target=DOC_TEMPLATE_PRESETS[id]||DOC_TEMPLATE_PRESETS.PERIAPICAL_14_BW_4;
    const next={};
+   for(const entry of imageEntries){
+     const slot=exactTemplateSlot(entry.sequence,id);
+     if(slot&&!next[slot])next[slot]=entry.key;
+   }
+   const expected=id==="PERIAPICAL_14"?14:18;
+   if(Object.keys(next).length>=Math.min(10,expected))return next;
    const maxSlots=target.groups.find(group=>group.id==="maxilla")?.slots.map(slot=>slot.id)||[];
    const mandSlots=target.groups.find(group=>group.id==="mandible")?.slots.map(slot=>slot.id)||[];
    const bwSlots=target.groups.find(group=>group.id==="bitewing")?.slots.map(slot=>slot.id)||[];
@@ -247,7 +265,7 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
        </div>
        <div className="documentation-view-status">
          {mode==="overview"&&<><span className="status-dot ok"/>Leitura rápida • {imageEntries.length} imagem(ns)</>}
-         {mode==="template"&&<><span className={"status-dot "+(placedCount===slotIds.length?"ok":"warn")}/>{placedCount}/{slotIds.length} posições</>}
+         {mode==="template"&&<><span className={"status-dot "+(placedCount===slotIds.length?"ok":"warn")}/>{placedCount}/{slotIds.length} posições{unassigned.length?" · "+unassigned.length+" extras":""}</>}
          {mode==="viewer"&&<><span className="status-dot ok"/>{gallery.activeIndex+1} de {gallery.items.length}</>}
        </div>
      </div>
@@ -271,8 +289,8 @@ export default function DocumentationWorkspace({gallery,setGallery,onClose,onDel
        <div className="documentation-template-toolbar">
          <div className="documentation-template-copy">
            <p className="eyebrow">ORGANIZAÇÃO ANATÔMICA</p>
-           <strong>{hasSavedLayout&&!templateDirty?"Template salvo na nuvem":sequenceInfo.reliable?"FDI + bite-wings detectados • montagem anatômica":"Classificação parcial • revisar posições"}</strong>
-           <span>{sequenceInfo.reliable?"O OdontoView separou maxila, mandíbula e bite-wings pelos códigos detectados. Confira a anatomia e ajuste por arraste antes de salvar.":"O OdontoView reconheceu parte da série. As imagens sem código anatômico confiável permanecem em Não classificadas para revisão manual."}</span>
+           <strong>{hasSavedLayout&&!templateDirty?"Template salvo na nuvem":sequenceInfo.reliable?"Padrão numerado reconhecido • montagem determinística":"Classificação parcial • revisar posições"}</strong>
+           <span>{sequenceInfo.reliable?"O OdontoView reconheceu o perfil de 18 posições e montou maxila, bite-wings e mandíbula pelos códigos do arquivo. Imagens extras permanecem separadas sem interferir no template.":"O OdontoView reconheceu parte da série. As imagens fora do perfil numerado permanecem em Não classificadas para revisão manual."}</span>
          </div>
          <div className="documentation-template-actions">
            <select value={templateId} disabled={!canEditLayout} onChange={e=>{const id=e.target.value;setTemplateId(id);setTemplateMap(autoMapFor(id));setTemplateDirty(true);setTemplateState("auto")}}>
