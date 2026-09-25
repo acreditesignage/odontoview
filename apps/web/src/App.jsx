@@ -261,7 +261,7 @@ function DentistDashboard(){
      setDentistIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId:created.study.id}}));
      await load();
    }catch(e){
-     setDentistIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha no envio."}}));
+     setDentistIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha ao salvar."}}));
    }
  }
 
@@ -709,7 +709,7 @@ function Radiology(){
      setIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId:created.study.id}}));
      await load();await loadPatients("");
    }catch(e){
-     setIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha no envio."}}));
+     setIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha ao salvar."}}));
    }
  }
 
@@ -780,7 +780,7 @@ function Radiology(){
      setPatientIngest(prev=>({...prev,send:{status:"done",done:r.files.length,total:r.files.length,studyId:created.study.id}}));
      await Promise.all([refreshPatientDetail(),load(),loadPatients("")]);
    }catch(e){
-     setPatientIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha no envio."}}));
+     setPatientIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha ao salvar."}}));
    }
  }
  function closeDocumentationGallery(){
