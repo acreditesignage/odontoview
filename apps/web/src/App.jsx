@@ -315,6 +315,8 @@ function DentistDashboard(){
      study:manifest.study,
      patient:manifest.order?.patient,
      examType:manifest.order?.examType,
+     unit:manifest.order?.unit||null,
+     order:manifest.order||null,
      items,
      activeIndex:0
    });
@@ -895,6 +897,8 @@ function Radiology(){
        study:manifest.study,
        patient:manifest.patient,
        examType:manifest.examType,
+       unit:manifest.unit||null,
+       order:manifest.order||null,
        items,
        activeIndex:0
      });
