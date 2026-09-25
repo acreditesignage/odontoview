@@ -1796,6 +1796,8 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
   flex:none;padding:6px 9px;border:1px solid #cfe1ec;border-radius:999px;background:rgba(255,255,255,.78);
   color:#4f7289;font-size:8px;font-weight:900;letter-spacing:.11em
 }
+.documentation-order-chip.is-ok{border-color:#bfe2d4;background:#f2fbf7;color:#28775a}
+.documentation-order-chip.is-warn{border-color:#ecd9ac;background:#fffaf0;color:#916b18}
 .documentation-overview-grid{
   max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(164px,1fr));gap:12px
 }
