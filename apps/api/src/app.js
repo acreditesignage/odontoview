@@ -68,6 +68,79 @@ function safeUploadExtension(fileName,contentType){
 }
 
 
+function cleanAiText(value,max=180){
+  return String(value||"").replace(/[\u0000-\u001f\u007f]/g," ").replace(/\s+/g," ").trim().slice(0,max);
+}
+function sanitizeAiBox(value){
+  if(!value||typeof value!=="object"||Array.isArray(value))return null;
+  const n=(key)=>Math.max(0,Math.min(1,Number(value[key])||0));
+  const x=n("x"),y=n("y"),w=n("w"),h=n("h");
+  if(w<=0||h<=0)return null;
+  return {x,y,w,h};
+}
+function sanitizeAiFindings(findings,files=[]){
+  const validFiles=new Set((files||[]).map(file=>file.id));
+  return (Array.isArray(findings)?findings:[]).slice(0,100).map((finding,index)=>{
+    const fileId=String(finding?.fileId||"");
+    if(!validFiles.has(fileId))return null;
+    const confidence=Math.max(0,Math.min(1,Number(finding?.confidence)||0));
+    return {
+      id:cleanAiText(finding?.id,80)||("finding-"+String(index+1).padStart(3,"0")),
+      fileId,
+      label:cleanAiText(finding?.label,140)||"Região para revisão",
+      category:cleanAiText(finding?.category,80)||"REVIEW",
+      summary:cleanAiText(finding?.summary,320),
+      confidence,
+      bbox:sanitizeAiBox(finding?.bbox),
+      status:["CONFIRMED","REJECTED","EDITED"].includes(String(finding?.status||"").toUpperCase())
+        ? String(finding.status).toUpperCase()
+        : "SUGGESTED"
+    };
+  }).filter(Boolean);
+}
+function aiAnalysisPayload({status,provider=null,model=null,findings=[],message=null,requestedAt=null,completedAt=null}={}){
+  return {
+    version:1,
+    status:cleanAiText(status,40)||"IDLE",
+    provider:provider?cleanAiText(provider,80):null,
+    model:model?cleanAiText(model,120):null,
+    findings,
+    message:message?cleanAiText(message,500):null,
+    requestedAt:requestedAt||null,
+    completedAt:completedAt||null,
+    professionalReviewRequired:true
+  };
+}
+async function requestExternalDentalAi(study){
+  const endpoint=String(process.env.ODONTOVIEW_AI_ENDPOINT||"").trim();
+  if(!endpoint)return {configured:false};
+  const token=String(process.env.ODONTOVIEW_AI_TOKEN||"").trim();
+  const form=new FormData();
+  const imageFiles=(study.files||[]).filter(file=>String(file.contentType||"").startsWith("image/")).slice(0,40);
+  if(!imageFiles.length)throw new Error("A análise inicial do OdontoView AI aceita documentações 2D em formato de imagem.");
+  const metadata={studyId:study.id,examType:study.examType?.name||null,files:imageFiles.map(file=>({id:file.id,fileName:file.fileName,contentType:file.contentType}))};
+  form.append("metadata",JSON.stringify(metadata));
+  for(const file of imageFiles){
+    const object=await getPrivateObject(file.objectKey);
+    const bytes=await object.Body.transformToByteArray();
+    form.append("file_"+file.id,new Blob([bytes],{type:file.contentType||"application/octet-stream"}),file.fileName||file.id+".bin");
+  }
+  const response=await fetch(endpoint,{
+    method:"POST",
+    headers:token?{Authorization:"Bearer "+token}:undefined,
+    body:form,
+    signal:AbortSignal.timeout(120000)
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(cleanAiText(data?.error||data?.message||("Motor de IA respondeu "+response.status),300));
+  return {
+    configured:true,
+    provider:cleanAiText(data?.provider||"external-dental-ai",80),
+    model:cleanAiText(data?.model||"",120)||null,
+    findings:sanitizeAiFindings(data?.findings,study.files)
+  };
+}
+
 export function createApp(){
   const app=express();
   app.set("trust proxy",1);
@@ -565,7 +638,8 @@ export function createApp(){
           manufacturer:study.manufacturer,model:study.model,seriesCount:study.seriesCount,
           fileCount:study.fileCount,totalBytes:study.totalBytes,completedAt:study.completedAt,
           documentationLayout:study.documentationLayout||null,
-          canDelete:true,canEditLayout:true
+          aiAnalysis:study.aiAnalysis||null,
+          canDelete:true,canEditLayout:true,canManageAi:true
         },
         patient:study.patient,
         examType:study.examType,
@@ -591,6 +665,72 @@ export function createApp(){
       if(!layout) return res.status(400).json({error:"Organização do template inválida."});
       const updated=await prisma.examStudy.update({where:{id:study.id},data:{documentationLayout:layout}});
       res.json({layout:updated.documentationLayout});
+    }catch(e){next(e);}
+  });
+
+  app.post("/api/unit/studies/:studyId/ai-analysis",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const study=await prisma.examStudy.findFirst({
+        where:{id:req.params.studyId,unitId:membership.unitId,status:"READY"},
+        include:{files:true,examType:true}
+      });
+      if(!study) return res.status(404).json({error:"Exame não encontrado nesta unidade."});
+      if(isDicomSource(study.sourceType)) return res.status(409).json({error:"OdontoView AI 3.0 Alpha está habilitado inicialmente apenas para radiografias 2D."});
+      const requestedAt=new Date().toISOString();
+      await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:aiAnalysisPayload({status:"RUNNING",requestedAt,message:"Análise assistiva em processamento."})}});
+      try{
+        const result=await requestExternalDentalAi(study);
+        if(!result.configured){
+          const analysis=aiAnalysisPayload({
+            status:"NOT_CONFIGURED",
+            requestedAt,
+            message:"Infraestrutura do OdontoView AI 3.0 Alpha pronta. O motor clínico validado ainda não foi conectado neste ambiente."
+          });
+          await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:analysis}});
+          return res.json({analysis});
+        }
+        const analysis=aiAnalysisPayload({
+          status:"COMPLETED",
+          provider:result.provider,
+          model:result.model,
+          findings:result.findings,
+          requestedAt,
+          completedAt:new Date().toISOString(),
+          message:"Achados sugeridos para revisão profissional."
+        });
+        await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:analysis}});
+        res.json({analysis});
+      }catch(error){
+        const analysis=aiAnalysisPayload({status:"FAILED",requestedAt,completedAt:new Date().toISOString(),message:error.message||"Falha no motor de IA."});
+        await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:analysis}});
+        res.status(502).json({error:analysis.message,analysis});
+      }
+    }catch(e){next(e);}
+  });
+
+  app.patch("/api/unit/studies/:studyId/ai-analysis/findings/:findingId",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="UNIT_USER") return res.status(403).json({error:"Acesso restrito à radiologia."});
+      const membership=await unitMembershipFor(req.auth.sub);
+      if(!membership) return res.status(403).json({error:"Unidade ativa não encontrada."});
+      const study=await prisma.examStudy.findFirst({where:{id:req.params.studyId,unitId:membership.unitId,status:"READY"}});
+      if(!study) return res.status(404).json({error:"Exame não encontrado nesta unidade."});
+      const current=study.aiAnalysis&&typeof study.aiAnalysis==="object"?study.aiAnalysis:null;
+      if(!current||!Array.isArray(current.findings)) return res.status(409).json({error:"Este exame ainda não possui achados de IA."});
+      const status=String(req.body?.status||"").toUpperCase();
+      if(!["CONFIRMED","REJECTED","SUGGESTED"].includes(status)) return res.status(400).json({error:"Status de revisão inválido."});
+      let found=false;
+      const findings=current.findings.map(finding=>{
+        if(String(finding.id)!==String(req.params.findingId))return finding;
+        found=true;return {...finding,status};
+      });
+      if(!found)return res.status(404).json({error:"Achado não encontrado."});
+      const analysis={...current,findings};
+      await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:analysis}});
+      res.json({analysis});
     }catch(e){next(e);}
   });
 
@@ -776,8 +916,10 @@ export function createApp(){
           manufacturer:study.manufacturer,model:study.model,seriesCount:study.seriesCount,
           fileCount:study.fileCount,totalBytes:study.totalBytes,completedAt:study.completedAt,
           documentationLayout:study.documentationLayout||null,
+          aiAnalysis:study.aiAnalysis||null,
           canDelete:study.ownerDentistId===dentist.id,
-          canEditLayout:study.ownerDentistId===dentist.id
+          canEditLayout:study.ownerDentistId===dentist.id,
+          canManageAi:study.ownerDentistId===dentist.id
         },
         order:study.order
           ? {id:study.order.id,patient:study.order.patient,examType:study.order.examType,unit:study.order.unit}
@@ -802,6 +944,72 @@ export function createApp(){
       if(!layout) return res.status(400).json({error:"Organização do template inválida."});
       const updated=await prisma.examStudy.update({where:{id:study.id},data:{documentationLayout:layout}});
       res.json({layout:updated.documentationLayout});
+    }catch(e){next(e);}
+  });
+
+  app.post("/api/dentist/studies/:studyId/ai-analysis",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      const dentist=await dentistFor(req.auth.sub);
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
+      const study=await prisma.examStudy.findFirst({
+        where:{id:req.params.studyId,ownerDentistId:dentist.id,status:"READY"},
+        include:{files:true,examType:true}
+      });
+      if(!study) return res.status(403).json({error:"A análise oficial deste exame pertence à radiologia que enviou a documentação."});
+      if(isDicomSource(study.sourceType)) return res.status(409).json({error:"OdontoView AI 3.0 Alpha está habilitado inicialmente apenas para radiografias 2D."});
+      const requestedAt=new Date().toISOString();
+      await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:aiAnalysisPayload({status:"RUNNING",requestedAt,message:"Análise assistiva em processamento."})}});
+      try{
+        const result=await requestExternalDentalAi(study);
+        if(!result.configured){
+          const analysis=aiAnalysisPayload({
+            status:"NOT_CONFIGURED",
+            requestedAt,
+            message:"Infraestrutura do OdontoView AI 3.0 Alpha pronta. O motor clínico validado ainda não foi conectado neste ambiente."
+          });
+          await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:analysis}});
+          return res.json({analysis});
+        }
+        const analysis=aiAnalysisPayload({
+          status:"COMPLETED",
+          provider:result.provider,
+          model:result.model,
+          findings:result.findings,
+          requestedAt,
+          completedAt:new Date().toISOString(),
+          message:"Achados sugeridos para revisão profissional."
+        });
+        await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:analysis}});
+        res.json({analysis});
+      }catch(error){
+        const analysis=aiAnalysisPayload({status:"FAILED",requestedAt,completedAt:new Date().toISOString(),message:error.message||"Falha no motor de IA."});
+        await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:analysis}});
+        res.status(502).json({error:analysis.message,analysis});
+      }
+    }catch(e){next(e);}
+  });
+
+  app.patch("/api/dentist/studies/:studyId/ai-analysis/findings/:findingId",auth,async(req,res,next)=>{
+    try{
+      if(req.auth.role!=="DENTIST") return res.status(403).json({error:"Acesso restrito a dentistas."});
+      const dentist=await dentistFor(req.auth.sub);
+      if(!dentist) return res.status(403).json({error:"Perfil de dentista não encontrado."});
+      const study=await prisma.examStudy.findFirst({where:{id:req.params.studyId,ownerDentistId:dentist.id,status:"READY"}});
+      if(!study) return res.status(403).json({error:"A revisão dos achados deste exame pertence à radiologia que enviou a documentação."});
+      const current=study.aiAnalysis&&typeof study.aiAnalysis==="object"?study.aiAnalysis:null;
+      if(!current||!Array.isArray(current.findings)) return res.status(409).json({error:"Este exame ainda não possui achados de IA."});
+      const status=String(req.body?.status||"").toUpperCase();
+      if(!["CONFIRMED","REJECTED","SUGGESTED"].includes(status)) return res.status(400).json({error:"Status de revisão inválido."});
+      let found=false;
+      const findings=current.findings.map(finding=>{
+        if(String(finding.id)!==String(req.params.findingId))return finding;
+        found=true;return {...finding,status};
+      });
+      if(!found)return res.status(404).json({error:"Achado não encontrado."});
+      const analysis={...current,findings};
+      await prisma.examStudy.update({where:{id:study.id},data:{aiAnalysis:analysis}});
+      res.json({analysis});
     }catch(e){next(e);}
   });
 
