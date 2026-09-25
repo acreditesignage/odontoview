@@ -303,16 +303,18 @@ function DentistDashboard(){
      open:()=>openStudy({study:s,patient:s.patient,examType:s.examType||{name:"Exame DICOM"},unit:null})
    }))
  ].slice(0,5);
+ const selectedDentistImportType=types.find(t=>t.id===dentistImportType)||null;
+ const dentistUploadPolicy=examUploadPolicy(selectedDentistImportType);
  return <main className="page dentist-dashboard"><section className="wide">
-   <input className="hidden-file" ref={dentistFileInput} type="file" multiple onChange={handleDentistImportFiles}/>
+   <input className="hidden-file" ref={dentistFileInput} type="file" accept={dentistUploadPolicy.accept} multiple={dentistUploadPolicy.multiple} onChange={handleDentistImportFiles}/>
    <header className="topbar"><BrandLockup role="DENTISTA"/><div className="topbar-actions"><a className="ghost compact" href="/cadastro-dentista" target="_blank" rel="noreferrer">Link de cadastro</a><button className="ghost" onClick={logout}>Sair</button></div></header>
-   <div className="hero-row dentist-hero"><div><p className="eyebrow">ODONTOVIEW NETWORK</p><h1>{data?.dentist?.user?.name||"Seu painel clínico"}</h1><p className="muted">{data?.dentist?("CRO "+data.dentist.cro+"/"+data.dentist.uf+" • pacientes, pedidos e exames em um só lugar."):"Carregando perfil…"}</p></div><div className="hero-actions dentist-hero-actions"><button className="primary" onClick={startNewPatient}>＋ Novo paciente</button><button className="secondary" onClick={()=>goDentistTab("import")}>⬆ Importar DICOM</button></div></div>
+   <div className="hero-row dentist-hero"><div><p className="eyebrow">ODONTOVIEW NETWORK</p><h1>{data?.dentist?.user?.name||"Seu painel clínico"}</h1><p className="muted">{data?.dentist?("CRO "+data.dentist.cro+"/"+data.dentist.uf+" • pacientes, pedidos e exames em um só lugar."):"Carregando perfil…"}</p></div><div className="hero-actions dentist-hero-actions"><button className="primary" onClick={startNewPatient}>＋ Novo paciente</button><button className="secondary" onClick={()=>goDentistTab("import")}>⬆ Importar exame</button></div></div>
    <nav className="workspace-tabs">
      <button className={tab==="home"?"active":""} onClick={()=>goDentistTab("home")}>Visão geral</button>
      <button className={tab==="new"?"active":""} onClick={()=>goDentistTab("new")}>Novo pedido</button>
      <button className={tab==="patients"?"active":""} onClick={()=>goDentistTab("patients")}>Pacientes</button>
      <button className={tab==="exams"?"active":""} onClick={()=>goDentistTab("exams")}>Meus exames</button>
-     <button className={tab==="import"?"active":""} onClick={()=>goDentistTab("import")}>Importar DICOM</button>
+     <button className={tab==="import"?"active":""} onClick={()=>goDentistTab("import")}>Importar exame</button>
    </nav>
    {err&&<div className="error">{err}</div>}
    {!data?<section className="card">Carregando painel…</section>:<>
@@ -325,7 +327,7 @@ function DentistDashboard(){
          </button>
          <button type="button" className="dentist-action-card" onClick={()=>goDentistTab("import")}>
            <span className="dentist-action-icon">⬆</span>
-           <span className="dentist-action-copy"><strong>Importar DICOM</strong><small>Associe um ZIP/DICOM a um paciente.</small></span>
+           <span className="dentist-action-copy"><strong>Importar exame</strong><small>CBCT em DICOM; demais exames em arquivo único.</small></span>
            <span className="dentist-action-arrow">→</span>
          </button>
        </section>
@@ -362,7 +364,7 @@ function DentistDashboard(){
 
        <section className="card dentist-recent-card">
          <div className="section-title dentist-recent-title"><div><p className="eyebrow">EXAMES RECENTES</p><h2>Continue de onde parou.</h2><p className="muted">Abra rapidamente os estudos mais recentes no Viewer.</p></div><button className="secondary compact" onClick={()=>goDentistTab("exams")}>Ver todos</button></div>
-         {recentExams.length===0?<div className="dentist-home-empty"><strong>Nenhum exame disponível ainda.</strong><p>Cadastre um paciente e importe um DICOM para começar.</p><button className="primary compact" onClick={()=>goDentistTab("import")}>Importar primeiro exame</button></div>:
+         {recentExams.length===0?<div className="dentist-home-empty"><strong>Nenhum exame disponível ainda.</strong><p>Cadastre um paciente e importe o primeiro exame para começar.</p><button className="primary compact" onClick={()=>goDentistTab("import")}>Importar primeiro exame</button></div>:
          <div className="dentist-recent-list">{recentExams.map(item=><article className="dentist-recent-row" key={item.key}>
            <div className="dentist-recent-main"><div className="dentist-recent-name"><strong title={item.patient}>{item.patient}</strong><span className={"source-badge "+(item.source==="OdontoView"?"odontoview":"radiology")}>{item.source}</span></div><small title={item.exam}>{item.exam}</small><small>{item.detail}</small></div>
            <button className="primary compact" disabled={openingStudy.startsWith(item.studyId)} onClick={item.open}>{openingStudy.startsWith(item.studyId)?("Abrindo "+(openingStudy.split(":")[1]||"…")):"Abrir Viewer"}</button>
@@ -380,7 +382,7 @@ function DentistDashboard(){
          <div className="patient-created-check">✓</div>
          <div><p className="eyebrow">PACIENTE CADASTRADO</p><h3>{createdPatient.name}</h3><p className="muted">O paciente foi salvo. Agora escolha o que deseja fazer.</p></div>
          <div className="patient-next-actions">
-           <button className="primary" onClick={()=>{setDentistImportPatient(createdPatient.id);goDentistTab("import")}}>⬆ Importar DICOM</button>
+           <button className="primary" onClick={()=>{setDentistImportPatient(createdPatient.id);goDentistTab("import")}}>⬆ Importar exame</button>
            <button className="secondary" onClick={()=>{setSelectedPatient(createdPatient.id);setOut(null);goDentistTab("new")}}>＋ Criar pedido de exame</button>
            <button className="ghost" onClick={()=>goDentistTab("patients")}>Concluir / Ver pacientes</button>
          </div>
@@ -409,14 +411,15 @@ function DentistDashboard(){
        </section>}
      </section>}
      {tab==="import"&&<section className="card dentist-import-card">
-       <div className="section-title"><div><p className="eyebrow">IMPORTAR DICOM</p><h2>Abra qualquer exame no OdontoView.</h2><p className="muted">Escolha um paciente e envie ZIP/DICOM para salvar de forma privada na sua biblioteca.</p></div></div>
+       <div className="section-title"><div><p className="eyebrow">IMPORTAR EXAME</p><h2>Adicione o exame ao OdontoView.</h2><p className="muted">Tomografia CBCT usa DICOM. Os demais tipos usam um único arquivo de imagem, PDF ou modelo 3D compatível.</p></div></div>
        {data.patients.length===0?<div className="empty"><strong>Cadastre um paciente primeiro.</strong><p>Depois você poderá associar qualquer DICOM a ele.</p></div>:<>
          <div className="dentist-import-grid">
            <label><span>Paciente</span><select value={dentistImportPatient} onChange={e=>setDentistImportPatient(e.target.value)}>{data.patients.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label>
-           <label><span>Tipo de exame</span><select value={dentistImportType} onChange={e=>setDentistImportType(e.target.value)}>{types.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
-           <button className="primary" onClick={()=>{setDentistIngest(null);dentistFileInput.current?.click()}}>Selecionar ZIP / DICOM</button>
+           <label><span>Tipo de exame</span><select value={dentistImportType} onChange={e=>{setDentistImportType(e.target.value);setDentistIngest(null)}}>{types.map(t=><option value={t.id} key={t.id}>{t.name}</option>)}</select></label>
+           <button className="primary" onClick={()=>{setDentistIngest(null);dentistFileInput.current?.click()}}>{dentistUploadPolicy.buttonLabel}</button>
          </div>
-         {dentistIngest&&<IngestResult state={dentistIngest} onClear={()=>setDentistIngest(null)} onOpenViewer={()=>{setViewerSession({result:dentistIngest.result,order:{patient:data.patients.find(p=>p.id===dentistImportPatient),examType:types.find(t=>t.id===dentistImportType)||{name:"Exame DICOM"}}});nav(viewerRoute("dentist","/dentista?tab=import"))}} onSend={sendDentistImport} sendLabel="Salvar em Meus exames"/>}
+         <p className="muted upload-policy-note">{dentistUploadPolicy.help}</p>
+         {dentistIngest&&<IngestResult state={dentistIngest} onClear={()=>setDentistIngest(null)} onOpenViewer={()=>{if(dentistIngest.result?.kind==="single"){previewLocalExam(dentistIngest.result);return}setViewerSession({result:dentistIngest.result,order:{patient:data.patients.find(p=>p.id===dentistImportPatient),examType:types.find(t=>t.id===dentistImportType)||{name:"Tomografia CBCT"}}});nav(viewerRoute("dentist","/dentista?tab=import"))}} onSend={sendDentistImport} sendLabel="Salvar em Meus exames"/>}
        </>}
      </section>}
      {tab==="exams"&&<section className="card">
@@ -720,13 +723,13 @@ function Radiology(){
      </section>
    </div>}
    <header className="topbar"><BrandLockup role="RADIOLOGIA"/><button className="ghost" onClick={logout}>Sair</button></header>
-   <div className="hero-row radiology-hero"><div><p className="eyebrow">OPERAÇÃO DA RADIOLOGIA</p><h1>{tab==="home"?"Visão geral da unidade.":tab==="agenda"?"Agenda da unidade.":tab==="patients"?"Pacientes da unidade.":tab==="exams"?"Exames em andamento.":"Importar DICOM."}</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:patients?.unit?patients.unit.organization.name+" • "+patients.unit.name:"Carregando unidade…"}</p></div><div className="radiology-hero-actions"><button className="primary" onClick={startRadiologyPatient}>＋ Novo paciente</button><button className="secondary" onClick={startLocalImport}>⬆ Importar DICOM</button></div></div>
+   <div className="hero-row radiology-hero"><div><p className="eyebrow">OPERAÇÃO DA RADIOLOGIA</p><h1>{tab==="home"?"Visão geral da unidade.":tab==="agenda"?"Agenda da unidade.":tab==="patients"?"Pacientes da unidade.":tab==="exams"?"Exames em andamento.":"Importar DICOM."}</h1><p className="muted">{data?.unit?data.unit.organization.name+" • "+data.unit.name:patients?.unit?patients.unit.organization.name+" • "+patients.unit.name:"Carregando unidade…"}</p></div><div className="radiology-hero-actions"><button className="primary" onClick={startRadiologyPatient}>＋ Novo paciente</button><button className="secondary" onClick={startLocalImport}>⬆ Importar exame</button></div></div>
    <nav className="workspace-tabs radiology-tabs">
      <button className={tab==="home"?"active":""} onClick={()=>goRadiologyTab("home")}>Visão geral</button>
      <button className={tab==="agenda"?"active":""} onClick={()=>goRadiologyTab("agenda")}>Agenda</button>
      <button className={tab==="patients"?"active":""} onClick={()=>goRadiologyTab("patients")}>Pacientes</button>
      <button className={tab==="exams"?"active":""} onClick={()=>goRadiologyTab("exams")}>Exames</button>
-     <button className={tab==="import"?"active":""} onClick={()=>goRadiologyTab("import")}>Importar DICOM</button>
+     <button className={tab==="import"?"active":""} onClick={()=>goRadiologyTab("import")}>Importar exame</button>
    </nav>
    {err&&<div className="error">{err}</div>}
    {tab==="home"&&<div className="radiology-home">
@@ -735,7 +738,7 @@ function Radiology(){
          <span className="radiology-action-icon">＋</span><span><strong>Novo paciente</strong><small>Cadastre um atendimento local.</small></span><b>→</b>
        </button>
        <button type="button" className="radiology-action-card" onClick={startLocalImport}>
-         <span className="radiology-action-icon">⬆</span><span><strong>Importar DICOM</strong><small>Adicione um exame local já realizado.</small></span><b>→</b>
+         <span className="radiology-action-icon">⬆</span><span><strong>Importar exame</strong><small>Adicione um exame local já realizado.</small></span><b>→</b>
        </button>
      </section>
      <section className="radiology-home-shortcuts">
