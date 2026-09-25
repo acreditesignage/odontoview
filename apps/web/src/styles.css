@@ -2097,6 +2097,20 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 .documentation-ai-finding-actions button.active.reject{border-color:#ecc4c4;background:#fff2f2;color:#9b4242}
 .documentation-ai-empty{padding:9px;border-radius:9px;background:#f5fafc;color:#78909f;font-size:8px;text-align:center}
 .documentation-ai-disclaimer{margin:9px 0 0;font-size:7px;line-height:1.4;color:#8a9aa5}
+.documentation-ai-demo-tag{
+  display:inline-flex;align-items:center;margin-left:6px;padding:2px 6px;border-radius:999px;
+  background:#fff2c7;color:#8a6400;font-size:7px;font-style:normal;font-weight:900;
+  letter-spacing:.04em;text-transform:uppercase;vertical-align:middle
+}
+.documentation-ai-disclaimer.is-demo{
+  padding:7px 8px;border:1px solid #f1dfaa;border-radius:8px;background:#fffaf0;color:#8a6a12
+}
+.documentation-ai-overlay-box[data-demo="true"]{
+  border-style:dashed
+}
+.documentation-ai-overlay-box[data-demo="true"] .documentation-ai-overlay-label{
+  background:#8a6a12
+}
 .documentation-ai-card .ai-secondary{margin-top:9px}
 
 /* Final radiographic board */
