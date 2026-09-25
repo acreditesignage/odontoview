@@ -2007,6 +2007,49 @@ input:focus,select:focus{outline:none;border-color:#79bdec;box-shadow:0 0 0 4px 
 .documentation-template-ready-side p{margin:0;font-size:8px;line-height:1.45;color:#5f7f76}
 .documentation-template-edit-button{width:100%;margin-top:auto}
 
+/* OdontoView AI 3.0 Alpha */
+.ai-primary,.ai-secondary{
+  border:0;border-radius:10px;font-weight:850;letter-spacing:.01em;transition:.16s ease
+}
+.ai-primary{background:linear-gradient(135deg,#0f6fc3,#18b4c9);color:#fff;box-shadow:0 8px 20px rgba(17,132,179,.18)}
+.ai-primary:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 11px 24px rgba(17,132,179,.24)}
+.ai-secondary{width:100%;background:#edf8fd;color:#197ca7;border:1px solid #cde8f3}
+.ai-primary:disabled,.ai-secondary:disabled{opacity:.55;cursor:not-allowed}
+.documentation-ai-card{border-color:#d4e9f1;background:linear-gradient(180deg,#ffffff,#fbfeff)}
+.documentation-template-side-title.ai>span{
+  background:linear-gradient(135deg,#0e7fcc,#1bc3bf);color:#fff;font-size:8px;letter-spacing:.04em
+}
+.documentation-ai-summary{display:grid;gap:4px}
+.documentation-ai-summary strong{font-size:10px;color:#173b53}
+.documentation-ai-summary p{margin:0;font-size:8px;line-height:1.45;color:#6f8796}
+.documentation-ai-error{margin-top:8px;padding:8px;border:1px solid #efd0d0;border-radius:9px;background:#fff5f5;color:#9b4242;font-size:8px}
+.documentation-ai-findings{display:grid;gap:7px;margin-top:10px}
+.documentation-ai-finding{overflow:hidden;border:1px solid #dce7ed;border-radius:11px;background:#fff}
+.documentation-ai-finding.status-confirmed{border-color:#bfe5d5;background:#f8fdfa}
+.documentation-ai-finding.status-rejected{opacity:.65}
+.documentation-ai-finding-main{
+  width:100%;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:8px;border:0;background:transparent;text-align:left
+}
+.documentation-ai-finding-main>div{min-width:0;display:grid;gap:2px}
+.documentation-ai-finding-main strong{font-size:8.5px;color:#234b64}
+.documentation-ai-finding-main span{font-size:7.5px;line-height:1.35;color:#718794}
+.documentation-ai-finding-main>b{
+  flex:none;min-width:32px;padding:4px 6px;border-radius:999px;background:#eaf7fb;color:#187ba7;font-size:7.5px;text-align:center
+}
+.documentation-ai-finding-actions{
+  display:flex;align-items:center;justify-content:space-between;gap:7px;padding:6px 8px;border-top:1px solid #e7eef2;background:#f8fbfc
+}
+.documentation-ai-finding-actions>span{font-size:7px;font-weight:850;color:#748996;text-transform:uppercase;letter-spacing:.04em}
+.documentation-ai-finding-actions>div{display:flex;gap:4px}
+.documentation-ai-finding-actions button{
+  min-height:24px;padding:4px 7px;border:1px solid #d4e1e8;border-radius:7px;background:#fff;color:#567182;font-size:7px;font-weight:800
+}
+.documentation-ai-finding-actions button.active{border-color:#a8dbc5;background:#eaf9f2;color:#247654}
+.documentation-ai-finding-actions button.active.reject{border-color:#ecc4c4;background:#fff2f2;color:#9b4242}
+.documentation-ai-empty{padding:9px;border-radius:9px;background:#f5fafc;color:#78909f;font-size:8px;text-align:center}
+.documentation-ai-disclaimer{margin:9px 0 0;font-size:7px;line-height:1.4;color:#8a9aa5}
+.documentation-ai-card .ai-secondary{margin-top:9px}
+
 /* Final radiographic board */
 .documentation-final-board-view{
   min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:#edf3f7
