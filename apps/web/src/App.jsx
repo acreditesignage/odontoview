@@ -526,6 +526,7 @@ function Radiology(){
  const [selectedPatient,setSelectedPatient]=useState(null),[patientDetail,setPatientDetail]=useState(null),[patientDetailBusy,setPatientDetailBusy]=useState(false);
  const [patientIngest,setPatientIngest]=useState(null),[patientTarget,setPatientTarget]=useState(null),[patientExamType,setPatientExamType]=useState(""),[examUploadConfirm,setExamUploadConfirm]=useState(null);
  const [openingUnitStudy,setOpeningUnitStudy]=useState(""),[shareInvite,setShareInvite]=useState(null);
+ const [documentationGallery,setDocumentationGallery]=useState(null),[galleryBusy,setGalleryBusy]=useState(false);
  const fileInput=useRef(null),orderForFile=useRef(null),patientFileInput=useRef(null);
  const range=useMemo(()=>dayRange(date),[date]);
 
@@ -665,18 +666,28 @@ function Radiology(){
      locked:target.kind==="order"
    });
  }
- async function handlePatientExamFiles(event){
-   const files=Array.from(event.target.files||[]);
-   if(!patientTarget||!files.length)return;
-   const examType=(patientDetail?.examTypes||radiologyExamTypes).find(t=>t.id===(patientTarget.examTypeId||patientExamType))||null;
+ async function processPatientExamFiles(files,target=patientTarget){
+   const incoming=Array.from(files||[]);
+   if(!target||!incoming.length)return;
+   setPatientTarget(target);
+   const examType=(patientDetail?.examTypes||radiologyExamTypes).find(t=>t.id===(target.examTypeId||patientExamType))||null;
    const policy=examUploadPolicy(examType);
    setPatientIngest({status:"reading",progress:{phase:policy.kind==="dicom"?"start":"single"}});
    try{
      const result=policy.kind==="dicom"
-       ?await importExam(files,{onProgress:progress=>setPatientIngest({status:"reading",progress})})
-       :await importSingleFileExam(files,examType);
+       ?await importExam(incoming,{onProgress:progress=>setPatientIngest({status:"reading",progress})})
+       :await importSingleFileExam(incoming,examType);
      setPatientIngest({status:"ready",result});
    }catch(e){setPatientIngest({status:"error",message:e.message||"Falha ao abrir exame."})}
+ }
+ async function handlePatientExamFiles(event){
+   await processPatientExamFiles(Array.from(event.target.files||[]),patientTarget);
+ }
+ function dropPatientExamFiles(event,target){
+   event.preventDefault();
+   event.stopPropagation();
+   const files=Array.from(event.dataTransfer?.files||[]);
+   if(files.length)processPatientExamFiles(files,target);
  }
  async function sendPatientExam(){
    if(!patientIngest?.result||!patientTarget)return;
@@ -698,15 +709,42 @@ function Radiology(){
      setPatientIngest(prev=>({...prev,send:{status:"error",done:prev?.send?.done||0,total:r.files.length,message:e.message||"Falha no envio."}}));
    }
  }
+ function closeDocumentationGallery(){
+   setDocumentationGallery(prev=>{
+     prev?.items?.forEach(item=>item.url&&URL.revokeObjectURL(item.url));
+     return null;
+   });
+ }
+ async function openDocumentationGallery(manifest){
+   setGalleryBusy(true);
+   try{
+     const files=manifest.files||[];
+     const items=await Promise.all(files.map(async meta=>{
+       const blob=await apiBlob("/api/unit/studies/"+manifest.study.id+"/files/"+meta.id);
+       const typed=new Blob([blob],{type:meta.contentType||blob.type||"application/octet-stream"});
+       return {
+         ...meta,
+         contentType:typed.type||meta.contentType||"application/octet-stream",
+         url:URL.createObjectURL(typed),
+         previewKind:(typed.type||"").startsWith("image/")?"image":typed.type==="application/pdf"?"pdf":"file"
+       };
+     }));
+     setDocumentationGallery({
+       study:manifest.study,
+       patient:manifest.patient,
+       examType:manifest.examType,
+       items,
+       activeIndex:0
+     });
+   }finally{setGalleryBusy(false)}
+ }
  async function openUnitStudy(study){
    setOpeningUnitStudy(study.id);setErr("");
    try{
      const manifest=await api("/api/unit/studies/"+study.id);
      if(!isDicomStudySource(manifest.study?.sourceType)){
-       const meta=manifest.files?.[0];
-       if(!meta)throw new Error("Arquivo do exame não encontrado.");
-       const blob=await apiBlob("/api/unit/studies/"+study.id+"/files/"+meta.id);
-       openBlobFile(new Blob([blob],{type:meta.contentType||blob.type||"application/octet-stream"}),meta.fileName||"exame");
+       if(!manifest.files?.length)throw new Error("Arquivo do exame não encontrado.");
+       await openDocumentationGallery(manifest);
        return;
      }
      const files=new Array(manifest.files.length);
@@ -762,6 +800,29 @@ function Radiology(){
  return <main className="page radiology"><section className="wide">
    <input className="hidden-file" ref={fileInput} type="file" multiple onChange={handleExamFiles}/>
    <input className="hidden-file" ref={patientFileInput} type="file" multiple onChange={handlePatientExamFiles}/>
+   {documentationGallery&&<div className="documentation-gallery-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)closeDocumentationGallery()}}>
+     <section className="documentation-gallery" role="dialog" aria-modal="true">
+       <header className="documentation-gallery-head">
+         <div><p className="eyebrow">DOCUMENTAÇÃO / IMAGENS</p><h2>{documentationGallery.examType?.name||"Documentação"}</h2><p>{documentationGallery.patient?.name||"Paciente"} • {documentationGallery.items.length} arquivo(s)</p></div>
+         <button className="ghost compact" onClick={closeDocumentationGallery}>Fechar</button>
+       </header>
+       <div className="documentation-gallery-stage">
+         {(()=>{
+           const item=documentationGallery.items[documentationGallery.activeIndex];
+           if(!item)return <div className="empty">Nenhum arquivo.</div>;
+           if(item.previewKind==="image")return <img src={item.url} alt={item.fileName}/>;
+           if(item.previewKind==="pdf")return <iframe src={item.url} title={item.fileName}/>;
+           return <div className="documentation-gallery-file"><span>3D</span><strong>{item.fileName}</strong><button className="secondary compact" onClick={()=>openBlobFile(new Blob([]),item.fileName)}>Arquivo de modelo 3D</button></div>;
+         })()}
+       </div>
+       <div className="documentation-gallery-grid">
+         {documentationGallery.items.map((item,index)=><button type="button" key={item.id||index} className={"documentation-thumb "+(index===documentationGallery.activeIndex?"active":"")} onClick={()=>setDocumentationGallery(prev=>({...prev,activeIndex:index}))}>
+           {item.previewKind==="image"?<img src={item.url} alt=""/>:<span>{item.previewKind==="pdf"?"PDF":"3D"}</span>}
+           <small title={item.fileName}>{item.fileName}</small>
+         </button>)}
+       </div>
+     </section>
+   </div>}
    {examUploadConfirm&&<div className="exam-upload-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setExamUploadConfirm(null)}}>
      <section className="exam-upload-dialog" role="dialog" aria-modal="true" aria-labelledby="exam-upload-title">
        <div className="exam-upload-dialog-head"><div><p className="eyebrow">ADICIONAR EXAME</p><h2 id="exam-upload-title">Confirme antes de selecionar o arquivo.</h2></div><button type="button" className="ghost compact" onClick={()=>setExamUploadConfirm(null)}>Fechar</button></div>
@@ -885,7 +946,7 @@ function Radiology(){
        </button>)}</div>}
      </section>
      {selectedPatient&&<section className="card patient-detail-card">
-       <div className="patient-detail-head"><div><p className="eyebrow">FICHA DO PACIENTE</p><h2>{selectedPatient.name}</h2></div><div className="patient-detail-head-actions"><button className="secondary compact" onClick={createRadiologyDentistInvite}>Compartilhar com dentista</button><button className="ghost compact" onClick={()=>{setSelectedPatient(null);setPatientDetail(null);setPatientIngest(null);setExamUploadConfirm(null);setShareInvite(null)}}>Fechar</button></div></div>
+       <div className="patient-detail-head"><div><p className="eyebrow">FICHA DO PACIENTE</p><h2>{selectedPatient.name}</h2></div><div className="patient-detail-head-actions"><button className="secondary compact" onClick={createRadiologyDentistInvite}>Compartilhar com dentista</button><button className="ghost compact" onClick={()=>{setSelectedPatient(null);setPatientDetail(null);setPatientIngest(null);setExamUploadConfirm(null);setShareInvite(null);closeDocumentationGallery()}}>Fechar</button></div></div>
        {patientDetailBusy||!patientDetail?<div className="empty">Abrindo ficha…</div>:<>
          <div className="patient-detail-meta">
            <span className={"source-badge "+(patientDetail.source==="ODONTOVIEW"?"odontoview":"radiology")}>{patientDetail.source==="ODONTOVIEW"?"OdontoView":"Radiologia"}</span>
