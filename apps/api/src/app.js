@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "./prisma.js";
 import { createAccessToken, resolveAccessToken, newToken, hashToken } from "./token.js";
-import { getPrivateObject, putPrivateObject, storageReady } from "./storage.js";
+import { deletePrivateObject, getPrivateObject, putPrivateObject, storageReady } from "./storage.js";
 
 const auth=(req,res,next)=>{
   const h=req.headers.authorization||"", token=h.startsWith("Bearer ")?h.slice(7):null;
