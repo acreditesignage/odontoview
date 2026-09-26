@@ -96,3 +96,27 @@ test('normalization is deterministic for the same parsed source', async () => {
   const parsed = parseExocadLibrary(await fixture('neodent-minimal.xml'));
   assert.deepEqual(normalizeImplantLibrary(parsed), normalizeImplantLibrary(parsed));
 });
+
+test('does not silently choose between conflicting signatures for the same geometry file', async () => {
+  const normalizeImplantLibrary = await loadNormalizer();
+  const parsed = {
+    source: {
+      sourceFormat: 'exocad-implant-library',
+      displayInformation: 'Safety Test System',
+      supplier: { name: 'Safety Test Manufacturer', url: null },
+      geometry: { implant: 'implant.stl' },
+      coordinateFrame: {},
+      signatures: [
+        { filename: 'implant.stl', signature: 'signature-a' },
+        { filename: 'implant.stl', signature: 'signature-b' },
+      ],
+      sourceAttributes: {},
+      types: [],
+    },
+    warnings: [],
+  };
+
+  const { library, warnings } = normalizeImplantLibrary(parsed);
+  assert.equal(library.geometry.implant.sourceSignature, null);
+  assert.ok(warnings.some((warning) => warning.includes('conflicting signatures')));
+});
