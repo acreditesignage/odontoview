@@ -1,5 +1,7 @@
 export const IMPLANT_LIBRARY_SCHEMA_VERSION = 1;
 
+const REDISTRIBUTION_VALUES = ['unknown', 'allowed', 'not-allowed'];
+
 export function createEmptyLibrary() {
   return {
     schemaVersion: IMPLANT_LIBRARY_SCHEMA_VERSION,
@@ -10,6 +12,32 @@ export function createEmptyLibrary() {
     validatedGeometry: false,
     redistributionAllowed: 'unknown',
   };
+}
+
+function validateGeometryMap(geometry, path, errors) {
+  if (geometry == null) return;
+  if (typeof geometry !== 'object' || Array.isArray(geometry)) {
+    errors.push(`${path} must be an object`);
+    return;
+  }
+
+  for (const [role, asset] of Object.entries(geometry)) {
+    if (asset == null) continue;
+    if (typeof asset !== 'object' || Array.isArray(asset)) {
+      errors.push(`${path}.${role} must be an object or null`);
+      continue;
+    }
+
+    if (asset.validatedGeometry !== false && asset.validatedGeometry !== true) {
+      errors.push(`${path}.${role}.validatedGeometry must be boolean`);
+    }
+
+    if (!REDISTRIBUTION_VALUES.includes(asset.redistributionAllowed)) {
+      errors.push(
+        `${path}.${role}.redistributionAllowed must be unknown, allowed, or not-allowed`,
+      );
+    }
+  }
 }
 
 export function validateNormalizedLibrary(library) {
@@ -33,15 +61,42 @@ export function validateNormalizedLibrary(library) {
 
   if (!Array.isArray(library.components)) {
     errors.push('components must be an array');
+  } else {
+    library.components.forEach((component, componentIndex) => {
+      if (!component || typeof component !== 'object' || Array.isArray(component)) {
+        errors.push(`components[${componentIndex}] must be an object`);
+        return;
+      }
+
+      if (!Array.isArray(component.variants)) {
+        errors.push(`components[${componentIndex}].variants must be an array`);
+      } else {
+        component.variants.forEach((variant, variantIndex) => {
+          if (!variant || typeof variant !== 'object' || Array.isArray(variant)) {
+            errors.push(`components[${componentIndex}].variants[${variantIndex}] must be an object`);
+            return;
+          }
+          validateGeometryMap(
+            variant.geometry,
+            `components[${componentIndex}].variants[${variantIndex}].geometry`,
+            errors,
+          );
+        });
+      }
+
+      validateGeometryMap(component.geometry, `components[${componentIndex}].geometry`, errors);
+    });
   }
 
   if (library.validatedGeometry !== false && library.validatedGeometry !== true) {
     errors.push('validatedGeometry must be boolean');
   }
 
-  if (!['unknown', 'allowed', 'not-allowed'].includes(library.redistributionAllowed)) {
+  if (!REDISTRIBUTION_VALUES.includes(library.redistributionAllowed)) {
     errors.push('redistributionAllowed must be unknown, allowed, or not-allowed');
   }
+
+  validateGeometryMap(library.geometry, 'geometry', errors);
 
   return { valid: errors.length === 0, errors };
 }
