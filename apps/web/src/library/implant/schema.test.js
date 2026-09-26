@@ -89,3 +89,65 @@ test('validator rejects malformed geometry asset safety metadata', async () => {
   assert.ok(result.errors.some((error) => error.includes('geometry.implant.validatedGeometry')));
   assert.ok(result.errors.some((error) => error.includes('geometry.implant.redistributionAllowed')));
 });
+
+test('validator rejects a geometry asset object without a filename', async () => {
+  const schema = await loadSchema();
+  assert.ok(schema, 'schema.js must exist');
+  const library = {
+    ...schema.createEmptyLibrary(),
+    manufacturer: { id: 'neodent', name: 'Neodent' },
+    system: { id: 'grand-morse', manufacturerId: 'neodent', name: 'Grand Morse' },
+    geometry: {
+      implant: {
+        role: 'implant',
+        filename: '',
+        format: 'STL',
+        sourceSignature: null,
+        validatedGeometry: false,
+        redistributionAllowed: 'unknown',
+      },
+    },
+  };
+
+  const result = schema.validateNormalizedLibrary(library);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes('geometry.implant.filename')));
+});
+
+test('validator rejects duplicate component and variant ids', async () => {
+  const schema = await loadSchema();
+  assert.ok(schema, 'schema.js must exist');
+  const duplicateVariant = {
+    id: 'duplicate-variant',
+    name: 'Hex',
+    geometry: {},
+  };
+  const library = {
+    ...schema.createEmptyLibrary(),
+    manufacturer: { id: 'neodent', name: 'Neodent' },
+    system: { id: 'grand-morse', manufacturerId: 'neodent', name: 'Grand Morse' },
+    components: [
+      {
+        id: 'duplicate-component',
+        systemId: 'grand-morse',
+        name: 'Implante A',
+        role: 'implant',
+        geometry: {},
+        variants: [duplicateVariant, { ...duplicateVariant, name: 'Rot' }],
+      },
+      {
+        id: 'duplicate-component',
+        systemId: 'grand-morse',
+        name: 'Implante B',
+        role: 'implant',
+        geometry: {},
+        variants: [],
+      },
+    ],
+  };
+
+  const result = schema.validateNormalizedLibrary(library);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes('duplicate component id')));
+  assert.ok(result.errors.some((error) => error.includes('duplicate variant id')));
+});
