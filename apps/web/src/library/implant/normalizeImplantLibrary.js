@@ -44,8 +44,15 @@ function signatureFor(filename, signatures, warnings) {
   const uniqueSignatures = [...new Set(matchingSignatures)];
 
   if (uniqueSignatures.length > 1) {
-    const warning = `conflicting signatures for geometry file: ${filename}`;
-    if (!warnings.includes(warning)) warnings.push(warning);
+    const warning = {
+      code: 'CONFLICTING_GEOMETRY_SIGNATURES',
+      message: 'Multiple different signatures reference the same geometry file; signature was left unresolved.',
+      filename,
+      signatures: uniqueSignatures,
+    };
+    if (!warnings.some((entry) => entry?.code === warning.code && entry?.filename === filename)) {
+      warnings.push(warning);
+    }
     return null;
   }
 
