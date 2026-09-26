@@ -36,29 +36,41 @@ function extensionFormat(filename) {
   return match ? match[1].toUpperCase() : 'OTHER';
 }
 
-function signatureFor(filename, signatures) {
-  return signatures.find((entry) => entry?.filename === filename)?.signature ?? null;
+function signatureFor(filename, signatures, warnings) {
+  const matchingSignatures = signatures
+    .filter((entry) => entry?.filename === filename)
+    .map((entry) => entry?.signature)
+    .filter((signature) => signature != null);
+  const uniqueSignatures = [...new Set(matchingSignatures)];
+
+  if (uniqueSignatures.length > 1) {
+    const warning = `conflicting signatures for geometry file: ${filename}`;
+    if (!warnings.includes(warning)) warnings.push(warning);
+    return null;
+  }
+
+  return uniqueSignatures[0] ?? null;
 }
 
-function createGeometryAsset(role, filename, signatures) {
+function createGeometryAsset(role, filename, signatures, warnings) {
   if (!filename) return null;
   return {
     role,
     filename,
     format: extensionFormat(filename),
-    sourceSignature: signatureFor(filename, signatures),
+    sourceSignature: signatureFor(filename, signatures, warnings),
     validatedGeometry: false,
     redistributionAllowed: 'unknown',
   };
 }
 
-function normalizeGeometry(geometry, signatures) {
+function normalizeGeometry(geometry, signatures, warnings) {
   return {
-    implant: createGeometryAsset('implant', geometry?.implant, signatures),
-    marker: createGeometryAsset('marker', geometry?.marker, signatures),
-    screw: createGeometryAsset('screw', geometry?.screw, signatures),
-    support: createGeometryAsset('support', geometry?.support, signatures),
-    interface: createGeometryAsset('interface', geometry?.interface, signatures),
+    implant: createGeometryAsset('implant', geometry?.implant, signatures, warnings),
+    marker: createGeometryAsset('marker', geometry?.marker, signatures, warnings),
+    screw: createGeometryAsset('screw', geometry?.screw, signatures, warnings),
+    support: createGeometryAsset('support', geometry?.support, signatures, warnings),
+    interface: createGeometryAsset('interface', geometry?.interface, signatures, warnings),
   };
 }
 
@@ -103,7 +115,7 @@ function normalizeVariant(subtype, familyId, variantIndex, signatures, warnings)
     displayInformation: subtype?.displayInformation ?? null,
     keyword: subtype?.keyword ?? null,
     attributes: inferred.attributes,
-    geometry: normalizeGeometry(subtype?.geometry, signatures),
+    geometry: normalizeGeometry(subtype?.geometry, signatures, warnings),
     coordinateFrame: compactCoordinateFrame(subtype?.coordinateFrame),
     compatibility: compatibilityFrom(subtype),
     sourceAttributes: {
@@ -123,7 +135,7 @@ function normalizeFamily(type, systemId, familyIndex, signatures, warnings) {
     role: inferFamilyRole(type),
     keyword: type?.keyword ?? null,
     displayInformation: type?.displayInformation ?? null,
-    geometry: normalizeGeometry(type?.geometry, signatures),
+    geometry: normalizeGeometry(type?.geometry, signatures, warnings),
     coordinateFrame: compactCoordinateFrame(type?.coordinateFrame),
     compatibility: compatibilityFrom(type),
     variants: (type?.subtypes ?? []).map((subtype, variantIndex) =>
@@ -165,7 +177,7 @@ export function normalizeImplantLibrary(parsed) {
       displayName: systemName,
       sourceDisplayInformation: source.displayInformation ?? null,
     },
-    geometry: normalizeGeometry(source.geometry, signatures),
+    geometry: normalizeGeometry(source.geometry, signatures, warnings),
     coordinateFrame: compactCoordinateFrame(source.coordinateFrame),
     compatibility: compatibilityFrom(source),
     components: (source.types ?? []).map((type, familyIndex) =>
