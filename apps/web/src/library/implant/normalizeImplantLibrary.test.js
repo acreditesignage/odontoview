@@ -118,5 +118,12 @@ test('does not silently choose between conflicting signatures for the same geome
 
   const { library, warnings } = normalizeImplantLibrary(parsed);
   assert.equal(library.geometry.implant.sourceSignature, null);
-  assert.ok(warnings.some((warning) => warning.includes('conflicting signatures')));
+  assert.deepEqual(warnings, [
+    {
+      code: 'CONFLICTING_GEOMETRY_SIGNATURES',
+      message: 'Multiple different signatures reference the same geometry file; signature was left unresolved.',
+      filename: 'implant.stl',
+      signatures: ['signature-a', 'signature-b'],
+    },
+  ]);
 });
