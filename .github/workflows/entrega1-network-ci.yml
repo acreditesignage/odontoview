@@ -44,6 +44,9 @@ jobs:
       - name: Web install
         working-directory: apps/web
         run: npm install
+      - name: Web implant library tests
+        working-directory: apps/web
+        run: npm run test:implant-library
       - name: Web build
         working-directory: apps/web
         run: npm run build
