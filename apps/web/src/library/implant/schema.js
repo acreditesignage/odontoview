@@ -28,6 +28,10 @@ function validateGeometryMap(geometry, path, errors) {
       continue;
     }
 
+    if (typeof asset.filename !== 'string' || asset.filename.trim().length === 0) {
+      errors.push(`${path}.${role}.filename must be a non-empty string`);
+    }
+
     if (asset.validatedGeometry !== false && asset.validatedGeometry !== true) {
       errors.push(`${path}.${role}.validatedGeometry must be boolean`);
     }
@@ -62,10 +66,21 @@ export function validateNormalizedLibrary(library) {
   if (!Array.isArray(library.components)) {
     errors.push('components must be an array');
   } else {
+    const componentIds = new Set();
+    const variantIds = new Set();
+
     library.components.forEach((component, componentIndex) => {
       if (!component || typeof component !== 'object' || Array.isArray(component)) {
         errors.push(`components[${componentIndex}] must be an object`);
         return;
+      }
+
+      if (typeof component.id === 'string' && component.id.length > 0) {
+        if (componentIds.has(component.id)) {
+          errors.push(`duplicate component id: ${component.id}`);
+        } else {
+          componentIds.add(component.id);
+        }
       }
 
       if (!Array.isArray(component.variants)) {
@@ -76,6 +91,15 @@ export function validateNormalizedLibrary(library) {
             errors.push(`components[${componentIndex}].variants[${variantIndex}] must be an object`);
             return;
           }
+
+          if (typeof variant.id === 'string' && variant.id.length > 0) {
+            if (variantIds.has(variant.id)) {
+              errors.push(`duplicate variant id: ${variant.id}`);
+            } else {
+              variantIds.add(variant.id);
+            }
+          }
+
           validateGeometryMap(
             variant.geometry,
             `components[${componentIndex}].variants[${variantIndex}].geometry`,
