@@ -20,6 +20,15 @@ function basename(path) {
   return index === -1 ? normalized : normalized.slice(index + 1);
 }
 
+function caseFold(value) {
+  return String(value ?? '').toLowerCase();
+}
+
+function matchingPaths(availableFiles, targetPath) {
+  const foldedTarget = caseFold(targetPath);
+  return availableFiles.filter((path) => caseFold(path) === foldedTarget);
+}
+
 function geometryAssets(geometry) {
   return Object.values(geometry ?? {}).filter(
     (asset) => asset && typeof asset === 'object' && typeof asset.filename === 'string' && asset.filename.length > 0,
@@ -45,16 +54,24 @@ function resolveGeometry(reference, entryPath, availableFiles) {
   const entryDirectory = dirname(entryPath);
   const localPath = normalizePath(entryDirectory ? `${entryDirectory}/${normalizedReference}` : normalizedReference);
 
-  if (availableFiles.includes(localPath)) {
-    return { ...reference, matchedPath: localPath, resolution: 'resolved' };
+  const localMatches = matchingPaths(availableFiles, localPath);
+  if (localMatches.length === 1) {
+    return { ...reference, matchedPath: localMatches[0], resolution: 'resolved' };
+  }
+  if (localMatches.length > 1) {
+    return { ...reference, candidates: localMatches, resolution: 'ambiguous' };
   }
 
-  if (availableFiles.includes(normalizedReference)) {
-    return { ...reference, matchedPath: normalizedReference, resolution: 'resolved' };
+  const directMatches = matchingPaths(availableFiles, normalizedReference);
+  if (directMatches.length === 1) {
+    return { ...reference, matchedPath: directMatches[0], resolution: 'resolved' };
+  }
+  if (directMatches.length > 1) {
+    return { ...reference, candidates: directMatches, resolution: 'ambiguous' };
   }
 
-  const referenceBasename = basename(normalizedReference);
-  const basenameMatches = availableFiles.filter((path) => basename(path) === referenceBasename);
+  const referenceBasename = caseFold(basename(normalizedReference));
+  const basenameMatches = availableFiles.filter((path) => caseFold(basename(path)) === referenceBasename);
   if (basenameMatches.length === 1) {
     return { ...reference, matchedPath: basenameMatches[0], resolution: 'resolved' };
   }
