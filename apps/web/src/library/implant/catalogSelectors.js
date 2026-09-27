@@ -63,8 +63,15 @@ export function listCatalogVariants(catalog, componentId) {
   );
 }
 
-export function getVariantGeometryAssets(catalog, variantId) {
-  return variantEntries(catalog)
+export function getVariantGeometryAssets(catalog, variantId, { resolvedOnly = false } = {}) {
+  const assets = variantEntries(catalog)
     .filter((variant) => variant?.id === variantId)
     .flatMap((variant) => geometryAssets(variant?.geometry));
+
+  if (!resolvedOnly) return assets;
+  return assets.filter(
+    (asset) => asset.resolution === 'resolved'
+      && typeof asset.matchedPath === 'string'
+      && asset.matchedPath.length > 0,
+  );
 }
