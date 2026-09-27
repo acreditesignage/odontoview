@@ -1,0 +1,346 @@
+/* OdontoView desktop planning workstation
+   Keeps the clinical viewer in a single viewport and turns the existing
+   implant controls into a dedicated planning rail. Mobile/tablet are untouched. */
+@media (min-width: 1200px) {
+  html:has(.viewer2.is-desktop),
+  body:has(.viewer2.is-desktop),
+  #root:has(.viewer2.is-desktop) {
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden !important;
+  }
+
+  .viewer2.is-desktop {
+    --ov-plan-rail: clamp(310px, 23vw, 405px);
+    --ov-top-h: 62px;
+    --ov-toolbar-h: 52px;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+    display: grid !important;
+    grid-template-rows: auto auto minmax(0, 1fr) !important;
+    background: #020910;
+  }
+
+  .viewer2.is-desktop .viewer2-top {
+    min-height: var(--ov-top-h) !important;
+    max-height: var(--ov-top-h) !important;
+    box-sizing: border-box;
+  }
+
+  .viewer2.is-desktop .viewer2-toolbar {
+    min-height: var(--ov-toolbar-h) !important;
+    max-height: var(--ov-toolbar-h) !important;
+    box-sizing: border-box;
+    flex-wrap: nowrap !important;
+    gap: 5px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: none;
+  }
+  .viewer2.is-desktop .viewer2-toolbar::-webkit-scrollbar { display: none; }
+  .viewer2.is-desktop .viewer2-wl-sliders,
+  .viewer2.is-desktop .viewer2-tool-state { display: none !important; }
+
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) {
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    box-sizing: border-box !important;
+    padding: 4px !important;
+    gap: 4px !important;
+    overflow: hidden !important;
+    display: grid !important;
+    grid-template-columns:
+      minmax(0, 1.16fr)
+      minmax(0, 1.04fr)
+      minmax(0, .86fr)
+      var(--ov-plan-rail) !important;
+    grid-template-rows: minmax(0, 48%) minmax(0, 52%) !important;
+    grid-template-areas:
+      "tangential axial orthogonal planning"
+      "three three panoramic planning" !important;
+    align-items: stretch !important;
+  }
+
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) #viewer2-tangential { grid-area: tangential !important; }
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) #viewer2-axial { grid-area: axial !important; }
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) #viewer2-orthogonal { grid-area: orthogonal !important; }
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) #viewer2-3d { grid-area: three !important; }
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) #viewer2-panorama { grid-area: panoramic !important; }
+
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) .viewer2-pane {
+    min-width: 0 !important;
+    min-height: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) .viewer2-pane-head {
+    flex: 0 0 auto;
+    min-height: 32px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+  }
+
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) .viewer2-slice-control {
+    flex: 0 0 auto;
+    min-height: 38px !important;
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+  }
+
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) .viewer2-canvas-wrap,
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) .viewer2-orthogonal-view,
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) .viewer3d-primary {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: hidden !important;
+  }
+
+  .viewer2.is-desktop .viewer2-workstation-grid:not(.has-expanded) .viewer2-canvas-wrap canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-primary,
+  .viewer2.is-desktop #viewer2-3d .viewer3d-panel,
+  .viewer2.is-desktop #viewer2-3d .viewer3d-stage {
+    min-height: 0 !important;
+    height: 100% !important;
+    max-height: 100% !important;
+  }
+
+  /* The existing implant planner becomes the permanent right-side workstation. */
+  .viewer2.is-desktop #viewer2-3d .viewer3d-controls {
+    position: fixed !important;
+    z-index: 55 !important;
+    top: calc(var(--ov-top-h) + var(--ov-toolbar-h) + 4px) !important;
+    right: 4px !important;
+    bottom: 4px !important;
+    width: calc(var(--ov-plan-rail) - 8px) !important;
+    max-width: calc(var(--ov-plan-rail) - 8px) !important;
+    height: auto !important;
+    max-height: none !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 1px solid #173447 !important;
+    border-radius: 9px !important;
+    background: linear-gradient(180deg,#071723 0%,#06131d 100%) !important;
+    box-shadow: 0 16px 44px rgba(0,0,0,.36) !important;
+  }
+
+  .viewer2.is-desktop:has(.viewer2-demo-banner) #viewer2-3d .viewer3d-controls {
+    top: calc(var(--ov-top-h) + var(--ov-toolbar-h) + 32px) !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-controls > * { display: none !important; }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-controls > .viewer3d-interaction {
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: 5px !important;
+    padding: 9px 9px 0 !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-controls > .viewer3d-interaction button {
+    min-height: 32px !important;
+    padding: 5px 7px !important;
+    font-size: 11px !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-controls > .viewer3d-pick-note {
+    display: block !important;
+    margin: 5px 9px 0 !important;
+    padding: 6px 8px !important;
+    font-size: 10px !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-controls > .viewer3d-implant-planner {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 7px !important;
+    height: calc(100% - 76px) !important;
+    max-height: calc(100% - 76px) !important;
+    min-height: 0 !important;
+    box-sizing: border-box !important;
+    padding: 9px !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-head {
+    display: grid !important;
+    grid-template-columns: minmax(0,1fr) auto !important;
+    align-items: start !important;
+    gap: 8px !important;
+    padding-bottom: 7px !important;
+    border-bottom: 1px solid #173447 !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-head strong {
+    font-size: 14px !important;
+    letter-spacing: .01em;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-head small {
+    display: block !important;
+    margin-top: 2px !important;
+    color: #7fa2b7 !important;
+    font-size: 9px !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-add-implant {
+    min-height: 32px !important;
+    padding: 6px 9px !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-select {
+    display: grid !important;
+    grid-template-columns: 72px minmax(0,1fr) !important;
+    align-items: center !important;
+    gap: 7px !important;
+    margin: 0 !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-select span { font-size: 10px !important; }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-select select {
+    min-width: 0 !important;
+    height: 32px !important;
+    font-size: 11px !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-warning {
+    margin: 0 !important;
+    padding: 6px 8px !important;
+    font-size: 9px !important;
+    line-height: 1.35 !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-list {
+    display: block !important;
+    margin: 0 !important;
+    max-height: 58px !important;
+    overflow: hidden !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-list button:not(.active) { display: none !important; }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-list button.active {
+    width: 100% !important;
+    min-height: 44px !important;
+    padding: 5px 8px !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-tools {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    align-content: start !important;
+    gap: 6px !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-tools > span,
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-tools > div:not([class]) {
+    display: none !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-summary,
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-geometry,
+  .viewer2.is-desktop #viewer2-3d .viewer3d-nerve-clearance {
+    margin: 0 !important;
+    padding: 7px 8px !important;
+    border-radius: 7px !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-summary {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-summary strong { font-size: 13px !important; }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-summary span { font-size: 11px !important; }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-geometry {
+    display: grid !important;
+    grid-template-columns: auto minmax(0,1fr) !important;
+    gap: 4px 8px !important;
+    align-items: center !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-geometry button {
+    grid-row: 1 / span 2;
+    min-height: 32px !important;
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-geometry strong { font-size: 11px !important; }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-geometry small { font-size: 9px !important; line-height: 1.2 !important; }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-nerve-clearance {
+    display: block !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-nerve-clearance-head {
+    display: flex !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    align-items: baseline !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-nerve-clearance-head span { font-size: 10px !important; }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-nerve-clearance-head strong { font-size: 15px !important; }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-nerve-clearance-state { font-size: 10px !important; margin-top: 3px !important; }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-nerve-margin {
+    display: grid !important;
+    grid-template-columns: auto minmax(0,1fr) auto !important;
+    gap: 6px !important;
+    align-items: center !important;
+    margin: 5px 0 !important;
+    font-size: 9px !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-nerve-clearance small {
+    display: block !important;
+    font-size: 8px !important;
+    line-height: 1.25 !important;
+  }
+
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-angle-sliders {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 3px !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-implant-angle-sliders label {
+    display: grid !important;
+    grid-template-columns: 66px minmax(0,1fr) 34px !important;
+    gap: 6px !important;
+    align-items: center !important;
+    font-size: 9px !important;
+    margin: 0 !important;
+  }
+  .viewer2.is-desktop #viewer2-3d .viewer3d-remove-implant {
+    min-height: 30px !important;
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+  }
+
+  /* Keep the tool drawer available without stealing the planning rail. */
+  .viewer2.is-desktop .viewer2-tools-tab {
+    right: calc(var(--ov-plan-rail) + 6px) !important;
+    z-index: 62 !important;
+  }
+  .viewer2.is-desktop .viewer2-tools-drawer { z-index: 70 !important; }
+
+  /* Expanded pane still gets the full workstation area. */
+  .viewer2.is-desktop .viewer2-workstation-grid.has-expanded {
+    min-height: 0 !important;
+    height: 100% !important;
+    overflow: hidden !important;
+  }
+  .viewer2.is-desktop .viewer2-workstation-grid.has-expanded #viewer2-3d .viewer3d-controls {
+    display: none !important;
+  }
+}
