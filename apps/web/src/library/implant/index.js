@@ -67,3 +67,9 @@ export {
   unregisterImplantGeometry,
   clearImplantGeometryRegistry,
 } from './implantGeometryRegistry.js';
+
+export {
+  makeLocalImplantGeometryKey,
+  loadLocalImplantGeometry,
+  registerLocalImplantGeometry,
+} from './localImplantGeometry.js';
