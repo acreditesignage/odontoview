@@ -13,8 +13,18 @@ const alphaXml = `<?xml version="1.0" encoding="utf-8"?>
       <SubtypeConfig>
         <ImplantSubtypeConfig>
           <SupportFilename>CaseOnly.stl</SupportFilename>
-          <DisplayInformation>Standard</DisplayInformation>
-          <Keyword>STD</Keyword>
+          <DisplayInformation>Resolved</DisplayInformation>
+          <Keyword>RESOLVED</Keyword>
+        </ImplantSubtypeConfig>
+        <ImplantSubtypeConfig>
+          <SupportFilename>MissingSupport.stl</SupportFilename>
+          <DisplayInformation>Missing</DisplayInformation>
+          <Keyword>MISSING</Keyword>
+        </ImplantSubtypeConfig>
+        <ImplantSubtypeConfig>
+          <SupportFilename>Ambiguous.sdfa</SupportFilename>
+          <DisplayInformation>Ambiguous</DisplayInformation>
+          <Keyword>AMBIGUOUS</Keyword>
         </ImplantSubtypeConfig>
       </SubtypeConfig>
     </ImplantTypeConfig>
