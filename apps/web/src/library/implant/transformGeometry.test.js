@@ -85,3 +85,48 @@ test('rotation transforms both positions and normals predictably', async () => {
   assertArrayClose(Array.from(output.normals), [0, 1, 0, 0, 1, 0, 0, 1, 0]);
   assert.deepEqual(output.bounds, { min: [-1, 0, 0], max: [0, 1, 0] });
 });
+
+test('non-uniform scale transforms normals with inverse-transpose semantics', async () => {
+  const module = await loadTransform();
+  assert.ok(module);
+  const input = mesh();
+  const n = Math.SQRT1_2;
+  input.normals = new Float32Array([n, 0, n, n, 0, n, n, 0, n]);
+  const matrix = [
+    2, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 0.5, 0,
+    0, 0, 0, 1,
+  ];
+
+  const output = module.transformGeometry(input, matrix);
+  const expected = [0.242535625, 0, 0.9701425];
+  assertArrayClose(Array.from(output.normals), [...expected, ...expected, ...expected], 1e-5);
+});
+
+test('singular linear transform is rejected instead of producing invalid normals', async () => {
+  const module = await loadTransform();
+  assert.ok(module);
+  const matrix = [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 1,
+  ];
+  assert.throws(() => module.transformGeometry(mesh(), matrix), (error) => error?.code === 'INVALID_TRANSFORM');
+});
+
+test('invalid transform matrix length and non-finite values are rejected', async () => {
+  const module = await loadTransform();
+  assert.ok(module);
+  assert.throws(() => module.transformGeometry(mesh(), [1, 0, 0]), (error) => error?.code === 'INVALID_TRANSFORM');
+  assert.throws(
+    () => module.transformGeometry(mesh(), [
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, Number.NaN, 1,
+    ]),
+    (error) => error?.code === 'INVALID_TRANSFORM',
+  );
+});
