@@ -27,11 +27,11 @@
 
 ## Review Focus
 
-- Re-registering different geometry under the same `geometryKey` must bump a revision/signature so an existing actor is rebuilt instead of silently showing stale mesh; pin in Task 1 and Task 3 tests.
-- Malformed/unsupported local STL must leave the active implant state and current actor usable; pin in Task 2 and Task 4 tests.
+- Re-registering different geometry under the same per-implant `geometryKey` must bump a revision/signature so an existing actor is rebuilt instead of silently showing stale mesh; pin in Task 1 and Task 3 tests.
+- Malformed/unsupported local STL must leave the active implant state and current actor usable; pin in Task 2 and Task 4 behavior.
 - Unknown STL units must remain explicitly unknown and must not trigger automatic scaling; pin in Task 2 tests and visual copy.
-- Invalid/singular `geometryLocalTransform` must fall back safely without changing clinical coordinates; pin in Task 3 tests.
-- Geometry replacement/removal must dispose VTK resources and leave no orphan actor; pin in Task 3 tests and Task 5 visual smoke.
+- Invalid/non-finite/singular `geometryLocalTransform` must fall back safely without changing clinical coordinates; pin in Task 3 adapter/runtime tests and Task 4 fallback.
+- Geometry replacement/removal must dispose VTK resources and release the per-implant registry entry so no orphan actor or stale local mesh remains; pin in Task 3 tests and Task 5 visual smoke.
 
 ---
 
@@ -104,9 +104,10 @@ Commit message: `feat(implant-library): add runtime geometry registry`
 **Interfaces:**
 - Consumes: `loadStlGeometry(asset, bytes)` and the registry API from Task 1.
 - Produces:
-  - `makeLocalImplantGeometryKey({ implantId, filename, size = 0, lastModified = 0 }) -> string`
+  - `makeLocalImplantGeometryKey({ implantId }) -> string` with exact shape `local:implant:<implantId>`.
   - `loadLocalImplantGeometry({ geometryKey, filename, bytes }) -> { geometryKey, mesh, diagnostics, metadata }`
   - `registerLocalImplantGeometry({ geometryKey, filename, bytes }) -> registryEntryWithDiagnostics`
+- The key is stable per planned implant; changing/reimporting a file for the same implant replaces the same registry entry and increments `revision` instead of leaking another mesh entry.
 - `diagnostics` contains `{ format, vertexCount, triangleCount, bounds, extents, center, unitStatus:'unknown' }`.
 - Temporary asset descriptor must use `resolution:'resolved'`, a local matched-path surrogate, `validatedGeometry:false`, and `redistributionAllowed:'unknown'`.
 
@@ -119,7 +120,7 @@ Test names/assertions:
 - malformed STL rejects and does not overwrite an already registered good entry.
 - diagnostics report `unitStatus:'unknown'`; no scale or `mm` field is invented.
 - safety defaults remain false/unknown.
-- generated local key is stable for identical implant/file metadata.
+- identical implant id yields the same local key regardless of file replacement; different implant ids yield different keys.
 
 - [ ] **Step 2: Run focused test and verify RED**
 
@@ -159,7 +160,7 @@ Commit message: `feat(implant-library): add safe local STL import`
 - Consumes: registry entries from Task 1, `transformGeometry(mesh, matrix4x4)`, `IDENTITY_MATRIX_4X4`, VTK.js `vtkPolyData`, `vtkPoints`, `vtkCellArray`, `vtkMapper`, `vtkActor`.
 - Produces:
   - `createVtkPolyDataFromNeutralGeometry(mesh) -> { poly, points, polys }`
-  - `createVtkImplantGeometryBundle({ mesh, localTransform, active }) -> { mode:'mesh', actor, mapper, poly, points, polys, geometrySignature }`
+  - `createVtkImplantGeometryBundle({ mesh, localTransform, active }) -> { mode:'mesh', actor, mapper, poly, points, polys }`
   - `disposeVtkImplantGeometryBundle(bundle) -> void`
   - `resolveImplantGeometryRuntime(implant) -> { mode:'mesh'|'parametric', entry:null|registryEntry, localTransform, signature, diagnostic }`
   - `implantGeometrySignature(implant, entry) -> string`
@@ -173,6 +174,7 @@ Assertions:
 - neutral input arrays/source/safety are unchanged.
 - invalid neutral mesh throws `INVALID_GEOMETRY_VALUE`.
 - bundle applies an explicit local transform before VTK conversion and keeps clinical actor position/orientation unset at geometry-build time.
+- singular local transform throws `INVALID_TRANSFORM` from the existing transform pipeline rather than producing invalid normals.
 - disposal is idempotent.
 
 - [ ] **Step 2: Run adapter test RED**
@@ -194,7 +196,7 @@ Assertions:
 - same key re-registered with a higher revision changes signature.
 - XYZ/RX/RY/RZ-only edits do not change signature.
 - local transform edit changes signature.
-- invalid/singular local transform resolves/fails safely without mutating clinical coordinates.
+- malformed/non-finite local-transform array resolves to safe parametric mode/diagnostic without mutating clinical coordinates.
 
 - [ ] **Step 5: Implement runtime resolution/signature and run both test files GREEN**
 
@@ -220,7 +222,7 @@ Commit message: `feat(implant-library): adapt neutral geometry to vtk`
 - Test behavior through pure Task 3 helpers plus Task 5 browser smoke; do not create a brittle full React unit test harness.
 
 **Interfaces:**
-- Consumes: `registerLocalImplantGeometry`, `resolveImplantGeometryRuntime`, `createVtkImplantGeometryBundle`, `disposeVtkImplantGeometryBundle`.
+- Consumes: `registerLocalImplantGeometry`, `unregisterImplantGeometry`, `resolveImplantGeometryRuntime`, `createVtkImplantGeometryBundle`, `disposeVtkImplantGeometryBundle`.
 - Existing props remain unchanged: `implants`, `activeImplantId`, `onImplantsChange`, `onActiveImplantChange`.
 - Adds lightweight implant fields only:
   - `geometryKey`
@@ -239,9 +241,10 @@ Add a separate `implantGeometryInputRef`; do not reuse `scanInputRef` and do not
 Behavior:
 - require an active implant;
 - read `await file.arrayBuffer()` locally;
-- derive a stable local key using Task 2 helper;
+- derive `geometryKey` from active implant id only (`local:implant:<id>`);
 - parse/register before touching implant state;
 - on success patch only the active implant with lightweight geometry metadata;
+- reimport for the same implant replaces the registry entry and increments revision;
 - on failure keep implant object/actor unchanged and show the loader error code/message;
 - show diagnostics including filename, format, counts, raw extents, and `Unidade STL: desconhecida`.
 
@@ -251,15 +254,15 @@ For every implant in the existing `implantActorsRef` loop:
 - resolve Task 3 runtime geometry;
 - rebuild when bundle absent or geometry signature/parametric dimensions require rebuild;
 - create real VTK mesh bundle when resolution is mesh;
-- if real bundle creation throws, record diagnostic and create current `createParametricImplantBundle()` instead;
+- if real bundle creation throws (including singular local transform), record diagnostic and create current `createParametricImplantBundle()` instead;
 - add actor (and existing guide helper if retained) to the same renderer used for implants;
 - position/orient both real and parametric actors with existing `updateImplantBundle()` semantics;
 - preserve active highlighting;
 - no STL parser inside the Viewer.
 
-- [ ] **Step 4: Make disposal handle both bundle modes**
+- [ ] **Step 4: Make disposal/removal handle both bundle modes and registry lifetime**
 
-`disposeImplantBundle()` must route real-mesh resources through Task 3 disposal and preserve existing parametric guide cleanup. Removal/replacement must delete actors, mapper, polydata and points exactly once.
+`disposeImplantBundle()` must route real-mesh resources through Task 3 disposal and preserve existing parametric guide cleanup. Actor replacement deletes VTK resources exactly once. `removeActiveImplant()` unregisters that implant's per-implant `geometryKey` after removing it from planning state, so its neutral mesh can be garbage-collected.
 
 - [ ] **Step 5: Add planner controls/copy**
 
@@ -302,7 +305,7 @@ Commit message: `feat(viewer): render registered implant meshes in 3d`
 
 - [ ] **Step 1: Build the synthetic smoke page**
 
-Create deterministic volume dimensions/spacing large enough for the implant to be visible. Register a deliberately asymmetric synthetic implant-like STL so rotation produces a visibly different screenshot (do not use a symmetric tetrahedron for the rotation assertion).
+Create deterministic volume dimensions/spacing large enough for the implant to be visible. Register a deliberately asymmetric synthetic implant-like STL so rotation produces a visibly different screenshot (do not use a symmetric mesh for the rotation assertion). Clear the geometry registry on smoke-page teardown.
 
 - [ ] **Step 2: Add the route in `AppEntry.jsx`**
 
@@ -316,7 +319,7 @@ The script must:
 3. capture initial screenshot;
 4. click/trigger X translation and verify viewport pixels change while geometry signature stays constant;
 5. trigger RX or RY rotation and verify viewport pixels change while geometry signature stays constant;
-6. replace geometry under the same key/revision path and verify rendered result changes/rebuild marker advances;
+6. replace geometry under the same per-implant key and verify revision/signature advances and rendered result changes;
 7. unregister/switch to a stale key and verify parametric fallback remains visible;
 8. remove the implant and verify the implant render/status disappears without browser exception;
 9. save screenshots and print a machine-readable success summary.
@@ -376,9 +379,9 @@ Record:
 
 Do not infer clinical correctness from appearance.
 
-- [ ] **Step 4: Verify the parametric fallback still works after removing/staling the geometry reference**
+- [ ] **Step 4: Verify parametric fallback and registry cleanup after removing the geometry-backed implant**
 
-The implant must remain visible and retain its planning coordinates.
+The fallback must remain available for a stale/missing key, and a removed per-implant local geometry key must no longer resolve from the registry.
 
 - [ ] **Step 5: Final branch scope audit**
 
