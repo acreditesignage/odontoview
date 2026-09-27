@@ -34,3 +34,19 @@ export {
   IMPLANT_LIBRARY_SCHEMA_VERSION,
   ImplantLibraryParseError,
 };
+
+export {
+  IMPLANT_CATALOG_SCHEMA_VERSION,
+  ImplantCatalogValidationError,
+  validateImplantCatalog,
+} from './catalogSchema.js';
+
+export { buildImplantCatalog } from './buildImplantCatalog.js';
+
+export {
+  getVariantGeometryAssets,
+  listCatalogComponents,
+  listCatalogManufacturers,
+  listCatalogSystems,
+  listCatalogVariants,
+} from './catalogSelectors.js';
