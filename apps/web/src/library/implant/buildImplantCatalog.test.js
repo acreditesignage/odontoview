@@ -166,6 +166,29 @@ function geometryByVariant(catalog, variantId, role) {
   return component.variants.find((variant) => variant.id === variantId).geometry[role];
 }
 
+function twoImportedAudit({ samePath = false } = {}) {
+  const first = geometryAuditReport().entries[0];
+  const second = structuredClone(first);
+  second.path = samePath ? first.path : 'implant/SIN_CM_ALT/config.xml';
+
+  return {
+    summary: {
+      totalEntries: 2,
+      importedEntries: 2,
+      unsupportedEntries: 0,
+      invalidEntries: 0,
+      components: 2,
+      variants: 6,
+      warnings: 0,
+      geometryReferences: 6,
+      resolvedGeometryFiles: 2,
+      missingGeometryFiles: 2,
+      ambiguousGeometryFiles: 2,
+    },
+    entries: [first, second],
+  };
+}
+
 test('builds catalog from imported audit entries while preserving unsupported and invalid diagnostics', () => {
   const audit = mixedAuditReport();
   const catalog = buildImplantCatalog(audit, { sourceName: 'synthetic-bundle' });
@@ -233,4 +256,28 @@ test('rejects an audit/library mismatch instead of silently treating untracked g
     (error) => error instanceof ImplantCatalogValidationError
       && error.details.some((detail) => detail.includes('.reference')),
   );
+});
+
+test('catalog output is deterministic for the same audit input', () => {
+  const audit = geometryAuditReport();
+  assert.deepEqual(
+    buildImplantCatalog(audit, { sourceName: 'deterministic-bundle' }),
+    buildImplantCatalog(audit, { sourceName: 'deterministic-bundle' }),
+  );
+});
+
+test('duplicate stable library identities are rejected instead of merged', () => {
+  const audit = twoImportedAudit({ samePath: true });
+
+  assert.throws(
+    () => buildImplantCatalog(audit),
+    (error) => error instanceof ImplantCatalogValidationError
+      && error.details.some((detail) => detail.includes('duplicate library id')),
+  );
+});
+
+test('source config path participates in durable library identity', () => {
+  const catalog = buildImplantCatalog(twoImportedAudit());
+  assert.equal(catalog.libraries.length, 2);
+  assert.notEqual(catalog.libraries[0].id, catalog.libraries[1].id);
 });
