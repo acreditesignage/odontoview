@@ -73,3 +73,14 @@ export {
   loadLocalImplantGeometry,
   registerLocalImplantGeometry,
 } from './localImplantGeometry.js';
+
+export {
+  createVtkPolyDataFromNeutralGeometry,
+  createVtkImplantGeometryBundle,
+  disposeVtkImplantGeometryBundle,
+} from './neutralGeometryToVtk.js';
+
+export {
+  implantGeometrySignature,
+  resolveImplantGeometryRuntime,
+} from './implantViewerGeometryRuntime.js';
