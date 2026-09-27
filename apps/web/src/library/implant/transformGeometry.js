@@ -4,6 +4,8 @@ import {
   validateNeutralGeometry,
 } from './geometrySchema.js';
 
+const EPSILON = 1e-12;
+
 function validatedMatrix(matrix4x4) {
   const matrix = matrix4x4 ?? IDENTITY_MATRIX_4X4;
   if (!Array.isArray(matrix) || matrix.length !== 16 || matrix.some((value) => !Number.isFinite(value))) {
@@ -26,6 +28,26 @@ function computeBounds(positions) {
     }
   }
   return { min, max };
+}
+
+function transformNormals(normals, matrix) {
+  const output = new Float32Array(normals.length);
+  for (let offset = 0; offset < normals.length; offset += 3) {
+    const x = normals[offset];
+    const y = normals[offset + 1];
+    const z = normals[offset + 2];
+    const nx = matrix[0] * x + matrix[4] * y + matrix[8] * z;
+    const ny = matrix[1] * x + matrix[5] * y + matrix[9] * z;
+    const nz = matrix[2] * x + matrix[6] * y + matrix[10] * z;
+    const length = Math.hypot(nx, ny, nz);
+    if (!Number.isFinite(length) || length <= EPSILON) {
+      throw new ImplantGeometryError('INVALID_TRANSFORM', 'Geometry transform collapses a normal vector.');
+    }
+    output[offset] = nx / length;
+    output[offset + 1] = ny / length;
+    output[offset + 2] = nz / length;
+  }
+  return output;
 }
 
 export function transformGeometry(mesh, matrix4x4 = IDENTITY_MATRIX_4X4) {
@@ -55,7 +77,7 @@ export function transformGeometry(mesh, matrix4x4 = IDENTITY_MATRIX_4X4) {
     source: structuredClone(mesh.source),
     safety: structuredClone(mesh.safety),
     positions,
-    normals: new Float32Array(mesh.normals),
+    normals: transformNormals(mesh.normals, matrix),
     indices: new Uint32Array(mesh.indices),
     bounds: computeBounds(positions),
     transform: { matrix },
