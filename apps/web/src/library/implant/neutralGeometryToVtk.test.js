@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 async function loadModule() {
-  return import('./neutralGeometryToVtk.js').catch(() => null);
+  return import('./neutralGeometryToVtk.js');
 }
 
 function mesh() {
@@ -21,7 +21,6 @@ function mesh() {
 
 test('adapter copies neutral positions and triangles into vtk polydata without mutating input', async () => {
   const module = await loadModule();
-  assert.ok(module, 'neutralGeometryToVtk.js must exist');
   const input = mesh();
   const originalPositions = Array.from(input.positions);
   const originalIndices = Array.from(input.indices);
@@ -36,13 +35,11 @@ test('adapter copies neutral positions and triangles into vtk polydata without m
 
 test('adapter rejects invalid neutral geometry with stable code', async () => {
   const module = await loadModule();
-  assert.ok(module);
   assert.throws(() => module.createVtkPolyDataFromNeutralGeometry({ nope: true }), (error) => error?.code === 'INVALID_GEOMETRY_VALUE');
 });
 
 test('mesh bundle applies local calibration before vtk conversion and leaves clinical actor transform at origin', async () => {
   const module = await loadModule();
-  assert.ok(module);
   const transform = [
     1, 0, 0, 0,
     0, 1, 0, 0,
@@ -59,7 +56,6 @@ test('mesh bundle applies local calibration before vtk conversion and leaves cli
 
 test('singular local calibration is rejected through the existing transform pipeline', async () => {
   const module = await loadModule();
-  assert.ok(module);
   const singular = [
     0, 0, 0, 0,
     0, 1, 0, 0,
@@ -74,7 +70,6 @@ test('singular local calibration is rejected through the existing transform pipe
 
 test('vtk bundle disposal is idempotent', async () => {
   const module = await loadModule();
-  assert.ok(module);
   const bundle = module.createVtkImplantGeometryBundle({ mesh: mesh() });
   assert.doesNotThrow(() => module.disposeVtkImplantGeometryBundle(bundle));
   assert.doesNotThrow(() => module.disposeVtkImplantGeometryBundle(bundle));
