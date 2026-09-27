@@ -20,6 +20,15 @@ import vtkRenderer from "@kitware/vtk.js/Rendering/Core/Renderer";
 import vtkSTLReader from "@kitware/vtk.js/IO/Geometry/STLReader";
 import vtkPLYReader from "@kitware/vtk.js/IO/Geometry/PLYReader";
 import {NEODENT_GM_LIBRARY,implantAxisVector} from "./implantLibrary.js";
+import {
+  IDENTITY_MATRIX_4X4,
+  createVtkImplantGeometryBundle,
+  disposeVtkImplantGeometryBundle,
+  makeLocalImplantGeometryKey,
+  registerLocalImplantGeometry,
+  resolveImplantGeometryRuntime,
+  unregisterImplantGeometry
+} from "./library/implant/index.js";
 
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 
@@ -351,7 +360,7 @@ function createParametricImplantBundle(implant,active){
     guide.actor.setOrientation(implant.rx||0,implant.ry||0,implant.rz||0);
     const gp=guide.actor.getProperty();gp.setAmbient(1);gp.setDiffuse(.15);gp.setOpacity(1);
   }
-  return {actor,mapper,poly,points:vtkPts,guide,diameter:implant.diameter,length:implant.length};
+  return {actor,mapper,poly,points:vtkPts,guide,diameter:implant.diameter,length:implant.length,mode:"parametric"};
 }
 
 function createCrosshairBundle(){
@@ -403,6 +412,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   const scanActorRef=useRef(null);
   const scanInitialRef=useRef(null);
   const scanInputRef=useRef(null);
+  const implantGeometryInputRef=useRef(null);
   const crosshairActorsRef=useRef([]);
   const placementDragRef=useRef(false);
   const gpuPrepared=useMemo(()=>prepareGpuVolume(volume,meta,performanceProfile),[volume,meta,performanceProfile]);
@@ -422,6 +432,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   const [scanVisible,setScanVisible]=useState(true);
   const [scanOpacity,setScanOpacity]=useState(.96);
   const [scanTransform,setScanTransform]=useState({x:0,y:0,z:0,rx:0,ry:0,rz:0,scale:1});
+  const [implantGeometryStatus,setImplantGeometryStatus]=useState("");
   const implantActorsRef=useRef(new Map());
   const [implantCatalogId,setImplantCatalogId]=useState(NEODENT_GM_LIBRARY[0]?.id||"");
   const selectedCatalogImplant=useMemo(()=>NEODENT_GM_LIBRARY.find(x=>x.id===implantCatalogId)||NEODENT_GM_LIBRARY[0],[implantCatalogId]);
@@ -445,6 +456,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     setDenseBoost(false);
     setNerveVisible(true);
     setBoneOpacityScale(.18);
+    setImplantGeometryStatus("");
   },[activeImplantId]);
 
   useEffect(()=>{
@@ -535,9 +547,6 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       if(value>=threshold)return [wx,wy,wz];
     }
 
-    // Guaranteed fallback: intersect the click ray with the plane through the current cursor,
-    // perpendicular to the camera direction. This keeps the 3D crosshair movable even when
-    // the volume preset is too translucent to yield a density hit.
     if(cursor){
       const planePoint=[cursor.x*meta.spacingX,cursor.y*meta.spacingY,cursor.z*meta.spacingZ];
       const denom=dir[0]*forward[0]+dir[1]*forward[1]+dir[2]*forward[2];
@@ -604,6 +613,10 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     const renderer=rendererRef.current;
     if(bundle?.actor&&renderer)renderer.removeActor(bundle.actor);
     if(bundle?.guide?.actor&&renderer)renderer.removeActor(bundle.guide.actor);
+    if(bundle?.mode==="mesh"){
+      disposeVtkImplantGeometryBundle(bundle);
+      return;
+    }
     bundle?.actor?.delete?.();bundle?.mapper?.delete?.();bundle?.poly?.delete?.();bundle?.points?.delete?.();
     bundle?.guide?.actor?.delete?.();bundle?.guide?.tube?.delete?.();bundle?.guide?.mapper?.delete?.();bundle?.guide?.poly?.delete?.();bundle?.guide?.pts?.delete?.();bundle?.guide?.lines?.delete?.();
   }
@@ -704,6 +717,42 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     if(scanInitialRef.current)setScanTransform({...scanInitialRef.current});
   }
 
+  async function importActiveImplantGeometry(file){
+    const implant=implants.find(item=>item.id===activeImplantId);
+    if(!file||!implant){
+      setImplantGeometryStatus("Selecione um implante antes de carregar a geometria.");
+      return;
+    }
+    setImplantGeometryStatus("Lendo STL do implante localmente…");
+    try{
+      const bytes=await file.arrayBuffer();
+      const geometryKey=makeLocalImplantGeometryKey({implantId:implant.id});
+      const entry=registerLocalImplantGeometry({geometryKey,filename:file.name,bytes});
+      const diagnostics=entry.diagnostics;
+      const lightDiagnostics={
+        format:diagnostics.format,
+        vertexCount:diagnostics.vertexCount,
+        triangleCount:diagnostics.triangleCount,
+        bounds:{min:[...diagnostics.bounds.min],max:[...diagnostics.bounds.max]},
+        extents:[...diagnostics.extents],
+        center:[...diagnostics.center],
+        unitStatus:"unknown"
+      };
+      onImplantsChange(implants.map(item=>item.id===implant.id?{
+        ...item,
+        geometryKey,
+        geometryMode:"mesh",
+        geometryLocalTransform:Array.isArray(item.geometryLocalTransform)?[...item.geometryLocalTransform]:[...IDENTITY_MATRIX_4X4],
+        geometrySafety:{validatedGeometry:false,redistributionAllowed:"unknown"},
+        geometryProvenance:{sourceKind:"local-file",filename:file.name},
+        geometryDiagnostics:lightDiagnostics
+      }:item));
+      setImplantGeometryStatus(`STL carregado • ${diagnostics.triangleCount.toLocaleString("pt-BR")} triângulos • unidade ainda desconhecida.`);
+    }catch(e){
+      setImplantGeometryStatus(`Falha no STL • ${e?.code||"GEOMETRY_ERROR"}: ${e?.message||"arquivo inválido"}`);
+    }
+  }
+
   function addImplant(){
     const item=selectedCatalogImplant,m=metaRefFallback();
     if(!item||!m)return;
@@ -734,6 +783,8 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   }
   function removeActiveImplant(){
     if(!activeImplantId)return;
+    const removing=implants.find(item=>item.id===activeImplantId);
+    if(removing?.geometryKey)unregisterImplantGeometry(removing.geometryKey);
     const next=implants.filter(item=>item.id!==activeImplantId);
     onImplantsChange(next);onActiveImplantChange(next[0]?.id||null);
   }
@@ -843,7 +894,6 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     const renderer=generic.getRenderer();
     const renderWindow=generic.getRenderWindow();
 
-    // Clinical overlay: implant + mandibular nerve must remain visible through the volume.
     renderWindow.setNumberOfLayers(2);
     const overlayRenderer=vtkRenderer.newInstance();
     overlayRenderer.setLayer(1);
@@ -1047,17 +1097,32 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     });
     implants.forEach(implant=>{
       const active=implant.id===activeImplantId;
+      const runtime=resolveImplantGeometryRuntime(implant);
+      const desiredSignature=runtime.signature;
       let bundle=implantActorsRef.current.get(implant.id);
-      const geometryChanged=!bundle||bundle.diameter!==implant.diameter||bundle.length!==implant.length;
+      const geometryChanged=!bundle||bundle.geometrySignature!==desiredSignature;
       if(geometryChanged){
         if(bundle)disposeImplantBundle(bundle);
-        bundle=createParametricImplantBundle(implant,active);
+        bundle=null;
+        if(runtime.mode==="mesh"){
+          try{
+            bundle=createVtkImplantGeometryBundle({mesh:runtime.entry.mesh,localTransform:runtime.localTransform,active});
+            bundle.geometrySignature=desiredSignature;
+            bundle.mode="mesh";
+          }catch(e){
+            if(implant.id===activeImplantId)setImplantGeometryStatus(`Fallback paramétrico • ${e?.code||"GEOMETRY_ERROR"}: ${e?.message||"falha ao criar actor VTK"}`);
+          }
+        }
+        if(!bundle){
+          bundle=createParametricImplantBundle(implant,active);
+          bundle.geometrySignature=desiredSignature;
+          bundle.mode="parametric";
+        }
         renderer.addActor(bundle.actor);
         if(bundle.guide?.actor)renderer.addActor(bundle.guide.actor);
         implantActorsRef.current.set(implant.id,bundle);
-      }else{
-        updateImplantBundle(bundle,implant,active);
       }
+      updateImplantBundle(bundle,implant,active);
     });
     renderer.resetCameraClippingRange();
     renderNow();
@@ -1072,8 +1137,11 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     setTimeout(()=>setView("presentation"),0);
   }
 
+  const activeGeometryDiagnostics=activeImplant?.geometryDiagnostics||null;
+  const activeMesh=activeImplant?.geometryMode==="mesh"&&Boolean(activeImplant?.geometryKey);
+
   return <div className="viewer3d-panel viewer3d-v2">
-    <div className={"viewer3d-stage "+(interactionMode!=="camera"?"is-picking":"")} ref={hostRef}
+    <div className={"viewer3d-stage "+(interactionMode!=="camera"?"is-picking":"")} ref={hostRef} data-implant-geometry-mode={activeMesh?"mesh":"parametric"}
       onPointerDownCapture={onStagePointerDownCapture}
       onPointerMoveCapture={onStagePointerMoveCapture}
       onPointerUpCapture={onStagePointerUpCapture}
@@ -1125,7 +1193,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       </div>
       <div className="viewer3d-implant-planner">
         <div className="viewer3d-implant-head">
-          <div><strong>Planejamento de implante • Beta</strong><small>Neodent Grand Morse • corpo cônico + rosca helicoidal beta</small></div>
+          <div><strong>Planejamento de implante • Beta</strong><small>Neodent Grand Morse • geometria paramétrica ou STL local</small></div>
           <button type="button" className="viewer3d-add-implant" onClick={addImplant}>＋ Inserir no cursor</button>
         </div>
         <label className="viewer3d-implant-select">
@@ -1136,14 +1204,23 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
             </optgroup>)}
           </select>
         </label>
-        <div className="viewer3d-implant-warning">Geometria beta procedural com corpo cônico e rosca helicoidal visual. Diâmetro/comprimento são nominais; rosca e superfície ainda não são a geometria oficial do fabricante e não devem orientar cirurgia.</div>
+        <div className="viewer3d-implant-warning">Sem STL local, o OdontoView usa a geometria beta procedural. Um STL carregado é apenas geometria visual local: renderização não equivale a validação dimensional ou clínica.</div>
         {implants.length>0&&<div className="viewer3d-implant-list">
           {implants.map((item,index)=><button type="button" key={item.id} className={item.id===activeImplantId?"active":""} onClick={()=>onActiveImplantChange(item.id)}>
-            <b>#{index+1}</b><span>{item.familyLabel} • {item.model}</span><small>Ø {item.diameter} × {item.length} mm</small>
+            <b>#{index+1}</b><span>{item.familyLabel} • {item.model}</span><small>Ø {item.diameter} × {item.length} mm • {item.geometryMode==="mesh"?"STL local":"paramétrico"}</small>
           </button>)}
         </div>}
         {activeImplant&&<div className="viewer3d-implant-tools">
           <div className="viewer3d-implant-summary"><strong>{activeImplant.model}</strong><span>Ø {activeImplant.diameter} × {activeImplant.length} mm</span></div>
+          <input ref={implantGeometryInputRef} type="file" accept=".stl" hidden onChange={e=>{const file=e.target.files?.[0];if(file)importActiveImplantGeometry(file);e.target.value=""}}/>
+          <div className="viewer3d-implant-geometry" data-implant-geometry-status={activeMesh?"mesh":"parametric"}>
+            <button type="button" onClick={()=>implantGeometryInputRef.current?.click()}>{activeMesh?"Trocar STL do implante":"Carregar STL do implante"}</button>
+            <strong>{activeMesh?"Geometria real local":"Geometria paramétrica beta"}</strong>
+            {activeMesh&&<small>{activeImplant.geometryProvenance?.filename||"STL local"} • {activeGeometryDiagnostics?.format||"STL"} • {activeGeometryDiagnostics?.triangleCount?.toLocaleString?.("pt-BR")||"—"} triângulos</small>}
+            {activeMesh&&activeGeometryDiagnostics&&<small>Extensões brutas: {activeGeometryDiagnostics.extents.map(v=>Number(v).toFixed(3)).join(" × ")} • Unidade STL: desconhecida</small>}
+            {activeMesh&&<small>validatedGeometry: false • redistributionAllowed: unknown</small>}
+            {implantGeometryStatus&&<small>{implantGeometryStatus}</small>}
+          </div>
           <section className={"viewer3d-nerve-clearance "+(!activeNerveClearance?"unavailable":nerveMarginDelta>=0?"within":"below")}>
             <div className="viewer3d-nerve-clearance-head">
               <span>Distância implante ↔ nervo</span>
@@ -1159,7 +1236,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
                 <input type="range" min=".5" max="5" step=".25" value={nerveSafetyMargin} onChange={e=>setNerveSafetyMargin(Number(e.target.value))}/>
                 <b>{nerveSafetyMargin.toFixed(2)} mm</b>
               </label>
-              <small>Estimativa geométrica da superfície nominal do implante até o traçado central do nervo. O traçado manual/assistido não representa a parede real do canal mandibular.</small>
+              <small>Estimativa geométrica da superfície nominal por diâmetro/comprimento até o traçado central do nervo. Não é colisão triangular da STL; o traçado manual/assistido não representa a parede real do canal mandibular.</small>
             </>:<small>Marque pelo menos 2 pontos do nervo para calcular a distância em milímetros.</small>}
           </section>
           <span>Posição fina • 0,25 mm — ajuste nos cortes ou use “Posicionar implante” diretamente no 3D</span>
