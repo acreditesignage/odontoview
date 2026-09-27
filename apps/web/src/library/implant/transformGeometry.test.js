@@ -24,6 +24,13 @@ function mesh() {
   };
 }
 
+function assertArrayClose(actual, expected, tolerance = 1e-6) {
+  assert.equal(actual.length, expected.length);
+  actual.forEach((value, index) => {
+    assert.ok(Math.abs(value - expected[index]) <= tolerance, `index ${index}: expected ${expected[index]}, got ${value}`);
+  });
+}
+
 test('identity transform preserves positions and topology without mutating input', async () => {
   const module = await loadTransform();
   assert.ok(module, 'transformGeometry.js must exist');
@@ -58,4 +65,23 @@ test('translation moves positions and bounds but not normals', async () => {
   assert.deepEqual(output.bounds, { min: [2, 3, 4], max: [3, 4, 4] });
   assert.deepEqual(output.transform.matrix, matrix);
   assert.deepEqual(Array.from(input.positions), [0, 0, 0, 1, 0, 0, 0, 1, 0]);
+});
+
+test('rotation transforms both positions and normals predictably', async () => {
+  const module = await loadTransform();
+  assert.ok(module);
+  const input = mesh();
+  input.normals = new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0]);
+  const matrix = [
+    0, 1, 0, 0,
+    -1, 0, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  ];
+
+  const output = module.transformGeometry(input, matrix);
+
+  assertArrayClose(Array.from(output.positions), [0, 0, 0, 0, 1, 0, -1, 0, 0]);
+  assertArrayClose(Array.from(output.normals), [0, 1, 0, 0, 1, 0, 0, 1, 0]);
+  assert.deepEqual(output.bounds, { min: [-1, 0, 0], max: [0, 1, 0] });
 });
