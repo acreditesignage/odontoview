@@ -30,15 +30,52 @@ function computeBounds(positions) {
   return { min, max };
 }
 
+function inverseTranspose3x3(matrix) {
+  const a00 = matrix[0], a01 = matrix[4], a02 = matrix[8];
+  const a10 = matrix[1], a11 = matrix[5], a12 = matrix[9];
+  const a20 = matrix[2], a21 = matrix[6], a22 = matrix[10];
+
+  const determinant = a00 * (a11 * a22 - a12 * a21)
+    - a01 * (a10 * a22 - a12 * a20)
+    + a02 * (a10 * a21 - a11 * a20);
+
+  if (!Number.isFinite(determinant) || Math.abs(determinant) <= EPSILON) {
+    throw new ImplantGeometryError(
+      'INVALID_TRANSFORM',
+      'Geometry transform has a singular linear component and cannot transform normals.',
+    );
+  }
+
+  const inverse = [
+    (a11 * a22 - a12 * a21) / determinant,
+    (a02 * a21 - a01 * a22) / determinant,
+    (a01 * a12 - a02 * a11) / determinant,
+    (a12 * a20 - a10 * a22) / determinant,
+    (a00 * a22 - a02 * a20) / determinant,
+    (a02 * a10 - a00 * a12) / determinant,
+    (a10 * a21 - a11 * a20) / determinant,
+    (a01 * a20 - a00 * a21) / determinant,
+    (a00 * a11 - a01 * a10) / determinant,
+  ];
+
+  return [
+    inverse[0], inverse[3], inverse[6],
+    inverse[1], inverse[4], inverse[7],
+    inverse[2], inverse[5], inverse[8],
+  ];
+}
+
 function transformNormals(normals, matrix) {
+  const normalMatrix = inverseTranspose3x3(matrix);
   const output = new Float32Array(normals.length);
+
   for (let offset = 0; offset < normals.length; offset += 3) {
     const x = normals[offset];
     const y = normals[offset + 1];
     const z = normals[offset + 2];
-    const nx = matrix[0] * x + matrix[4] * y + matrix[8] * z;
-    const ny = matrix[1] * x + matrix[5] * y + matrix[9] * z;
-    const nz = matrix[2] * x + matrix[6] * y + matrix[10] * z;
+    const nx = normalMatrix[0] * x + normalMatrix[1] * y + normalMatrix[2] * z;
+    const ny = normalMatrix[3] * x + normalMatrix[4] * y + normalMatrix[5] * z;
+    const nz = normalMatrix[6] * x + normalMatrix[7] * y + normalMatrix[8] * z;
     const length = Math.hypot(nx, ny, nz);
     if (!Number.isFinite(length) || length <= EPSILON) {
       throw new ImplantGeometryError('INVALID_TRANSFORM', 'Geometry transform collapses a normal vector.');
