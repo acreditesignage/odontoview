@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test:implant-library": "node --test src/library/implant/*.test.js"
+    "test:implant-library": "node --test src/library/implant/*.test.js src/*.test.js"
   },
   "dependencies": {
     "vite": "6.1.0",
