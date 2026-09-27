@@ -1,4 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from "react";
+import ImplantTransformGizmo from "./ImplantTransformGizmo.jsx";
 import "@kitware/vtk.js/Rendering/Profiles/Volume";
 import "@kitware/vtk.js/Rendering/Profiles/Geometry";
 
@@ -591,6 +592,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
   }
 
   function onStagePointerDownCapture(event){
+    if(event.target?.closest?.("[data-implant-gizmo]"))return;
     if(interactionMode==="camera")return;
     event.preventDefault();event.stopPropagation();
     placementDragRef.current=true;
@@ -598,11 +600,13 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
     pickFromPointer(event);
   }
   function onStagePointerMoveCapture(event){
+    if(event.target?.closest?.("[data-implant-gizmo]"))return;
     if(interactionMode==="camera"||!placementDragRef.current)return;
     event.preventDefault();event.stopPropagation();
     if(event.buttons)pickFromPointer(event);
   }
   function onStagePointerUpCapture(event){
+    if(event.target?.closest?.("[data-implant-gizmo]"))return;
     if(interactionMode==="camera")return;
     event.preventDefault();event.stopPropagation();
     placementDragRef.current=false;
@@ -1149,6 +1153,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
       {!ready&&<div className="viewer3d-loading"><span className="viewer3d-orbit">◌</span><strong>OdontoView 3D Engine v2</strong><small>{status}</small></div>}
       {ready&&<div className="viewer3d-status">{status}</div>}
       {ready&&<div className="viewer3d-engine-badge">{gpuPrepared.optimized?"VTK.js • GPU • "+(performanceProfile==="tablet"?"TABLET":"MOBILE"):"VTK.js • GPU"}</div>}
+      {activeImplant&&<ImplantTransformGizmo implant={activeImplant} onChange={updateActiveImplant}/>}
     </div>
     <div className="viewer3d-controls">
       <div className="viewer3d-quickbar">
@@ -1239,6 +1244,8 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
               <small>Estimativa geométrica da superfície nominal por diâmetro/comprimento até o traçado central do nervo. Não é colisão triangular da STL; o traçado manual/assistido não representa a parede real do canal mandibular.</small>
             </>:<small>Marque pelo menos 2 pontos do nervo para calcular a distância em milímetros.</small>}
           </section>
+          <details className="viewer3d-implant-precision">
+            <summary>Ajuste numérico de precisão</summary>
           <span>Posição fina • 0,25 mm — ajuste nos cortes ou use “Posicionar implante” diretamente no 3D</span>
           <div><button onClick={()=>moveImplant("x",-.25)}>X−</button><button onClick={()=>moveImplant("x",.25)}>X+</button><button onClick={()=>moveImplant("y",-.25)}>Y−</button><button onClick={()=>moveImplant("y",.25)}>Y+</button><button onClick={()=>moveImplant("z",-.25)}>Z−</button><button onClick={()=>moveImplant("z",.25)}>Z+</button></div>
           <span>Direção inicial do implante</span>
@@ -1250,6 +1257,7 @@ export default function Viewer3DPanel({volume,meta,nervePoints=[],curve=[],curso
             <label>Rotação Y <input type="range" min="-180" max="180" step="1" value={activeImplant.ry||0} onChange={e=>updateActiveImplant({ry:Number(e.target.value)})}/><b>{Math.round(activeImplant.ry||0)}°</b></label>
             <label>Rotação Z <input type="range" min="-180" max="180" step="1" value={activeImplant.rz||0} onChange={e=>updateActiveImplant({rz:Number(e.target.value)})}/><b>{Math.round(activeImplant.rz||0)}°</b></label>
           </div>
+          </details>
           <button type="button" className="viewer3d-remove-implant" onClick={removeActiveImplant}>Remover implante</button>
         </div>}
       </div>
