@@ -50,3 +50,13 @@ export {
   listCatalogSystems,
   listCatalogVariants,
 } from './catalogSelectors.js';
+
+export {
+  IDENTITY_MATRIX_4X4,
+  IMPLANT_GEOMETRY_SCHEMA_VERSION,
+  ImplantGeometryError,
+  validateNeutralGeometry,
+} from './geometrySchema.js';
+
+export { loadStlGeometry } from './loadStlGeometry.js';
+export { transformGeometry } from './transformGeometry.js';
