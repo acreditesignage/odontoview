@@ -32,9 +32,64 @@ function clone(value) {
   return structuredClone(value);
 }
 
+function resolutionKey(role, reference) {
+  return `${String(role ?? '').toLowerCase()}\u0000${normalizePath(reference).toLowerCase()}`;
+}
+
+function geometryResolutionIndex(entry) {
+  const index = new Map();
+  for (const bucket of ['resolved', 'missing', 'ambiguous']) {
+    for (const item of entry?.geometry?.[bucket] ?? []) {
+      const key = resolutionKey(item?.role, item?.reference);
+      if (!index.has(key)) index.set(key, item);
+    }
+  }
+  return index;
+}
+
+function enrichGeometryMap(geometry, resolutionIndex) {
+  if (!geometry || typeof geometry !== 'object' || Array.isArray(geometry)) return;
+
+  for (const [geometryRole, asset] of Object.entries(geometry)) {
+    if (!asset || typeof asset !== 'object' || Array.isArray(asset)) continue;
+    const role = asset.role ?? geometryRole;
+    const resolution = resolutionIndex.get(resolutionKey(role, asset.filename));
+    if (!resolution) continue;
+
+    asset.reference = resolution.reference ?? asset.filename;
+    asset.resolution = resolution.resolution;
+
+    if (resolution.resolution === 'resolved') {
+      asset.matchedPath = resolution.matchedPath;
+      delete asset.candidates;
+    } else if (resolution.resolution === 'ambiguous') {
+      asset.candidates = clone(resolution.candidates ?? []);
+      delete asset.matchedPath;
+    } else {
+      delete asset.matchedPath;
+      delete asset.candidates;
+    }
+  }
+}
+
+function enrichLibraryGeometry(library, entry) {
+  const resolutionIndex = geometryResolutionIndex(entry);
+  enrichGeometryMap(library.geometry, resolutionIndex);
+
+  for (const component of library.components ?? []) {
+    enrichGeometryMap(component?.geometry, resolutionIndex);
+    for (const variant of component?.variants ?? []) {
+      enrichGeometryMap(variant?.geometry, resolutionIndex);
+    }
+  }
+}
+
 function catalogLibrary(entry) {
+  const library = clone(entry.library);
+  enrichLibraryGeometry(library, entry);
+
   return {
-    ...clone(entry.library),
+    ...library,
     id: `implant-library-${stableHash(libraryIdentity(entry))}`,
     sourcePath: normalizePath(entry.path),
     warnings: clone(entry.warnings ?? []),
