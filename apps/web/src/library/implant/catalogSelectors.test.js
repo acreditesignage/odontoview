@@ -125,3 +125,17 @@ test('unknown selector ids return empty arrays', () => {
   assert.deepEqual(listCatalogVariants(catalog, 'missing-component'), []);
   assert.deepEqual(getVariantGeometryAssets(catalog, 'missing-variant'), []);
 });
+
+test('resolved-only variant geometry returns only assets with a resolved package path', () => {
+  const catalog = selectorCatalog();
+  const assets = getVariantGeometryAssets(
+    catalog,
+    'sin-interface-standard',
+    { resolvedOnly: true },
+  );
+
+  assert.equal(assets.length, 1);
+  assert.equal(assets[0].id, 'sin-resolved');
+  assert.equal(assets[0].resolution, 'resolved');
+  assert.equal(assets[0].matchedPath, 'implant/SIN/SIN-SUPPORT.STL');
+});
