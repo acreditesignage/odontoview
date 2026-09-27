@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import {BrowserRouter} from "react-router-dom";
-import App from "./App.jsx";
+import AppEntry from "./AppEntry.jsx";
 import "./styles.css";
 
 class AppErrorBoundary extends React.Component{
@@ -68,6 +68,6 @@ window.__ODONTOVIEW_STARTED__=true;
  */
 ReactDOM.createRoot(rootEl).render(
   <AppErrorBoundary>
-    <BrowserRouter><App/></BrowserRouter>
+    <BrowserRouter><AppEntry/></BrowserRouter>
   </AppErrorBoundary>
 );
