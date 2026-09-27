@@ -50,3 +50,18 @@ jobs:
       - name: Web build
         working-directory: apps/web
         run: npm run build
+      - name: Web geometry lab visual smoke
+        working-directory: apps/web
+        run: |
+          set -euo pipefail
+          npm run preview -- --host 127.0.0.1 --port 4173 >/tmp/odontoview-geometry-lab-vite.log 2>&1 &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true' EXIT
+          node scripts/smoke-implant-geometry-lab.mjs
+      - name: Upload geometry lab smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: implant-geometry-lab-smoke
+          path: apps/web/implant-geometry-lab-smoke/*.png
+          if-no-files-found: warn
