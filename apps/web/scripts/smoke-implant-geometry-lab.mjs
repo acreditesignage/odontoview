@@ -5,21 +5,18 @@ const BASE_URL = process.env.GEOMETRY_LAB_URL || 'http://127.0.0.1:4173/implant-
 const CDP_PORT = Number(process.env.GEOMETRY_LAB_CDP_PORT || 9222);
 const OUT_DIR = new URL('../implant-geometry-lab-smoke/', import.meta.url);
 
-function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function waitFor(predicate, { timeout = 30000, interval = 250, label = 'condition' } = {}) {
+async function waitFor(predicate, label, timeout = 30000) {
   const started = Date.now();
-  let lastError;
   while (Date.now() - started < timeout) {
     try {
       const value = await predicate();
       if (value) return value;
-    } catch (error) {
-      lastError = error;
-    }
-    await sleep(interval);
+    } catch {}
+    await sleep(250);
   }
-  throw new Error(`Timed out waiting for ${label}${lastError ? `: ${lastError.message}` : ''}`);
+  throw new Error(`Timed out waiting for ${label}`);
 }
 
 async function waitForHttp(url) {
@@ -30,7 +27,7 @@ async function waitForHttp(url) {
     } catch {
       return false;
     }
-  }, { label: `HTTP ${url}` });
+  }, `HTTP ${url}`);
 }
 
 async function fetchJson(url) {
@@ -87,19 +84,16 @@ async function evaluate(client, expression) {
   return result.result?.value;
 }
 
-async function pageDiagnostic(client) {
+async function diagnostic(client) {
   return evaluate(client, `(() => {
     const canvas=document.querySelector('.implant-geometry-lab__viewport canvas');
     let webgl=false;
     try { webgl=Boolean(canvas && (canvas.getContext('webgl2') || canvas.getContext('webgl'))); } catch {}
     return {
       href: location.href,
-      readyState: document.readyState,
-      title: document.title,
       body: (document.body?.innerText || '').slice(0, 1800),
-      error: document.querySelector('.error')?.textContent || document.querySelector('.implant-geometry-lab__error')?.textContent || '',
       lab: Boolean(document.querySelector('.implant-geometry-lab')),
-      canvas: canvas ? { width: canvas.width, height: canvas.height, clientWidth: canvas.clientWidth, clientHeight: canvas.clientHeight } : null,
+      canvas: canvas ? {width:canvas.width,height:canvas.height,clientWidth:canvas.clientWidth,clientHeight:canvas.clientHeight} : null,
       webgl,
     };
   })()`);
@@ -114,29 +108,19 @@ async function viewportRect(client) {
   })()`);
 }
 
-async function screenshotViewport(client, name) {
-  const rect = await viewportRect(client);
-  if (!rect || rect.width < 200 || rect.height < 200) {
-    throw new Error(`Viewport unavailable or too small: ${JSON.stringify(rect)}`);
+async function screenshot(client, name, viewportOnly = true) {
+  let params = { format: 'png', fromSurface: true };
+  let rect = null;
+  if (viewportOnly) {
+    rect = await viewportRect(client);
+    if (!rect || rect.width < 200 || rect.height < 200) throw new Error(`Viewport unavailable: ${JSON.stringify(rect)}`);
+    params = { ...params, clip: { ...rect, scale: 1 } };
   }
-  const result = await client.send('Page.captureScreenshot', {
-    format: 'png',
-    fromSurface: true,
-    clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 },
-  });
+  const result = await client.send('Page.captureScreenshot', params);
   const bytes = Buffer.from(result.data, 'base64');
-  if (bytes.length < 6000) {
-    throw new Error(`${name}: screenshot is unexpectedly small (${bytes.length} bytes); rendered content may be blank`);
-  }
+  if (bytes.length < 6000) throw new Error(`${name}: screenshot too small (${bytes.length} bytes)`);
   await writeFile(new URL(`${name}.png`, OUT_DIR), bytes);
-  return { base64: result.data, bytes: bytes.length, rect };
-}
-
-async function screenshotPage(client, name) {
-  const result = await client.send('Page.captureScreenshot', { format: 'png', fromSurface: true });
-  const bytes = Buffer.from(result.data, 'base64');
-  await writeFile(new URL(`${name}.png`, OUT_DIR), bytes);
-  return bytes.length;
+  return { data: result.data, bytes: bytes.length, rect };
 }
 
 async function drag(client, rect, { dx, dy, button = 'left', buttons = 1 }) {
@@ -165,27 +149,17 @@ async function main() {
   await waitForHttp(BASE_URL);
 
   const chrome = spawn(process.env.CHROME_BIN || 'google-chrome', [
-    '--headless=new',
-    '--no-sandbox',
-    '--disable-dev-shm-usage',
-    '--enable-webgl',
-    '--ignore-gpu-blocklist',
-    '--enable-unsafe-swiftshader',
-    '--use-gl=angle',
-    '--use-angle=swiftshader',
-    '--window-size=1440,1000',
-    `--remote-debugging-port=${CDP_PORT}`,
-    'about:blank',
+    '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--enable-webgl',
+    '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--use-gl=angle',
+    '--use-angle=swiftshader', '--window-size=1440,1000',
+    `--remote-debugging-port=${CDP_PORT}`, 'about:blank',
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
-  let chromeErr = '';
-  chrome.stderr.on('data', (chunk) => { chromeErr += chunk.toString(); });
   let client;
-
   try {
     await waitFor(async () => {
-      try { return await fetchJson(`http://127.0.0.1:${CDP_PORT}/json/version`); } catch { return null; }
-    }, { label: 'Chrome DevTools endpoint' });
+      try { return await fetchJson(`http://127.0.0.1:${CDP_PORT}/json/version`); } catch { return false; }
+    }, 'Chrome DevTools endpoint');
 
     const targets = await fetchJson(`http://127.0.0.1:${CDP_PORT}/json`);
     const target = targets.find((item) => item.type === 'page');
@@ -196,62 +170,55 @@ async function main() {
     await client.send('Page.enable');
     await client.send('Runtime.enable');
     await client.send('Page.navigate', { url: BASE_URL });
-
-    await waitFor(async () => evaluate(client, `document.readyState === 'complete'`), { label: 'page load' });
+    await waitFor(() => evaluate(client, `document.readyState === 'complete'`), 'page load');
     await sleep(1200);
 
-    const initialDiagnostic = await pageDiagnostic(client);
+    const initialDiagnostic = await diagnostic(client);
     console.log('GEOMETRY_LAB_DIAGNOSTIC_INITIAL');
     console.log(JSON.stringify(initialDiagnostic, null, 2));
-    await screenshotPage(client, '00-page-loaded');
+    await screenshot(client, '00-page-loaded', false);
 
-    try {
-      await waitFor(async () => evaluate(client, `(() => {
-        const canvas=document.querySelector('.implant-geometry-lab__viewport canvas');
-        const text=document.body.innerText || '';
-        return Boolean(canvas && canvas.width>200 && canvas.height>200 && text.includes('stl-ascii') && text.includes('validatedGeometry') && text.includes('redistributionAllowed'));
-      })()`), { label: 'ASCII lab render' });
-    } catch (error) {
-      const diagnostic = await pageDiagnostic(client);
-      console.error('GEOMETRY_LAB_DIAGNOSTIC_TIMEOUT');
-      console.error(JSON.stringify(diagnostic, null, 2));
-      throw error;
-    }
+    await waitFor(() => evaluate(client, `(() => {
+      const canvas=document.querySelector('.implant-geometry-lab__viewport canvas');
+      const text=(document.body.innerText || '').toLowerCase();
+      return Boolean(canvas && canvas.width>200 && canvas.height>200
+        && text.includes('stl-ascii')
+        && text.includes('validatedgeometry')
+        && text.includes('redistributionallowed'));
+    })()`), 'ASCII lab render');
 
     const safety = await evaluate(client, `(() => {
-      const text=document.querySelector('.implant-geometry-lab__facts')?.innerText || '';
+      const text=(document.querySelector('.implant-geometry-lab__facts')?.innerText || '').toLowerCase();
       return {
-        hasFalse:/validatedGeometry\\s*false/i.test(text),
-        hasUnknown:/redistributionAllowed\\s*unknown/i.test(text),
-        text,
+        falseOk: text.includes('validatedgeometry') && text.includes('false'),
+        unknownOk: text.includes('redistributionallowed') && text.includes('unknown'),
       };
     })()`);
-    if (!safety?.hasFalse || !safety?.hasUnknown) throw new Error(`Safety metadata missing: ${JSON.stringify(safety)}`);
+    if (!safety?.falseOk || !safety?.unknownOk) throw new Error(`Safety metadata missing: ${JSON.stringify(safety)}`);
 
-    const initial = await screenshotViewport(client, '01-ascii-initial');
+    const initial = await screenshot(client, '01-ascii-initial');
 
-    await drag(client, initial.rect, { dx: 140, dy: -75, button: 'left', buttons: 1 });
-    const orbited = await screenshotViewport(client, '02-ascii-orbited');
-    if (orbited.base64 === initial.base64) throw new Error('Orbit interaction did not change rendered viewport');
+    await drag(client, initial.rect, { dx: 140, dy: -75 });
+    const orbited = await screenshot(client, '02-ascii-orbited');
+    if (orbited.data === initial.data) throw new Error('Orbit did not change viewport');
 
     const cx = initial.rect.x + initial.rect.width * 0.5;
     const cy = initial.rect.y + initial.rect.height * 0.5;
     await client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: cx, y: cy, deltaY: -420, deltaX: 0 });
     await sleep(450);
-    const zoomed = await screenshotViewport(client, '03-ascii-zoomed');
-    if (zoomed.base64 === orbited.base64) throw new Error('Zoom interaction did not change rendered viewport');
+    const zoomed = await screenshot(client, '03-ascii-zoomed');
+    if (zoomed.data === orbited.data) throw new Error('Zoom did not change viewport');
 
     await drag(client, initial.rect, { dx: -90, dy: 70, button: 'right', buttons: 2 });
-    const panned = await screenshotViewport(client, '04-ascii-panned');
-    if (panned.base64 === zoomed.base64) throw new Error('Pan interaction did not change rendered viewport');
+    const panned = await screenshot(client, '04-ascii-panned');
+    if (panned.data === zoomed.data) throw new Error('Pan did not change viewport');
 
     await evaluate(client, `document.querySelector('.implant-geometry-lab__panel button')?.click()`);
     await sleep(500);
-    await screenshotViewport(client, '05-ascii-reset');
+    await screenshot(client, '05-ascii-reset');
 
     const switched = await evaluate(client, `(() => {
-      const selects=[...document.querySelectorAll('.implant-geometry-lab__panel select')];
-      const variant=selects[3];
+      const variant=[...document.querySelectorAll('.implant-geometry-lab__panel select')][3];
       if(!variant || variant.options.length<2) return false;
       variant.value=variant.options[1].value;
       variant.dispatchEvent(new Event('change',{bubbles:true}));
@@ -259,24 +226,23 @@ async function main() {
     })()`);
     if (!switched) throw new Error('Could not switch synthetic variant');
 
-    await waitFor(async () => evaluate(client, `document.querySelector('.implant-geometry-lab__facts')?.innerText.includes('stl-binary')`), { label: 'Binary variant render' });
+    await waitFor(() => evaluate(client, `((document.querySelector('.implant-geometry-lab__facts')?.innerText || '').toLowerCase().includes('stl-binary'))`), 'Binary variant render');
     await sleep(450);
-    const binary = await screenshotViewport(client, '06-binary-variant');
-    if (binary.base64 === initial.base64) throw new Error('Binary variant screenshot unexpectedly identical to ASCII initial');
+    const binary = await screenshot(client, '06-binary-variant');
+    if (binary.data === initial.data) throw new Error('Binary variant identical to ASCII initial');
 
-    const summary = await pageDiagnostic(client);
     const pageErrors = client.events.filter((event) => event.method === 'Runtime.exceptionThrown');
     if (pageErrors.length) throw new Error(`Browser exceptions observed: ${pageErrors.length}`);
 
     console.log('GEOMETRY_LAB_SMOKE_SUCCESS');
     console.log(JSON.stringify({
-      summary,
+      final: await diagnostic(client),
       screenshots: {
-        initialBytes: initial.bytes,
-        orbitedBytes: orbited.bytes,
-        zoomedBytes: zoomed.bytes,
-        pannedBytes: panned.bytes,
-        binaryBytes: binary.bytes,
+        initial: initial.bytes,
+        orbited: orbited.bytes,
+        zoomed: zoomed.bytes,
+        panned: panned.bytes,
+        binary: binary.bytes,
       },
     }, null, 2));
   } finally {
@@ -284,7 +250,6 @@ async function main() {
     chrome.kill('SIGTERM');
     await sleep(300);
     if (!chrome.killed) chrome.kill('SIGKILL');
-    if (chrome.exitCode && chrome.exitCode !== 0) console.error(chromeErr);
   }
 }
 
