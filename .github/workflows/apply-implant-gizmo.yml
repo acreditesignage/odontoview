@@ -1,0 +1,37 @@
+name: Apply Implant Gizmo
+
+on:
+  push:
+    branches:
+      - feat/entrega-1-odonto-view-network
+    paths:
+      - scripts/apply-implant-gizmo.mjs
+      - .github/workflows/apply-implant-gizmo.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/entrega-1-odonto-view-network
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply approved implant gizmo migration
+        run: node scripts/apply-implant-gizmo.mjs
+      - name: Commit generated gizmo integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/src/Viewer3DPanel.jsx apps/web/src/styles.css
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "feat(viewer): integrate visual implant gizmo"
+          git push origin HEAD:feat/entrega-1-odonto-view-network
