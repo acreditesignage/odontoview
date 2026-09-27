@@ -60,3 +60,10 @@ export {
 
 export { loadStlGeometry } from './loadStlGeometry.js';
 export { transformGeometry } from './transformGeometry.js';
+
+export {
+  registerImplantGeometry,
+  getImplantGeometry,
+  unregisterImplantGeometry,
+  clearImplantGeometryRegistry,
+} from './implantGeometryRegistry.js';
