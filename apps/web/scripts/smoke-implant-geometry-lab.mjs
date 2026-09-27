@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 
-const URL = process.env.GEOMETRY_LAB_URL || 'http://127.0.0.1:4173/implant-geometry-lab';
+const BASE_URL = process.env.GEOMETRY_LAB_URL || 'http://127.0.0.1:4173/implant-geometry-lab';
 const PORT = Number(process.env.GEOMETRY_LAB_CDP_PORT || 9222);
 const OUT = new URL('../implant-geometry-lab-smoke/', import.meta.url);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -96,7 +96,7 @@ async function facts(cdp) {
 
 async function main() {
   await mkdir(OUT, { recursive: true });
-  await waitFor(async () => { try { const r=await fetch(URL); return r.ok; } catch { return false; } }, 'Vite preview');
+  await waitFor(async () => { try { const r=await fetch(BASE_URL); return r.ok; } catch { return false; } }, 'Vite preview');
 
   const chrome = spawn(process.env.CHROME_BIN || 'google-chrome', [
     '--headless=new','--no-sandbox','--disable-dev-shm-usage','--enable-webgl','--ignore-gpu-blocklist',
@@ -109,7 +109,7 @@ async function main() {
     const target = (await json(`http://127.0.0.1:${PORT}/json`)).find((item) => item.type === 'page');
     if (!target?.webSocketDebuggerUrl) throw new Error('Chrome page target unavailable');
     cdp = new Cdp(target.webSocketDebuggerUrl); await cdp.open();
-    await cdp.send('Page.enable'); await cdp.send('Runtime.enable'); await cdp.send('Page.navigate', { url: URL });
+    await cdp.send('Page.enable'); await cdp.send('Runtime.enable'); await cdp.send('Page.navigate', { url: BASE_URL });
     await waitFor(() => evalJs(cdp, `document.readyState==='complete'`), 'page load');
     await sleep(1200);
 
