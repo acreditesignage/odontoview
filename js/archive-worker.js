@@ -4,6 +4,7 @@ self.onmessage = async ({data}) => {
   try {
     const Module = await libarchive({locateFile: name => new URL('../vendor/libarchive/'+name, self.location.href).href});
     const result = OdontoArchiveCore.extract(Module, await data.file.arrayBuffer(), {
+      mode:data.mode || 'dicom',
       onProgress: progress => self.postMessage({type:'progress', ...progress})
     });
     self.postMessage({type:'done', files:result.files}, result.files.map(file=>file.buffer));
