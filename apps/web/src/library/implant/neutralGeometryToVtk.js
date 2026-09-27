@@ -1,9 +1,9 @@
-import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData';
-import vtkPoints from '@kitware/vtk.js/Common/Core/Points';
-import vtkCellArray from '@kitware/vtk.js/Common/Core/CellArray';
-import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray';
-import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
-import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
+import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData.js';
+import vtkPoints from '@kitware/vtk.js/Common/Core/Points.js';
+import vtkCellArray from '@kitware/vtk.js/Common/Core/CellArray.js';
+import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray.js';
+import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper.js';
+import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor.js';
 import {
   IDENTITY_MATRIX_4X4,
   ImplantGeometryError,
