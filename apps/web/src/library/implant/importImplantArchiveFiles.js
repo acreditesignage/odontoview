@@ -77,7 +77,7 @@ export async function importImplantArchiveFiles(files, { sourceName = null } = {
   const entries = [];
 
   for (const file of incoming) {
-    const path = normalizePath(file?.name);
+    const path = normalizePath(file?.archivePath || file?.name);
     if (!path) continue;
     availableFiles.push(path);
     filesByPath.set(foldedPath(path), { path, file });
