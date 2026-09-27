@@ -56,3 +56,22 @@ test('reports geometry references as resolved, missing or ambiguous using bundle
   assert.equal(report.summary.ambiguousGeometryFiles, entry.geometry.ambiguous.length);
   assert.equal(report.summary.missingGeometryFiles, entry.geometry.missing.length);
 });
+
+test('resolves geometry paths case-insensitively because real exocad bundles mix .stl and .STL', async () => {
+  const auditImplantLibraryBundle = await loadAudit();
+  const xmlText = `<?xml version="1.0"?>
+    <ImplantLibraryEntry>
+      <ImplantFilename>case-test.stl</ImplantFilename>
+      <DisplayInformation>Case Test</DisplayInformation>
+      <Supplier>Fixture Supplier</Supplier>
+    </ImplantLibraryEntry>`;
+
+  const report = auditImplantLibraryBundle({
+    entries: [{ path: 'implant/CASE_TEST/config.xml', xmlText }],
+    availableFiles: ['implant/CASE_TEST/CASE-TEST.STL'],
+  });
+
+  assert.equal(report.summary.resolvedGeometryFiles, 1);
+  assert.equal(report.summary.missingGeometryFiles, 0);
+  assert.equal(report.entries[0].geometry.resolved[0].matchedPath, 'implant/CASE_TEST/CASE-TEST.STL');
+});
