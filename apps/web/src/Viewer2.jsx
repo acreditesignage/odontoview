@@ -2,6 +2,7 @@ import React,{useEffect,useMemo,useRef,useState} from "react";
 import {useNavigate,useSearchParams} from "react-router-dom";
 import {jsPDF} from "jspdf";
 import Viewer3DPanel from "./Viewer3DPanel.jsx";
+import {resetWorkspaceSlots,swapWorkspacePanes} from "./viewerWorkspaceLayout.js";
 import {implantAxisVector} from "./implantLibrary.js";
 import {PERMANENT_FDI_LIBRARY,TOOTH_ARCH_ROWS,toothByFDI} from "./toothLibrary.js";
 import {clearViewerSession,getViewerSession} from "./viewerSession.js";
@@ -204,6 +205,10 @@ export default function Viewer2(){
   },[curve.length,archMode,autoArchRange]);
   const [tool,setTool]=useState("navigate");
   const [expandedPanel,setExpandedPanel]=useState(null);
+  const [workspaceSlots,setWorkspaceSlots]=useState(()=>resetWorkspaceSlots());
+  const [toolDrawerOpen,setToolDrawerOpen]=useState(false);
+  const [orthogonalPlane,setOrthogonalPlane]=useState("sagittal");
+  const workspaceDragRef=useRef(null);
   const [crosshairVisible,setCrosshairVisible]=useState(true);
   const [windowLevel,setWindowLevel]=useState({wc:400,ww:2000});
   const [measurements,setMeasurements]=useState([]);
@@ -1107,7 +1112,7 @@ export default function Viewer2(){
     if(loading||error||!meta)return;
     const draw=()=>{drawAxial(canvases.axial.current);drawOrthogonal(canvases.coronal.current,"coronal");drawOrthogonal(canvases.sagittal.current,"sagittal");drawTangential(canvases.tangential.current);drawPanoramic(canvases.panoramic.current)};
     draw();window.addEventListener("resize",draw);return()=>window.removeEventListener("resize",draw);
-  },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,implants,activeImplantId,plannedTeeth,selectedToothFDI,transforms,crosshairVisible,expandedPanel]);
+  },[loading,error,meta,cursor,curvePoints,curveIndex,windowLevel,measurements,pendingMeasure,nervePoints,foramina,implants,activeImplantId,plannedTeeth,selectedToothFDI,transforms,crosshairVisible,expandedPanel,orthogonalPlane,workspaceSlots]);
 
   function resetPlane(plane){setTransforms(t=>({...t,[plane]:{zoom:1,panX:0,panY:0}}))}
   function adjustBrightness(delta){setWindowLevel(v=>({...v,wc:Math.round(v.wc+delta)}))}
@@ -1539,6 +1544,42 @@ export default function Viewer2(){
     </button>;
   }
 
+  function workspaceSlotClass(paneId){
+    const slot=Object.keys(workspaceSlots).find(key=>workspaceSlots[key]===paneId);
+    return slot?"workspace-slot-"+slot:"";
+  }
+  function beginWorkspaceDrag(paneId,e){
+    workspaceDragRef.current=paneId;
+    if(e?.dataTransfer){e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",paneId)}
+  }
+  function dropWorkspacePane(targetPane,e){
+    e?.preventDefault?.();
+    const sourcePane=workspaceDragRef.current||e?.dataTransfer?.getData?.("text/plain");
+    workspaceDragRef.current=null;
+    if(sourcePane&&sourcePane!==targetPane)setWorkspaceSlots(slots=>swapWorkspacePanes(slots,sourcePane,targetPane));
+  }
+  function moveWorkspacePaneForward(paneId){
+    const order=["topLeft","topCenter","topRight","bottomLeft","bottomRight"];
+    const slot=order.find(key=>workspaceSlots[key]===paneId);
+    const index=order.indexOf(slot);
+    if(index<0)return;
+    const target=workspaceSlots[order[(index+1)%order.length]];
+    setWorkspaceSlots(slots=>swapWorkspacePanes(slots,paneId,target));
+  }
+  function restoreWorkspaceLayout(){
+    setWorkspaceSlots(resetWorkspaceSlots());
+    setExpandedPanel(null);
+  }
+  function workspaceHeaderProps(paneId){
+    return {
+      draggable:deviceProfile==="desktop",
+      onDragStart:e=>beginWorkspaceDrag(paneId,e),
+      onDragOver:e=>e.preventDefault(),
+      onDrop:e=>dropWorkspacePane(paneId,e),
+      onDragEnd:()=>{workspaceDragRef.current=null}
+    };
+  }
+
   if(loading)return <>{showIntro&&<ViewerBootIntro loading/>}<main className="viewer2-loading"><div className="viewer2-loading-card"><div className="brand">OdontoView</div><h1>Preparando exame…</h1><p>{loadProgress.label}</p>{loadProgress.total>0&&<><div className="viewer2-load-progress"><span style={{width:Math.min(100,Math.round(loadProgress.current/loadProgress.total*100))+"%"}}/></div><small>{loadProgress.current} de {loadProgress.total} cortes • {Math.round(loadProgress.current/loadProgress.total*100)}%</small></>}<div className="viewer2-loading-pulse" aria-hidden="true"><span/></div></div></main></>;
   if(error)return <main className="page centered"><section className="card auth"><button type="button" className="brand viewer2-brand-home" onClick={()=>{clearViewerSession();nav(profileHome)}}>OdontoView</button><h2>Viewer 2.0</h2><div className="error">{error}</div><button className="secondary" onClick={()=>{clearViewerSession();nav(returnTo)}}>{returnLabel}</button></section></main>;
 
@@ -1569,59 +1610,61 @@ export default function Viewer2(){
       <div className="viewer2-wl viewer2-wl-sliders"><label>Brilho <input type="range" min={windowLevel.wc-windowLevel.ww} max={windowLevel.wc+windowLevel.ww} step="1" value={windowLevel.wc} onChange={e=>setWindowLevel(v=>({...v,wc:Number(e.target.value)}))}/></label><label>Contraste <input type="range" min="50" max={Math.max(5000,windowLevel.ww*2)} step="10" value={windowLevel.ww} onChange={e=>setWindowLevel(v=>({...v,ww:Number(e.target.value)}))}/></label></div>
       <div className="viewer2-tool-state">Ferramenta: <strong>{toolName}</strong></div>
     </section>
-    <section className={"viewer2-grid viewer2-concept03"+(expandedPanel?" has-expanded expanded-"+expandedPanel:"")}>
-      {[
-        ["axial","Axial",canvases.axial],["coronal","Coronal",canvases.coronal],["sagittal","Sagital",canvases.sagittal],
-        ["tangential","Tangencial • 3 cortes",canvases.tangential]
-      ].map(([id,label,ref])=><article id={"viewer2-"+id} className={"viewer2-pane "+id+(expandedPanel===id?" is-expanded":"")} key={id}>
-        <div className="viewer2-pane-head"><strong>{label}</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane(id)}>1:1</button>{expandButton(id,label)}</div></div>
-        {renderSliceControl(id,label)}
-        {id==="axial"&&tool==="curve"&&<div className="viewer2-curve-capture-bar">
-          <div><strong>Curva manual</strong><span>{curvePoints.length} ponto(s) • toque na imagem para adicionar</span></div>
-          <div>
-            <button type="button" disabled={!curvePoints.length} onClick={undoManualCurvePoint}>↶ Desfazer último</button>
-            <button type="button" disabled={!curvePoints.length} onClick={clearManualCurve}>Limpar</button>
-            <button type="button" className="primary" disabled={curvePoints.length<3} onClick={finishManualCurve}>Concluir curva</button>
-          </div>
-        </div>}
-        <div className={"viewer2-canvas-wrap "+(deviceProfile!=="desktop"&&tool==="navigate"?"touch-scroll-friendly":"touch-tool-active")}><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={ref} onWheel={e=>onWheel(id,e)} onPointerDown={e=>onPointerDown(id,e)} onPointerMove={e=>onPointerMove(id,e)} onPointerUp={e=>onPointerUp(id,e)} onPointerCancel={e=>onPointerUp(id,e)}/></div>
-      </article>)}
-      <article id="viewer2-panorama" className={"viewer2-pane panoramic visual3d-composite"+(expandedPanel==="3d"?" is-expanded":"")}>
-        <div className="viewer2-pane-head"><strong>Modelo 3D • Planejamento</strong><div className="viewer2-pane-actions"><span className="viewer3d-badge">3D PROFISSIONAL</span>{expandButton("3d","3D")}</div></div>
-        <div className="viewer3d-split">
-          <div className="viewer3d-primary">
-            {threeDEnabled?<Viewer3DPanel
-              key={expandedPanel==="3d"?"viewer3d-expanded":"viewer3d-standard"}
-              volume={volumeRef.current}
-              meta={meta}
-              nervePoints={nerveDisplayPoints}
-              curve={curve}
-              cursor={cursor}
-              crosshairVisible={crosshairVisible}
-              onCrosshairVisibleChange={setCrosshairVisible}
-              onCursorChange={updateCursorFrom3D}
-              globalTool={tool}
-              implants={implants}
-              activeImplantId={activeImplantId}
-              onImplantsChange={setImplants}
-              onActiveImplantChange={setActiveImplantId}
-              layoutMode={expandedPanel||"mosaic"}
-              performanceProfile={deviceProfile}
-            />:<div className="viewer3d-tablet-gate">
-              <span className="viewer3d-tablet-icon">3D</span>
-              <strong>3D sob demanda no {deviceProfile==="tablet"?"tablet":"celular"}</strong>
-              <p>Os cortes MPR já estão disponíveis em resolução original. O 3D é carregado separadamente para não travar o dispositivo.</p>
-              <button type="button" onClick={()=>setThreeDEnabled(true)}>Ativar reconstrução 3D</button>
-            </div>}
-          </div>
-          <div className={"viewer3d-mini-pano"+(expandedPanel==="panoramic"?" is-expanded":"")}>
-            <div className="viewer3d-mini-head"><strong>Panorâmica reconstruída</strong><div className="viewer2-pane-actions"><button onClick={()=>resetPlane("panoramic")}>1:1</button>{expandButton("panoramic","Panorâmica")}</div></div>
-            {renderSliceControl("panoramic","Panorâmica reconstruída")}
-            <div className={"viewer2-canvas-wrap viewer3d-pano-canvas "+(deviceProfile!=="desktop"&&tool==="navigate"?"touch-scroll-friendly":"touch-tool-active")}><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.panoramic} onWheel={e=>onWheel("panoramic",e)} onPointerDown={e=>onPointerDown("panoramic",e)} onPointerMove={e=>onPointerMove("panoramic",e)} onPointerUp={e=>onPointerUp("panoramic",e)} onPointerCancel={e=>onPointerUp("panoramic",e)}/></div>
-          </div>
+    <section className={"viewer2-grid viewer2-concept03 viewer2-workstation-grid"+(expandedPanel?" has-expanded expanded-"+expandedPanel:"")} data-workspace-layout="3d-first">
+      <article id="viewer2-tangential" data-workspace-pane="tangential" className={"viewer2-pane tangential viewer2-workspace-pane viewer2-workspace-pane-tangential "+workspaceSlotClass("tangential")+(expandedPanel==="tangential"?" is-expanded":"")}>
+        <div className="viewer2-pane-head viewer2-drag-handle" {...workspaceHeaderProps("tangential")}><strong>Tangencial • 3 cortes</strong><div className="viewer2-pane-actions"><button type="button" title="Mover painel" onClick={()=>moveWorkspacePaneForward("tangential")}>↔</button><button onClick={()=>resetPlane("tangential")}>1:1</button>{expandButton("tangential","Tangencial")}</div></div>
+        {renderSliceControl("tangential","Tangencial")}
+        <div className={"viewer2-canvas-wrap "+(deviceProfile!=="desktop"&&tool==="navigate"?"touch-scroll-friendly":"touch-tool-active")}><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.tangential} onWheel={e=>onWheel("tangential",e)} onPointerDown={e=>onPointerDown("tangential",e)} onPointerMove={e=>onPointerMove("tangential",e)} onPointerUp={e=>onPointerUp("tangential",e)} onPointerCancel={e=>onPointerUp("tangential",e)}/></div>
+      </article>
+
+      <article id="viewer2-axial" data-workspace-pane="axial" className={"viewer2-pane axial viewer2-workspace-pane viewer2-workspace-pane-axial "+workspaceSlotClass("axial")+(expandedPanel==="axial"?" is-expanded":"")}>
+        <div className="viewer2-pane-head viewer2-drag-handle" {...workspaceHeaderProps("axial")}><strong>Axial • Curva da arcada</strong><div className="viewer2-pane-actions"><button type="button" title="Mover painel" onClick={()=>moveWorkspacePaneForward("axial")}>↔</button><button onClick={()=>resetPlane("axial")}>1:1</button>{expandButton("axial","Axial")}</div></div>
+        {renderSliceControl("axial","Axial")}
+        {tool==="curve"&&<div className="viewer2-curve-capture-bar"><div><strong>Curva manual</strong><span>{curvePoints.length} ponto(s) • toque na imagem para adicionar</span></div><div><button type="button" disabled={!curvePoints.length} onClick={undoManualCurvePoint}>↶ Desfazer último</button><button type="button" disabled={!curvePoints.length} onClick={clearManualCurve}>Limpar</button><button type="button" className="primary" disabled={curvePoints.length<3} onClick={finishManualCurve}>Concluir curva</button></div></div>}
+        <div className={"viewer2-canvas-wrap "+(deviceProfile!=="desktop"&&tool==="navigate"?"touch-scroll-friendly":"touch-tool-active")}><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.axial} onWheel={e=>onWheel("axial",e)} onPointerDown={e=>onPointerDown("axial",e)} onPointerMove={e=>onPointerMove("axial",e)} onPointerUp={e=>onPointerUp("axial",e)} onPointerCancel={e=>onPointerUp("axial",e)}/></div>
+      </article>
+
+      <article id="viewer2-orthogonal" data-workspace-pane="orthogonal" className={"viewer2-pane orthogonal viewer2-workspace-pane viewer2-workspace-pane-orthogonal "+workspaceSlotClass("orthogonal")+(expandedPanel==="orthogonal"?" is-expanded":"")}>
+        <div className="viewer2-pane-head viewer2-drag-handle" {...workspaceHeaderProps("orthogonal")}><strong>{orthogonalPlane==="sagittal"?"Sagital":"Coronal"}</strong><div className="viewer2-orthogonal-switch" role="group" aria-label="Plano ortogonal"><button type="button" className={orthogonalPlane==="sagittal"?"active":""} onClick={()=>setOrthogonalPlane("sagittal")}>Sagital</button><button type="button" className={orthogonalPlane==="coronal"?"active":""} onClick={()=>setOrthogonalPlane("coronal")}>Coronal</button></div><div className="viewer2-pane-actions"><button type="button" title="Mover painel" onClick={()=>moveWorkspacePaneForward("orthogonal")}>↔</button><button onClick={()=>resetPlane(orthogonalPlane)}>1:1</button>{expandButton("orthogonal","Ortogonal")}</div></div>
+        {renderSliceControl(orthogonalPlane,orthogonalPlane==="sagittal"?"Sagital":"Coronal")}
+        <div className={"viewer2-orthogonal-view "+(orthogonalPlane==="sagittal"?"is-active":"is-hidden")}><div className={"viewer2-canvas-wrap "+(deviceProfile!=="desktop"&&tool==="navigate"?"touch-scroll-friendly":"touch-tool-active")}><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.sagittal} onWheel={e=>onWheel("sagittal",e)} onPointerDown={e=>onPointerDown("sagittal",e)} onPointerMove={e=>onPointerMove("sagittal",e)} onPointerUp={e=>onPointerUp("sagittal",e)} onPointerCancel={e=>onPointerUp("sagittal",e)}/></div></div>
+        <div className={"viewer2-orthogonal-view "+(orthogonalPlane==="coronal"?"is-active":"is-hidden")}><div className={"viewer2-canvas-wrap "+(deviceProfile!=="desktop"&&tool==="navigate"?"touch-scroll-friendly":"touch-tool-active")}><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.coronal} onWheel={e=>onWheel("coronal",e)} onPointerDown={e=>onPointerDown("coronal",e)} onPointerMove={e=>onPointerMove("coronal",e)} onPointerUp={e=>onPointerUp("coronal",e)} onPointerCancel={e=>onPointerUp("coronal",e)}/></div></div>
+      </article>
+
+      <article id="viewer2-3d" data-workspace-pane="3d" className={"viewer2-pane viewer2-workspace-pane viewer2-workspace-pane-3d "+workspaceSlotClass("3d")+(expandedPanel==="3d"?" is-expanded":"")}>
+        <div className="viewer2-pane-head viewer2-drag-handle viewer2-3d-head" {...workspaceHeaderProps("3d")}><strong>3D • Planejamento</strong><div className="viewer2-pane-actions"><span className="viewer3d-badge">3D PROFISSIONAL</span><button type="button" title="Mover painel" onClick={()=>moveWorkspacePaneForward("3d")}>↔</button>{expandButton("3d","3D")}</div></div>
+        <div className="viewer3d-primary">
+          {threeDEnabled?<Viewer3DPanel
+            key={expandedPanel==="3d"?"viewer3d-expanded":"viewer3d-standard"}
+            volume={volumeRef.current}
+            meta={meta}
+            nervePoints={nerveDisplayPoints}
+            curve={curve}
+            cursor={cursor}
+            crosshairVisible={crosshairVisible}
+            onCrosshairVisibleChange={setCrosshairVisible}
+            onCursorChange={updateCursorFrom3D}
+            globalTool={tool}
+            implants={implants}
+            activeImplantId={activeImplantId}
+            onImplantsChange={setImplants}
+            onActiveImplantChange={setActiveImplantId}
+            layoutMode={expandedPanel||"mosaic"}
+            performanceProfile={deviceProfile}
+          />:<div className="viewer3d-tablet-gate"><span className="viewer3d-tablet-icon">3D</span><strong>3D sob demanda no {deviceProfile==="tablet"?"tablet":"celular"}</strong><p>Os cortes MPR já estão disponíveis em resolução original. O 3D é carregado separadamente para não travar o dispositivo.</p><button type="button" onClick={()=>setThreeDEnabled(true)}>Ativar reconstrução 3D</button></div>}
         </div>
       </article>
-      <aside className="viewer2-side">
+
+      <article id="viewer2-panorama" data-workspace-pane="panoramic" className={"viewer2-pane panoramic viewer2-workspace-pane viewer2-workspace-pane-panoramic "+workspaceSlotClass("panoramic")+(expandedPanel==="panoramic"?" is-expanded":"")}>
+        <div className="viewer2-pane-head viewer2-drag-handle" {...workspaceHeaderProps("panoramic")}><strong>Panorâmica reconstruída</strong><div className="viewer2-pane-actions"><button type="button" title="Mover painel" onClick={()=>moveWorkspacePaneForward("panoramic")}>↔</button><button onClick={()=>resetPlane("panoramic")}>1:1</button>{expandButton("panoramic","Panorâmica")}</div></div>
+        {renderSliceControl("panoramic","Panorâmica reconstruída")}
+        <div className={"viewer2-canvas-wrap viewer3d-pano-canvas "+(deviceProfile!=="desktop"&&tool==="navigate"?"touch-scroll-friendly":"touch-tool-active")}><canvas className={tool==="navigate"?"crosshair-cursor":""} ref={canvases.panoramic} onWheel={e=>onWheel("panoramic",e)} onPointerDown={e=>onPointerDown("panoramic",e)} onPointerMove={e=>onPointerMove("panoramic",e)} onPointerUp={e=>onPointerUp("panoramic",e)} onPointerCancel={e=>onPointerUp("panoramic",e)}/></div>
+      </article>
+
+      <button type="button" className="viewer2-tools-tab" aria-expanded={toolDrawerOpen} onClick={()=>setToolDrawerOpen(true)}>Ferramentas ‹</button>
+      {toolDrawerOpen&&<button type="button" className="viewer2-tools-backdrop" aria-label="Fechar ferramentas" onClick={()=>setToolDrawerOpen(false)}/>} 
+      <aside className={"viewer2-side viewer2-tools-drawer"+(toolDrawerOpen?" is-open":"")} aria-hidden={!toolDrawerOpen}>
+        <div className="viewer2-tools-drawer-head"><div><span>ODONTOVIEW</span><strong>Ferramentas</strong></div><div><button type="button" onClick={restoreWorkspaceLayout}>Restaurar layout</button><button type="button" className="viewer2-tools-close" aria-label="Fechar ferramentas" onClick={()=>setToolDrawerOpen(false)}>×</button></div></div>
         <section>
           <p className="eyebrow">CURVA DA ARCADA</p><strong>{archRange.label}</strong>
           <small className="viewer2-arch-type">Arcada informada: {dentalArchType==="maxilla"?"Maxila":dentalArchType==="mandible"?"Mandíbula":dentalArchType==="both"?"Ambas":"A confirmar"}</small>
