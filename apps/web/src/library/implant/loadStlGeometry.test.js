@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   makeAsciiStl,
+  makeBinaryStl,
   makeDegenerateAsciiStl,
+  makeSolidHeaderBinaryStl,
+  makeTruncatedBinaryStl,
   makeZeroNormalAsciiStl,
 } from './stlTestFixtures.js';
 
@@ -114,4 +117,58 @@ test('loader rejects non-finite ASCII vertex values', async () => {
 
 test('loader rejects degenerate ASCII triangles', async () => {
   await expectCode(asset(), makeDegenerateAsciiStl(), 'DEGENERATE_GEOMETRY');
+});
+
+test('loader parses a standard Binary STL into the same neutral mesh contract', async () => {
+  const module = await loadModule();
+  const mesh = module.loadStlGeometry(asset(), makeBinaryStl());
+  assert.equal(mesh.source.format, 'stl-binary');
+  assert.equal(mesh.vertexCount, 3);
+  assert.equal(mesh.triangleCount, 1);
+  assert.deepEqual(Array.from(mesh.positions), [0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  assert.deepEqual(Array.from(mesh.indices), [0, 1, 2]);
+  assert.deepEqual(mesh.bounds, { min: [0, 0, 0], max: [1, 1, 0] });
+});
+
+test('loader detects Binary STL structurally even when the header begins with solid', async () => {
+  const module = await loadModule();
+  const mesh = module.loadStlGeometry(asset(), makeSolidHeaderBinaryStl());
+  assert.equal(mesh.source.format, 'stl-binary');
+  assert.equal(mesh.triangleCount, 1);
+});
+
+test('loader rejects truncated Binary STL before parsing triangle arrays', async () => {
+  await expectCode(asset(), makeTruncatedBinaryStl(), 'TRUNCATED_BINARY_STL');
+});
+
+test('loader rejects non-finite Binary coordinates', async () => {
+  await expectCode(
+    asset(),
+    makeBinaryStl({ vertices: [[Number.NaN, 0, 0], [1, 0, 0], [0, 1, 0]] }),
+    'INVALID_GEOMETRY_VALUE',
+  );
+});
+
+test('loader rejects degenerate Binary triangles', async () => {
+  await expectCode(
+    asset(),
+    makeBinaryStl({ vertices: [[0, 0, 0], [1, 0, 0], [2, 0, 0]] }),
+    'DEGENERATE_GEOMETRY',
+  );
+});
+
+test('loader output is deterministic for identical STL input', async () => {
+  const module = await loadModule();
+  const bytes = makeAsciiStl();
+  const first = module.loadStlGeometry(asset(), bytes);
+  const second = module.loadStlGeometry(asset(), bytes);
+
+  assert.deepEqual(first.source, second.source);
+  assert.deepEqual(first.bounds, second.bounds);
+  assert.deepEqual(first.safety, second.safety);
+  assert.equal(first.vertexCount, second.vertexCount);
+  assert.equal(first.triangleCount, second.triangleCount);
+  assert.deepEqual(Array.from(first.positions), Array.from(second.positions));
+  assert.deepEqual(Array.from(first.normals), Array.from(second.normals));
+  assert.deepEqual(Array.from(first.indices), Array.from(second.indices));
 });
