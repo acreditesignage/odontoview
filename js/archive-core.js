@@ -57,8 +57,24 @@
       bad();
     } else bad();
   }
+  function shouldIncludeFile(name,data,mode='dicom') {
+    const normalized=String(name||'').replace(/\\/g,'/');
+    const base=normalized.split('/').pop()||'';
+    if(mode==='dicom') {
+      return base.toUpperCase()!=='DICOMDIR' && (
+        /\.(dcm|dicom|ima)$/i.test(base) ||
+        (data?.[128]===68&&data?.[129]===73&&data?.[130]===67&&data?.[131]===77)
+      );
+    }
+    if(mode==='implant-library') {
+      return /(^|\/)config\.xml$/i.test(normalized) || /\.(stl|sdfa)$/i.test(base);
+    }
+    throw new Error('Modo de extração não suportado.');
+  }
   function extract(Module, input, options = {}) {
     const limits = { ...defaults, ...options.limits };
+    const mode = options.mode || 'dicom';
+    if(mode!=='dicom' && mode!=='implant-library') throw new Error('Modo de extração não suportado.');
     const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
     if (bytes.length > limits.maxInputBytes) throw new Error('O arquivo excede o limite de 128 MB compactados.');
     const zip = bytes[0]===80 && bytes[1]===75 && ((bytes[2]===3 && bytes[3]===4)||(bytes[2]===5 && bytes[3]===6));
@@ -121,8 +137,7 @@
           data.set(Module.HEAPU8.subarray(chunk,chunk+n),offset); offset+=n;
         }
         if (offset!==length) fail();
-        const base=name.split('/').pop();
-        if (base.toUpperCase()!=='DICOMDIR' && (/\.(dcm|dicom|ima)$/i.test(base) || (data[128]===68&&data[129]===73&&data[130]===67&&data[131]===77))) files.push({name,buffer:data.buffer});
+        if (shouldIncludeFile(name,data,mode)) files.push({name,buffer:data.buffer});
         if (options.onProgress) options.onProgress({entries:count,bytes:total});
       }
       if(expectedEntries!==null && count!==expectedEntries) fail();
@@ -133,5 +148,5 @@
       if (ptr) Module._free(ptr);
     }
   }
-  return {extract,defaults};
+  return {extract,defaults,shouldIncludeFile};
 });
