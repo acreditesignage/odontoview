@@ -5,6 +5,9 @@ import {
 } from './geometrySchema.js';
 
 const EPSILON = 1e-12;
+const BINARY_HEADER_BYTES = 80;
+const BINARY_COUNT_BYTES = 4;
+const BINARY_TRIANGLE_BYTES = 50;
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -25,6 +28,17 @@ function parseFiniteTriple(tokens, label) {
       'INVALID_GEOMETRY_VALUE',
       `${label} must contain exactly three finite numbers.`,
       tokens,
+    );
+  }
+  return values;
+}
+
+function assertFiniteTriple(values, label) {
+  if (values.length !== 3 || values.some((value) => !Number.isFinite(value))) {
+    throw new ImplantGeometryError(
+      'INVALID_GEOMETRY_VALUE',
+      `${label} must contain exactly three finite numbers.`,
+      values,
     );
   }
   return values;
@@ -58,6 +72,10 @@ function normalizeFacetNormal(normal, fallback) {
   }
   if (length <= EPSILON) return fallback;
   return normal.map((value) => value / length);
+}
+
+function sequentialIndices(triangleCount) {
+  return new Uint32Array(Array.from({ length: triangleCount * 3 }, (_, value) => value));
 }
 
 function parseAsciiStl(bytes) {
@@ -120,11 +138,101 @@ function parseAsciiStl(bytes) {
   }
 
   return {
+    format: 'stl-ascii',
     positions: new Float32Array(positions),
     normals: new Float32Array(normals),
-    indices: new Uint32Array(Array.from({ length: triangleCount * 3 }, (_, value) => value)),
+    indices: sequentialIndices(triangleCount),
     triangleCount,
   };
+}
+
+function binaryLayout(bytes) {
+  if (bytes.byteLength < BINARY_HEADER_BYTES + BINARY_COUNT_BYTES) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const triangleCount = view.getUint32(BINARY_HEADER_BYTES, true);
+  const expectedLength = BINARY_HEADER_BYTES + BINARY_COUNT_BYTES + triangleCount * BINARY_TRIANGLE_BYTES;
+  return { triangleCount, expectedLength };
+}
+
+function beginsWithSolid(bytes) {
+  if (bytes.byteLength < 5) return false;
+  return new TextDecoder().decode(bytes.subarray(0, 5)).toLowerCase() === 'solid';
+}
+
+function parseBinaryStl(bytes, triangleCount) {
+  if (!Number.isInteger(triangleCount) || triangleCount <= 0) {
+    throw new ImplantGeometryError('INVALID_STL', 'Binary STL must declare at least one triangle.');
+  }
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const positions = new Float32Array(triangleCount * 9);
+  const normals = new Float32Array(triangleCount * 9);
+  let offset = BINARY_HEADER_BYTES + BINARY_COUNT_BYTES;
+  let outputOffset = 0;
+
+  for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex += 1) {
+    const suppliedNormal = assertFiniteTriple([
+      view.getFloat32(offset, true),
+      view.getFloat32(offset + 4, true),
+      view.getFloat32(offset + 8, true),
+    ], 'binary facet normal');
+    offset += 12;
+
+    const vertices = [];
+    for (let vertexIndex = 0; vertexIndex < 3; vertexIndex += 1) {
+      const vertex = assertFiniteTriple([
+        view.getFloat32(offset, true),
+        view.getFloat32(offset + 4, true),
+        view.getFloat32(offset + 8, true),
+      ], 'binary vertex');
+      offset += 12;
+      vertices.push(vertex);
+    }
+
+    const geometricNormal = triangleNormal(vertices);
+    const facetNormal = normalizeFacetNormal(suppliedNormal, geometricNormal);
+    for (const vertex of vertices) {
+      positions.set(vertex, outputOffset);
+      normals.set(facetNormal, outputOffset);
+      outputOffset += 3;
+    }
+
+    offset += 2;
+  }
+
+  return {
+    format: 'stl-binary',
+    positions,
+    normals,
+    indices: sequentialIndices(triangleCount),
+    triangleCount,
+  };
+}
+
+function parseStl(bytes) {
+  const layout = binaryLayout(bytes);
+  if (layout?.expectedLength === bytes.byteLength) {
+    return parseBinaryStl(bytes, layout.triangleCount);
+  }
+
+  if (
+    layout
+    && layout.triangleCount > 0
+    && layout.expectedLength > bytes.byteLength
+    && !beginsWithSolid(bytes)
+  ) {
+    throw new ImplantGeometryError(
+      'TRUNCATED_BINARY_STL',
+      'Binary STL byte length is shorter than its declared triangle count requires.',
+      [
+        `declaredTriangles=${layout.triangleCount}`,
+        `expectedBytes=${layout.expectedLength}`,
+        `actualBytes=${bytes.byteLength}`,
+      ],
+    );
+  }
+
+  return parseAsciiStl(bytes);
 }
 
 function computeBounds(positions) {
@@ -167,14 +275,14 @@ export function loadStlGeometry(asset, sourceBytes) {
     throw new ImplantGeometryError('INVALID_STL', 'STL source bytes are empty or invalid.');
   }
 
-  const parsed = parseAsciiStl(bytes);
+  const parsed = parseStl(bytes);
   const mesh = {
     geometrySchemaVersion: IMPLANT_GEOMETRY_SCHEMA_VERSION,
     source: {
       assetId: asset.id,
       sourcePath: path,
       filename: asset.filename,
-      format: 'stl-ascii',
+      format: parsed.format,
     },
     positions: parsed.positions,
     normals: parsed.normals,
