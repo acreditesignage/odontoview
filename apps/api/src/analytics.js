@@ -13,8 +13,8 @@ function cleanText(value,max,{nullable=true}={}){
   return text.length<=max?text:text.slice(0,max);
 }
 function cleanRoute(value){
-  const route=cleanText(value,240,{nullable:false});
-  if(!route||!route.startsWith("/")||route.length>240)return null;
+  const route=String(value??"").replace(/[\u0000-\u001f\u007f]/g," ").trim();
+  if(!route||route.length>240||!route.startsWith("/"))return null;
   return route.split("?")[0].split("#")[0]||"/";
 }
 function cleanSessionKey(value){
@@ -109,11 +109,11 @@ export async function configuredGeoLookup(ip){
   const template=String(process.env.ANALYTICS_GEO_LOOKUP_URL||"").trim();
   if(!template||!ip||isPrivateIp(ip))return null;
   const url=template.includes("{ip}")?template.replace("{ip}",encodeURIComponent(ip)):template.replace(/\/$/,"")+"/"+encodeURIComponent(ip);
+  let timer;
   try{
     const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),1200);
+    timer=setTimeout(()=>controller.abort(),1200);
     const response=await fetch(url,{headers:{Accept:"application/json"},signal:controller.signal});
-    clearTimeout(timer);
     if(!response.ok)return null;
     const data=await response.json();
     if(data?.success===false)return null;
@@ -123,6 +123,7 @@ export async function configuredGeoLookup(ip){
       city:safeGeo(data.city)
     };
   }catch{return null;}
+  finally{if(timer)clearTimeout(timer);}
 }
 
 function adminOverview({sessions,events,now,rangeDays,timeZone}){
@@ -195,7 +196,8 @@ export function createAnalyticsRouter({prismaClient,jwtSecret,geoLookup=configur
       });
     }else{
       const ip=requestIp(req);
-      const geo=(await geoLookup(ip,req).catch?.(()=>null))||null;
+      let geo=null;
+      try{geo=await geoLookup(ip,req);}catch{}
       const agent=parseUserAgent(req.headers["user-agent"]);
       session=await prismaClient.analyticsSession.create({data:{
         sessionKey:payload.sessionKey,userId:auth?.sub?String(auth.sub):null,
