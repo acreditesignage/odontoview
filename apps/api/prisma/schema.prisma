@@ -33,6 +33,13 @@ enum StudyStatus {
   READY
 }
 
+enum AnalyticsEventType {
+  PAGE_VIEW
+  HEARTBEAT
+  LOGIN
+  LOGOUT
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -42,8 +49,9 @@ model User {
   phone        String?
   createdAt    DateTime @default(now())
 
-  dentist          Dentist?
-  unitMemberships  UnitMembership[]
+  dentist           Dentist?
+  unitMemberships   UnitMembership[]
+  analyticsSessions AnalyticsSession[]
 }
 
 model Dentist {
@@ -333,4 +341,51 @@ model DentistInvite {
 
   @@index([patientId, expiresAt])
   @@index([studyId, expiresAt])
+}
+
+model AnalyticsSession {
+  id                 String   @id @default(cuid())
+  sessionKey         String   @unique
+  userId             String?
+  startedAt          DateTime @default(now())
+  lastSeenAt         DateTime @default(now())
+  firstRoute         String
+  currentRoute       String
+  referrer            String?
+  utmSource           String?
+  utmMedium           String?
+  utmCampaign         String?
+  deviceClass         String?
+  browser             String?
+  operatingSystem     String?
+  country             String?
+  region              String?
+  city                String?
+  networkFingerprint  String?
+  activeSeconds       Int      @default(0)
+
+  user   User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  events AnalyticsEvent[]
+
+  @@index([lastSeenAt])
+  @@index([startedAt])
+  @@index([userId, lastSeenAt])
+  @@index([currentRoute, lastSeenAt])
+  @@index([country, region, city])
+}
+
+model AnalyticsEvent {
+  id         String             @id @default(cuid())
+  sessionId  String
+  type       AnalyticsEventType
+  route      String
+  metadata   Json?
+  occurredAt DateTime           @default(now())
+
+  session AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([occurredAt])
+  @@index([sessionId, occurredAt])
+  @@index([type, occurredAt])
+  @@index([route, occurredAt])
 }
