@@ -63,6 +63,17 @@ async function main() {
     });
   }
 
+  const adminEmail=String(process.env.ADMIN_EMAIL||"").toLowerCase().trim();
+  const adminPassword=String(process.env.ADMIN_PASSWORD||"");
+  if(adminEmail&&adminPassword){
+    const adminPasswordHash=await bcrypt.hash(adminPassword,12);
+    await prisma.user.upsert({
+      where:{email:adminEmail},
+      update:{role:"ADMIN",passwordHash:adminPasswordHash},
+      create:{name:"Thiago",email:adminEmail,role:"ADMIN",passwordHash:adminPasswordHash}
+    });
+  }
+
   console.log("Seed OdontoView Network concluído.");
 }
 main().finally(()=>prisma.$disconnect());
