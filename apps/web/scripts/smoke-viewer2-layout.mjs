@@ -155,6 +155,10 @@ async function main(){
     await cdp.open();
     await cdp.send("Page.enable");
     await cdp.send("Runtime.enable");
+    await cdp.send("Emulation.setDeviceMetricsOverride",{
+      width:WIDTH,height:HEIGHT,deviceScaleFactor:1,mobile:false,
+      screenWidth:WIDTH,screenHeight:HEIGHT
+    });
     await cdp.send("Page.navigate",{url:BASE_URL});
     await waitFor(()=>evalJs(cdp,`document.readyState==="complete"`),"page load");
     await waitFor(()=>evalJs(cdp,`Boolean(document.querySelector(".viewer2.is-desktop")) || document.querySelector("[data-layout-smoke-error]")?.innerText`),"real Viewer2 mount");
@@ -171,9 +175,9 @@ async function main(){
     await sleep(2800);
 
     const state=await facts(cdp);
-    assertLayout(state);
     const screenshotBytes=await shot(cdp);
     await writeFile(new URL("layout-facts.json",OUT),JSON.stringify(state,null,2));
+    assertLayout(state);
 
     const exceptions=cdp.events.filter(event=>event.method==="Runtime.exceptionThrown");
     if(exceptions.length)throw new Error(`Browser exceptions observed: ${exceptions.length}`);
