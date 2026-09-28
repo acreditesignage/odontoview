@@ -50,6 +50,27 @@ jobs:
       - name: Web build
         working-directory: apps/web
         run: npm run build
+      - name: Web Viewer2 desktop layout visual smoke
+        working-directory: apps/web
+        run: |
+          set -euo pipefail
+          mkdir -p dist/legacy-ingest/js dist/legacy-ingest/vendor/libarchive dist/viewer-libs
+          cp ../../js/archive-import.js ../../js/archive-worker.js ../../js/archive-core.js ../../js/dicom-metadata.js dist/legacy-ingest/js/
+          cp -R ../../vendor/libarchive/. dist/legacy-ingest/vendor/libarchive/
+          cp node_modules/cornerstone-core/dist/cornerstone.min.js dist/viewer-libs/cornerstone.min.js
+          cp node_modules/dicom-parser/dist/dicomParser.min.js dist/viewer-libs/dicomParser.min.js
+          cp node_modules/cornerstone-wado-image-loader/dist/cornerstoneWADOImageLoaderNoWebWorkers.bundle.min.js dist/viewer-libs/cornerstoneWADOImageLoaderNoWebWorkers.bundle.min.js
+          npx vite preview --host 127.0.0.1 --port 4173 >/tmp/odontoview-viewer2-layout-vite.log 2>&1 &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true' EXIT
+          VIEWER2_LAYOUT_CDP_PORT=9224 node scripts/smoke-viewer2-layout.mjs
+      - name: Upload Viewer2 desktop layout smoke screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: viewer2-layout-smoke
+          path: apps/web/viewer2-layout-smoke/*
+          if-no-files-found: warn
       - name: Web geometry lab visual smoke
         working-directory: apps/web
         run: |
