@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f7f9fc">
   <meta name="google" content="notranslate">
   <title>OdontoView Network</title>
-  <link rel="stylesheet" href="/viewer-planning-layout.css">
+  <link rel="stylesheet" href="/viewer-planning-layout.css?v=20260927-9e557cca">
   <style>
     html,body,#root{min-height:100%;margin:0}
     body{background:#f7f9fc;color:#0b1733;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -23,7 +23,7 @@
     function showStartupError(message){
       if(window.__ODONTOVIEW_STARTED__)return;
       var el=document.getElementById("startup-fallback");
-      if(el) el.innerHTML='<div class="runtime-error"><strong>OdontoView — erro de inicialização</strong><br><br>'+String(message).replace(/[&<>"]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"})[c]})+'</div>';
+      if(el) el.innerHTML='<div class="runtime-error"><strong>OdontoView — erro de inicialização</strong><br><br>'+String(message).replace(/[&<>\"]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"})[c]})+'</div>';
     }
     window.addEventListener("error",function(e){showStartupError(e.message||"Erro JavaScript não identificado.");});
     window.addEventListener("unhandledrejection",function(e){showStartupError((e.reason&&e.reason.message)||e.reason||"Falha ao iniciar a aplicação.");});
