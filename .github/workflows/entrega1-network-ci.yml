@@ -49,7 +49,24 @@ jobs:
         run: npm run test:implant-library
       - name: Web build
         working-directory: apps/web
+        env:
+          VITE_ADMIN_LAYOUT_SMOKE: "1"
         run: npm run build
+      - name: Web admin dashboard desktop visual smoke
+        working-directory: apps/web
+        run: |
+          set -euo pipefail
+          npx vite preview --host 127.0.0.1 --port 4173 >/tmp/odontoview-admin-layout-vite.log 2>&1 &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true' EXIT
+          ADMIN_LAYOUT_CDP_PORT=9225 node scripts/smoke-admin-dashboard.mjs
+      - name: Upload admin dashboard visual smoke screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-layout-smoke
+          path: apps/web/admin-layout-smoke/*
+          if-no-files-found: warn
       - name: Web Viewer2 desktop layout visual smoke
         working-directory: apps/web
         run: |
