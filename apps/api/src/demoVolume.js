@@ -5,9 +5,9 @@ import jpeg from "jpeg-js";
 import {gunzipSync,gzipSync} from "node:zlib";
 import {getPrivateObject,putPrivateObject,storageReady} from "./storage.js";
 
-export const DEMO_VOLUME_KEY="demo/odontoview-demo-volume-v1.gz";
-export const DEMO_VOLUME_SHA256="3345318ff2487500cd5ce973a8c4555181074396533fe8ce7505a4279b7e1369";
-export const DEMO_TRANSPORT_META={sliceCount:100,rows:112,columns:112};
+export const DEMO_VOLUME_KEY="demo/odontoview-demo-volume-v2.gz";
+export const DEMO_VOLUME_SHA256="ce5e388bd00119d3bc59c7395a5a846dfcb52ce33d0030e0b1022e1e2bfe29e4";
+export const DEMO_TRANSPORT_META={sliceCount:300,rows:192,columns:192};
 
 function chunkKey(index){
   return `DEMO_CBCT_CHUNK_${String(index).padStart(2,"0")}`;
