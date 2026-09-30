@@ -3,7 +3,7 @@ import {importExam} from "./ingest.js";
 const encoder=new TextEncoder();
 
 export const DEMO_EXAM={
-  id:"odontoview-cbct-demo-v2",
+  id:"odontoview-cbct-demo-v3",
   label:"Paciente Demo OdontoView",
   patientName:"Paciente Demo",
   examType:"Tomografia CBCT",
@@ -12,17 +12,19 @@ export const DEMO_EXAM={
 };
 
 export const DEMO_VOLUME_META={
-  version:2,
-  sliceCount:100,
-  rows:112,
-  columns:112,
-  pixelSpacing:[0.7142857142857143,0.7142857142857143],
-  sliceSpacing:0.604040404040404,
+  version:3,
+  sliceCount:300,
+  rows:192,
+  columns:192,
+  pixelSpacing:[0.4166666666666667,0.4166666666666667],
+  sliceSpacing:0.2,
   imagePosition:[-40,-40,30],
   orientation:[1,0,0,0,1,0],
   storedScale:16,
   rescaleIntercept:-1000,
-  rescaleSlope:1
+  rescaleSlope:1,
+  windowCenter:1590,
+  windowWidth:3181
 };
 
 function concatBytes(parts){
@@ -75,7 +77,7 @@ function pixelWordsFromDemoBytes(pixels,scale){
   return out;
 }
 function patientDemoEntries(z,pixels,meta){
-  const sop=`1.2.826.0.1.3680043.10.7436.2000.${z+1}`;
+  const sop=`1.2.826.0.1.3680043.10.7436.3000.${z+1}`;
   const zPosition=meta.imagePosition[2]-(z*meta.sliceSpacing);
   return [
     dicomElement(0x0002,0x0001,"OB",new Uint8Array([0,1])),
@@ -93,12 +95,12 @@ function patientDemoEntries(z,pixels,meta){
     dicomElement(0x0010,0x0020,"LO","DEMO01"),
     dicomElement(0x0018,0x0050,"DS",String(meta.sliceSpacing)),
     dicomElement(0x0018,0x0088,"DS",String(meta.sliceSpacing)),
-    dicomElement(0x0020,0x000d,"UI","1.2.826.0.1.3680043.10.7436.2000.1"),
-    dicomElement(0x0020,0x000e,"UI","1.2.826.0.1.3680043.10.7436.2000.2"),
+    dicomElement(0x0020,0x000d,"UI","1.2.826.0.1.3680043.10.7436.3000.1"),
+    dicomElement(0x0020,0x000e,"UI","1.2.826.0.1.3680043.10.7436.3000.2"),
     dicomElement(0x0020,0x0013,"IS",String(z+1)),
     dicomElement(0x0020,0x0032,"DS",`${meta.imagePosition[0]}\\${meta.imagePosition[1]}\\${zPosition.toFixed(6)}`),
     dicomElement(0x0020,0x0037,"DS",meta.orientation.join("\\")),
-    dicomElement(0x0020,0x0052,"UI","1.2.826.0.1.3680043.10.7436.2000.3"),
+    dicomElement(0x0020,0x0052,"UI","1.2.826.0.1.3680043.10.7436.3000.3"),
     dicomElement(0x0028,0x0002,"US",1),
     dicomElement(0x0028,0x0004,"CS","MONOCHROME2"),
     dicomElement(0x0028,0x0008,"IS","1"),
@@ -109,8 +111,8 @@ function patientDemoEntries(z,pixels,meta){
     dicomElement(0x0028,0x0101,"US",16),
     dicomElement(0x0028,0x0102,"US",15),
     dicomElement(0x0028,0x0103,"US",0),
-    dicomElement(0x0028,0x1050,"DS","350"),
-    dicomElement(0x0028,0x1051,"DS","2200"),
+    dicomElement(0x0028,0x1050,"DS",String(meta.windowCenter??1590)),
+    dicomElement(0x0028,0x1051,"DS",String(meta.windowWidth??3181)),
     dicomElement(0x0028,0x1052,"DS",String(meta.rescaleIntercept)),
     dicomElement(0x0028,0x1053,"DS",String(meta.rescaleSlope)),
     dicomElement(0x7fe0,0x0010,"OW",pixelWordsFromDemoBytes(pixels,meta.storedScale))
@@ -190,7 +192,7 @@ export async function loadDemoExam({onProgress,fetcher=globalThis.fetch,importer
   if(typeof response.arrayBuffer!=="function")throw new Error("Resposta inválida ao carregar o volume demo.");
   const compressed=new Uint8Array(await response.arrayBuffer());
   if(!compressed.length)throw new Error("Volume demo vazio.");
-  onProgress?.({phase:"extract",label:"Preparando cortes DICOM demo…",source:"private-real-demo"});
+  onProgress?.({phase:"extract",label:"Preparando 300 cortes DICOM demo…",source:"private-real-demo"});
   const raw=await gunzipBytes(compressed);
   const files=createPatientDemoFiles(raw);
   onProgress?.({phase:"metadata",label:"Abrindo CBCT demo…",current:0,total:files.length,source:"private-real-demo"});
