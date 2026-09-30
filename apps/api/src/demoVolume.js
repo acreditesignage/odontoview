@@ -48,16 +48,17 @@ export async function decryptDemoTransportAsset({keyHex,readAsset=async()=>JSON.
   return plain;
 }
 
-function parseJpegBundle(bundle,sliceCount){
+function parseJpegBundle(bundle){
   const images=[];
   let offset=0;
-  for(let index=0;index<sliceCount;index++){
-    if(offset+4>bundle.length)throw new Error("Pacote JPEG do demo incompleto.");
+  while(offset<bundle.length){
+    if(offset+4>bundle.length)throw new Error("Pacote JPEG do demo contém cabeçalho incompleto.");
     const length=bundle.readUInt32BE(offset);offset+=4;
     if(!length||offset+length>bundle.length)throw new Error("Pacote JPEG do demo corrompido.");
     images.push(bundle.subarray(offset,offset+length));offset+=length;
+    if(images.length>1000)throw new Error("Pacote JPEG do demo possui cortes demais.");
   }
-  if(offset!==bundle.length)throw new Error("Pacote JPEG do demo contém dados inesperados.");
+  if(images.length<2)throw new Error("Pacote JPEG do demo possui poucos cortes.");
   return images;
 }
 
@@ -95,7 +96,8 @@ function resampleVolume(sourcePlanes,sourceMeta,outputMeta){
 
 export function decodeDemoJpegTransport(body,sourceMeta=DEMO_TRANSPORT_META,outputMeta=null){
   const bundle=gunzipSync(body);
-  const images=parseJpegBundle(bundle,sourceMeta.sliceCount);
+  const images=parseJpegBundle(bundle);
+  const actualSourceMeta={...sourceMeta,sliceCount:images.length};
   const sourcePlanes=images.map(image=>{
     const decoded=jpeg.decode(image,{useTArray:true,formatAsRGBA:true});
     if(decoded.width!==sourceMeta.columns||decoded.height!==sourceMeta.rows)throw new Error("Dimensão JPEG do demo inválida.");
@@ -103,8 +105,8 @@ export function decodeDemoJpegTransport(body,sourceMeta=DEMO_TRANSPORT_META,outp
     for(let i=0;i<plane.length;i++)plane[i]=decoded.data[i*4];
     return plane;
   });
-  const target=outputMeta||((sourceMeta===DEMO_TRANSPORT_META)?DEMO_OUTPUT_META:sourceMeta);
-  return gzipSync(resampleVolume(sourcePlanes,sourceMeta,target),{level:6});
+  const target=outputMeta||((sourceMeta===DEMO_TRANSPORT_META)?DEMO_OUTPUT_META:actualSourceMeta);
+  return gzipSync(resampleVolume(sourcePlanes,actualSourceMeta,target),{level:6});
 }
 
 export async function bootstrapDemoVolumeFromEnv({env=process.env,putObject=putPrivateObject,decodeTransport=decodeDemoJpegTransport,decryptAsset=decryptDemoTransportAsset}={}){
