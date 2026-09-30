@@ -3,11 +3,14 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import express from "express";
 import jwt from "jsonwebtoken";
+import jpeg from "jpeg-js";
+import {gunzipSync,gzipSync} from "node:zlib";
 import request from "supertest";
 import {
   collectDemoVolumeFromEnv,
   bootstrapDemoVolumeFromEnv,
   createDemoVolumeRouter,
+  decodeDemoJpegTransport,
   DEMO_VOLUME_KEY
 } from "../src/demoVolume.js";
 
@@ -23,27 +26,60 @@ function envFor(buffer,{chunkSize=5,hash=sha256(buffer)}={}){
   return env;
 }
 
+function jpegBundle(values,{rows=2,columns=2}={}){
+  const parts=[];
+  for(const value of values){
+    const rgba=Buffer.alloc(rows*columns*4);
+    for(let i=0;i<rows*columns;i++){
+      rgba[i*4]=value; rgba[i*4+1]=value; rgba[i*4+2]=value; rgba[i*4+3]=255;
+    }
+    const image=jpeg.encode({data:rgba,width:columns,height:rows},90).data;
+    const length=Buffer.alloc(4); length.writeUInt32BE(image.length);
+    parts.push(length,image);
+  }
+  return gzipSync(Buffer.concat(parts));
+}
+
 test("collectDemoVolumeFromEnv reconstructs the exact private gzip payload",()=>{
   const expected=Buffer.from([31,139,8,0,10,20,30,40,50,60,70,80]);
   const actual=collectDemoVolumeFromEnv(envFor(expected));
   assert.deepEqual(actual,expected);
 });
 
-test("bootstrapDemoVolumeFromEnv verifies sha256 before writing to private storage",async()=>{
-  const expected=Buffer.from([31,139,8,0,1,2,3,4,5,6,7,8,9]);
+test("JPEG transport is decoded server-side into a raw gzip volume",()=>{
+  const transport=jpegBundle([40,180]);
+  const stored=decodeDemoJpegTransport(transport,{sliceCount:2,rows:2,columns:2});
+  const raw=gunzipSync(stored);
+  assert.equal(raw.length,8);
+  for(const value of raw.subarray(0,4))assert.ok(Math.abs(value-40)<=4);
+  for(const value of raw.subarray(4,8))assert.ok(Math.abs(value-180)<=4);
+});
+
+test("bootstrapDemoVolumeFromEnv verifies sha256 and stores only decoded private data",async()=>{
+  const transport=Buffer.from([31,139,8,0,1,2,3,4,5,6,7,8,9]);
+  const decoded=Buffer.from([31,139,8,0,99,88,77]);
   let stored=null;
   const result=await bootstrapDemoVolumeFromEnv({
-    env:envFor(expected),
+    env:envFor(transport),
+    decodeTransport:async body=>{
+      assert.deepEqual(body,transport);
+      return decoded;
+    },
     putObject:async input=>{stored=input;}
   });
   assert.equal(result.uploaded,true);
-  assert.equal(result.sizeBytes,expected.length);
+  assert.equal(result.sizeBytes,decoded.length);
+  assert.equal(result.transportSizeBytes,transport.length);
   assert.equal(stored.key,DEMO_VOLUME_KEY);
   assert.equal(stored.contentType,"application/gzip");
-  assert.deepEqual(stored.body,expected);
+  assert.deepEqual(stored.body,decoded);
 
   await assert.rejects(
-    ()=>bootstrapDemoVolumeFromEnv({env:envFor(expected,{hash:"0".repeat(64)}),putObject:async()=>{}}),
+    ()=>bootstrapDemoVolumeFromEnv({
+      env:envFor(transport,{hash:"0".repeat(64)}),
+      decodeTransport:async()=>decoded,
+      putObject:async()=>{}
+    }),
     /integridade|sha256|inválido/i
   );
 });
