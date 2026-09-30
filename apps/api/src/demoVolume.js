@@ -6,8 +6,8 @@ import {gunzipSync,gzipSync} from "node:zlib";
 import {getPrivateObject,putPrivateObject,storageReady} from "./storage.js";
 
 export const DEMO_VOLUME_KEY="demo/odontoview-demo-volume-v2.gz";
-export const DEMO_VOLUME_SHA256="ce5e388bd00119d3bc59c7395a5a846dfcb52ce33d0030e0b1022e1e2bfe29e4";
-export const DEMO_TRANSPORT_META={sliceCount:300,rows:192,columns:192};
+export const DEMO_VOLUME_SHA256="6f89758845da45fb7dffce9c4578cea0c9b85eb5db8ce8c1245342b64d1037e4";
+export const DEMO_TRANSPORT_META={sliceCount:300,rows:128,columns:128};
 
 function chunkKey(index){
   return `DEMO_CBCT_CHUNK_${String(index).padStart(2,"0")}`;
