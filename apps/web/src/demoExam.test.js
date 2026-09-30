@@ -13,7 +13,10 @@ import {
 test("dentist demo remains visible while the private volume is fetched on demand",async()=>{
   assert.equal(await checkDemoExamAvailability(),true);
   assert.equal(DEMO_EXAM.url,"/api/demo/volume");
-  assert.equal(DEMO_VOLUME_META.sliceCount,100);
+  assert.equal(DEMO_VOLUME_META.sliceCount,300);
+  assert.equal(DEMO_VOLUME_META.rows,192);
+  assert.equal(DEMO_VOLUME_META.columns,192);
+  assert.equal(DEMO_VOLUME_META.sliceSpacing,0.2);
 });
 
 test("real demo pixels are wrapped in a deidentified DICOM Part 10 slice",()=>{
@@ -30,12 +33,12 @@ test("real demo pixels are wrapped in a deidentified DICOM Part 10 slice",()=>{
   assert.doesNotMatch(text,/ROGERIO|ROGÉRIO/i);
 });
 
-test("createPatientDemoFiles rebuilds exactly 100 DICOM slices from the private pixel volume",()=>{
+test("createPatientDemoFiles rebuilds exactly 300 DICOM slices from the private pixel volume",()=>{
   const raw=new Uint8Array(DEMO_VOLUME_META.sliceCount*DEMO_VOLUME_META.rows*DEMO_VOLUME_META.columns);
   const files=createPatientDemoFiles(raw);
-  assert.equal(files.length,100);
+  assert.equal(files.length,300);
   assert.equal(files[0].name,"demo-001.dcm");
-  assert.equal(files[99].name,"demo-100.dcm");
+  assert.equal(files[299].name,"demo-300.dcm");
 });
 
 test("loadDemoExam downloads the authenticated private volume and never uses the synthetic fallback",async()=>{
@@ -61,7 +64,7 @@ test("loadDemoExam downloads the authenticated private volume and never uses the
   });
   assert.equal(requestUrl,"/api/demo/volume");
   assert.equal(requestOptions.headers.Authorization,"Bearer dentist-test-token");
-  assert.equal(receivedFiles.length,100);
+  assert.equal(receivedFiles.length,300);
   assert.equal(result.validSeriesCount,1);
 });
 
