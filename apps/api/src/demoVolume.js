@@ -1,13 +1,15 @@
 import crypto from "node:crypto";
+import {readFile} from "node:fs/promises";
 import express from "express";
 import jwt from "jsonwebtoken";
 import jpeg from "jpeg-js";
 import {gunzipSync,gzipSync} from "node:zlib";
 import {getPrivateObject,putPrivateObject,storageReady} from "./storage.js";
 
-export const DEMO_VOLUME_KEY="demo/odontoview-demo-volume-v2.gz";
-export const DEMO_VOLUME_SHA256="6f89758845da45fb7dffce9c4578cea0c9b85eb5db8ce8c1245342b64d1037e4";
-export const DEMO_TRANSPORT_META={sliceCount:300,rows:128,columns:128};
+export const DEMO_VOLUME_KEY="demo/odontoview-demo-volume-real-v1.gz";
+export const DEMO_VOLUME_SHA256="3345318ff2487500cd5ce973a8c4555181074396533fe8ce7505a4279b7e1369";
+export const DEMO_TRANSPORT_META={sliceCount:100,rows:112,columns:112};
+const DEMO_ASSET_URL=new URL("../assets/demo-transport.enc.json",import.meta.url);
 
 function chunkKey(index){
   return `DEMO_CBCT_CHUNK_${String(index).padStart(2,"0")}`;
@@ -32,12 +34,29 @@ export function collectDemoVolumeFromEnv(env=process.env){
   return body;
 }
 
+export async function decryptDemoTransportAsset({keyHex,readAsset=async()=>JSON.parse(await readFile(DEMO_ASSET_URL,"utf8"))}={}){
+  const key=Buffer.from(String(keyHex||""),"hex");
+  if(key.length!==32)throw new Error("Chave do demo CBCT inválida.");
+  const asset=await readAsset();
+  if(asset?.algorithm!=="AES-256-GCM")throw new Error("Formato criptografado do demo CBCT inválido.");
+  const iv=Buffer.from(String(asset.iv||""),"base64");
+  const tag=Buffer.from(String(asset.tag||""),"base64");
+  const encrypted=Buffer.from(String(asset.ciphertext||""),"base64");
+  if(iv.length!==12||tag.length!==16||!encrypted.length)throw new Error("Pacote criptografado do demo CBCT inválido.");
+  const decipher=crypto.createDecipheriv("aes-256-gcm",key,iv);
+  decipher.setAuthTag(tag);
+  const plain=Buffer.concat([decipher.update(encrypted),decipher.final()]);
+  const expected=String(asset.sha256Plain||DEMO_VOLUME_SHA256).toLowerCase();
+  if(digest(plain)!==expected)throw new Error("Integridade do demo CBCT inválida após descriptografia.");
+  return plain;
+}
+
 function parseJpegBundle(bundle,sliceCount){
   const images=[];
   let offset=0;
   for(let index=0;index<sliceCount;index++){
     if(offset+4>bundle.length)throw new Error("Pacote JPEG do demo incompleto.");
-    const length=bundle.readUInt32BE(offset); offset+=4;
+    const length=bundle.readUInt32BE(offset);offset+=4;
     if(!length||offset+length>bundle.length)throw new Error("Pacote JPEG do demo corrompido.");
     images.push(bundle.subarray(offset,offset+length));
     offset+=length;
@@ -62,10 +81,16 @@ export function decodeDemoJpegTransport(body,meta=DEMO_TRANSPORT_META){
 export async function bootstrapDemoVolumeFromEnv({
   env=process.env,
   putObject=putPrivateObject,
-  decodeTransport=decodeDemoJpegTransport
+  decodeTransport=decodeDemoJpegTransport,
+  decryptAsset=decryptDemoTransportAsset
 }={}){
-  const transport=collectDemoVolumeFromEnv(env);
-  if(!transport)return {uploaded:false,reason:"no-chunks"};
+  let transport=collectDemoVolumeFromEnv(env);
+  let source="env";
+  if(!transport&&env.DEMO_CBCT_ASSET_KEY){
+    transport=await decryptAsset({keyHex:env.DEMO_CBCT_ASSET_KEY});
+    source="encrypted-asset";
+  }
+  if(!transport)return {uploaded:false,reason:"no-demo-source"};
   const expected=String(env.DEMO_CBCT_SHA256||DEMO_VOLUME_SHA256).trim().toLowerCase();
   const actual=digest(transport);
   if(!/^[a-f0-9]{64}$/.test(expected)||actual!==expected){
@@ -74,7 +99,7 @@ export async function bootstrapDemoVolumeFromEnv({
   const body=Buffer.from(await decodeTransport(transport));
   if(!body.length)throw new Error("Volume demo decodificado vazio.");
   await putObject({key:DEMO_VOLUME_KEY,body,contentType:"application/gzip"});
-  return {uploaded:true,sizeBytes:body.length,transportSizeBytes:transport.length,sha256:actual,key:DEMO_VOLUME_KEY};
+  return {uploaded:true,source,sizeBytes:body.length,transportSizeBytes:transport.length,sha256:actual,key:DEMO_VOLUME_KEY};
 }
 
 async function bodyToBuffer(body){
