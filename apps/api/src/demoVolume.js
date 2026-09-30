@@ -6,17 +6,14 @@ import jpeg from "jpeg-js";
 import {gunzipSync,gzipSync} from "node:zlib";
 import {getPrivateObject,putPrivateObject,storageReady} from "./storage.js";
 
-export const DEMO_VOLUME_KEY="demo/odontoview-demo-volume-real-v1.gz";
-export const DEMO_VOLUME_SHA256="3345318ff2487500cd5ce973a8c4555181074396533fe8ce7505a4279b7e1369";
-export const DEMO_TRANSPORT_META={sliceCount:100,rows:112,columns:112};
+export const DEMO_VOLUME_KEY="demo/odontoview-demo-volume-real-v2.gz";
+export const DEMO_VOLUME_SHA256="bfb65a80a02c26fcc71a559b01f176d0e3bebd4402773267f8324ff11911f339";
+export const DEMO_TRANSPORT_META={sliceCount:100,rows:64,columns:64};
+export const DEMO_OUTPUT_META={sliceCount:300,rows:192,columns:192};
 const DEMO_ASSET_URL=new URL("../assets/demo-transport.enc.json",import.meta.url);
 
-function chunkKey(index){
-  return `DEMO_CBCT_CHUNK_${String(index).padStart(2,"0")}`;
-}
-function digest(buffer){
-  return crypto.createHash("sha256").update(buffer).digest("hex");
-}
+function chunkKey(index){return `DEMO_CBCT_CHUNK_${String(index).padStart(2,"0")}`;}
+function digest(buffer){return crypto.createHash("sha256").update(buffer).digest("hex");}
 
 export function collectDemoVolumeFromEnv(env=process.env){
   const count=Number(env.DEMO_CBCT_CHUNK_COUNT||0);
@@ -58,44 +55,65 @@ function parseJpegBundle(bundle,sliceCount){
     if(offset+4>bundle.length)throw new Error("Pacote JPEG do demo incompleto.");
     const length=bundle.readUInt32BE(offset);offset+=4;
     if(!length||offset+length>bundle.length)throw new Error("Pacote JPEG do demo corrompido.");
-    images.push(bundle.subarray(offset,offset+length));
-    offset+=length;
+    images.push(bundle.subarray(offset,offset+length));offset+=length;
   }
   if(offset!==bundle.length)throw new Error("Pacote JPEG do demo contém dados inesperados.");
   return images;
 }
 
-export function decodeDemoJpegTransport(body,meta=DEMO_TRANSPORT_META){
-  const bundle=gunzipSync(body);
-  const images=parseJpegBundle(bundle,meta.sliceCount);
-  const plane=meta.rows*meta.columns;
-  const raw=Buffer.alloc(meta.sliceCount*plane);
-  images.forEach((image,z)=>{
-    const decoded=jpeg.decode(image,{useTArray:true,formatAsRGBA:true});
-    if(decoded.width!==meta.columns||decoded.height!==meta.rows)throw new Error("Dimensão JPEG do demo inválida.");
-    for(let i=0;i<plane;i++)raw[z*plane+i]=decoded.data[i*4];
-  });
-  return gzipSync(raw,{level:9});
+function resizePlaneBilinear(source,srcRows,srcCols,dstRows,dstCols){
+  const out=Buffer.alloc(dstRows*dstCols);
+  const sx=(srcCols-1)/Math.max(1,dstCols-1), sy=(srcRows-1)/Math.max(1,dstRows-1);
+  for(let y=0;y<dstRows;y++){
+    const fy=y*sy,y0=Math.floor(fy),y1=Math.min(srcRows-1,y0+1),wy=fy-y0;
+    for(let x=0;x<dstCols;x++){
+      const fx=x*sx,x0=Math.floor(fx),x1=Math.min(srcCols-1,x0+1),wx=fx-x0;
+      const a=source[y0*srcCols+x0]*(1-wx)+source[y0*srcCols+x1]*wx;
+      const b=source[y1*srcCols+x0]*(1-wx)+source[y1*srcCols+x1]*wx;
+      out[y*dstCols+x]=Math.max(0,Math.min(255,Math.round(a*(1-wy)+b*wy)));
+    }
+  }
+  return out;
 }
 
-export async function bootstrapDemoVolumeFromEnv({
-  env=process.env,
-  putObject=putPrivateObject,
-  decodeTransport=decodeDemoJpegTransport,
-  decryptAsset=decryptDemoTransportAsset
-}={}){
-  let transport=collectDemoVolumeFromEnv(env);
-  let source="env";
-  if(!transport&&env.DEMO_CBCT_ASSET_KEY){
-    transport=await decryptAsset({keyHex:env.DEMO_CBCT_ASSET_KEY});
-    source="encrypted-asset";
+function resampleVolume(sourcePlanes,sourceMeta,outputMeta){
+  if(sourceMeta.sliceCount===outputMeta.sliceCount&&sourceMeta.rows===outputMeta.rows&&sourceMeta.columns===outputMeta.columns){
+    return Buffer.concat(sourcePlanes);
   }
+  const resized=sourcePlanes.map(plane=>resizePlaneBilinear(plane,sourceMeta.rows,sourceMeta.columns,outputMeta.rows,outputMeta.columns));
+  const dstPlane=outputMeta.rows*outputMeta.columns;
+  const out=Buffer.alloc(outputMeta.sliceCount*dstPlane);
+  const zScale=(sourceMeta.sliceCount-1)/Math.max(1,outputMeta.sliceCount-1);
+  for(let z=0;z<outputMeta.sliceCount;z++){
+    const fz=z*zScale,z0=Math.floor(fz),z1=Math.min(sourceMeta.sliceCount-1,z0+1),w=fz-z0;
+    const a=resized[z0],b=resized[z1],base=z*dstPlane;
+    if(z0===z1){a.copy(out,base);continue;}
+    for(let i=0;i<dstPlane;i++)out[base+i]=Math.round(a[i]*(1-w)+b[i]*w);
+  }
+  return out;
+}
+
+export function decodeDemoJpegTransport(body,sourceMeta=DEMO_TRANSPORT_META,outputMeta=null){
+  const bundle=gunzipSync(body);
+  const images=parseJpegBundle(bundle,sourceMeta.sliceCount);
+  const sourcePlanes=images.map(image=>{
+    const decoded=jpeg.decode(image,{useTArray:true,formatAsRGBA:true});
+    if(decoded.width!==sourceMeta.columns||decoded.height!==sourceMeta.rows)throw new Error("Dimensão JPEG do demo inválida.");
+    const plane=Buffer.alloc(sourceMeta.rows*sourceMeta.columns);
+    for(let i=0;i<plane.length;i++)plane[i]=decoded.data[i*4];
+    return plane;
+  });
+  const target=outputMeta||((sourceMeta===DEMO_TRANSPORT_META)?DEMO_OUTPUT_META:sourceMeta);
+  return gzipSync(resampleVolume(sourcePlanes,sourceMeta,target),{level:6});
+}
+
+export async function bootstrapDemoVolumeFromEnv({env=process.env,putObject=putPrivateObject,decodeTransport=decodeDemoJpegTransport,decryptAsset=decryptDemoTransportAsset}={}){
+  let transport=collectDemoVolumeFromEnv(env),source="env";
+  if(!transport&&env.DEMO_CBCT_ASSET_KEY){transport=await decryptAsset({keyHex:env.DEMO_CBCT_ASSET_KEY});source="encrypted-asset";}
   if(!transport)return {uploaded:false,reason:"no-demo-source"};
   const expected=String(env.DEMO_CBCT_SHA256||DEMO_VOLUME_SHA256).trim().toLowerCase();
   const actual=digest(transport);
-  if(!/^[a-f0-9]{64}$/.test(expected)||actual!==expected){
-    throw new Error("Integridade do demo CBCT inválida (sha256 não confere).");
-  }
+  if(!/^[a-f0-9]{64}$/.test(expected)||actual!==expected)throw new Error("Integridade do demo CBCT inválida (sha256 não confere).");
   const body=Buffer.from(await decodeTransport(transport));
   if(!body.length)throw new Error("Volume demo decodificado vazio.");
   await putObject({key:DEMO_VOLUME_KEY,body,contentType:"application/gzip"});
@@ -105,42 +123,22 @@ export async function bootstrapDemoVolumeFromEnv({
 async function bodyToBuffer(body){
   if(!body)return Buffer.alloc(0);
   if(typeof body.transformToByteArray==="function")return Buffer.from(await body.transformToByteArray());
-  const chunks=[];
-  for await(const chunk of body)chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks);
+  const chunks=[];for await(const chunk of body)chunks.push(Buffer.from(chunk));return Buffer.concat(chunks);
 }
+function bearer(req){const header=String(req.headers.authorization||"");return header.startsWith("Bearer ")?header.slice(7):null;}
 
-function bearer(req){
-  const header=String(req.headers.authorization||"");
-  return header.startsWith("Bearer ")?header.slice(7):null;
-}
-
-export function createDemoVolumeRouter({
-  jwtSecret,
-  getObject=getPrivateObject,
-  isStorageReady=storageReady
-}={}){
+export function createDemoVolumeRouter({jwtSecret,getObject=getPrivateObject,isStorageReady=storageReady}={}){
   if(!jwtSecret)throw new Error("JWT secret obrigatório para o demo privado.");
   const router=express.Router();
   router.get("/api/demo/volume",async(req,res,next)=>{
     try{
-      const token=bearer(req);
-      if(!token)return res.status(401).json({error:"Autenticação necessária."});
-      let auth;
-      try{auth=jwt.verify(token,jwtSecret);}catch{return res.status(401).json({error:"Sessão inválida ou expirada."});}
-      if(!["DENTIST","ADMIN"].includes(String(auth?.role||""))){
-        return res.status(403).json({error:"Demo disponível apenas para dentistas e administradores."});
-      }
+      const token=bearer(req);if(!token)return res.status(401).json({error:"Autenticação necessária."});
+      let auth;try{auth=jwt.verify(token,jwtSecret);}catch{return res.status(401).json({error:"Sessão inválida ou expirada."});}
+      if(!["DENTIST","ADMIN"].includes(String(auth?.role||"")))return res.status(403).json({error:"Demo disponível apenas para dentistas e administradores."});
       if(!isStorageReady())return res.status(503).json({error:"Volume demo ainda não está disponível."});
-      const object=await getObject(DEMO_VOLUME_KEY);
-      const bytes=await bodyToBuffer(object?.Body);
+      const object=await getObject(DEMO_VOLUME_KEY),bytes=await bodyToBuffer(object?.Body);
       if(!bytes.length)return res.status(503).json({error:"Volume demo vazio ou indisponível."});
-      res.set("Content-Type","application/gzip");
-      res.set("Content-Length",String(bytes.length));
-      res.set("Cache-Control","private, no-store");
-      res.set("X-Content-Type-Options","nosniff");
-      res.set("Content-Disposition","inline; filename=odontoview-demo-volume.gz");
-      res.send(bytes);
+      res.set("Content-Type","application/gzip");res.set("Content-Length",String(bytes.length));res.set("Cache-Control","private, no-store");res.set("X-Content-Type-Options","nosniff");res.set("Content-Disposition","inline; filename=odontoview-demo-volume.gz");res.send(bytes);
     }catch(error){next(error);}
   });
   return router;
