@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImplantLibraryEntry>
+  <RegistrationClickCenter><x>0</x><y>0</y><z>0</z></RegistrationClickCenter>
+  <AxisAsymmetric><x>0</x><y>0</y><z>-1</z></AxisAsymmetric>
+  <ImplantFilename>PILAR DIGITAL HI 3.5 - ANALOGO DIGITAL HI 3.5-1.sdfa</ImplantFilename>
+  <DisplayInformation>Implacil - HI 3.5 - Pilar Digital</DisplayInformation>
+  <IsWithInterface>true</IsWithInterface>
+  <IsWithRotationLock>true</IsWithRotationLock>
+  <SupportOrientation>-1</SupportOrientation>
+  <Supplier>Implacil de Bortoli Material Odontologico Ltda</Supplier>
+  <SupplierLink>https://implacil.example/</SupplierLink>
+  <AxisOcclusal><x>0</x><y>1</y><z>0</z></AxisOcclusal>
+  <TypeConfig>
+    <ImplantTypeConfig>
+      <DisplayInformation>PD38 C</DisplayInformation>
+      <Keyword>TransferPilarDigitalC</Keyword>
+      <SubtypeConfig>
+        <ImplantSubtypeConfig>
+          <MarkerFilename>TRANSFER DE ESCANEAMENTO 1.STL</MarkerFilename>
+          <SupportFilename>Base T 3.8 SF 1.sdfa</SupportFilename>
+          <InterfaceFilename>PILAR DIGITAL AR HI 3.5X1.sdfa</InterfaceFilename>
+          <DisplayInformation>1.0mm</DisplayInformation>
+          <Keyword>10mm</Keyword>
+          <AxisScrewChannel><x>0</x><y>1</y><z>0</z></AxisScrewChannel>
+          <ReferenceHeightOffset>0</ReferenceHeightOffset>
+          <ReferenceRotationOffset>30</ReferenceRotationOffset>
+          <RotationLockCount>6</RotationLockCount>
+        </ImplantSubtypeConfig>
+        <ImplantSubtypeConfig>
+          <MarkerFilename>TRANSFER DE ESCANEAMENTO 2.STL</MarkerFilename>
+          <SupportFilename>Base T 3.8 SF 2.sdfa</SupportFilename>
+          <InterfaceFilename>PILAR DIGITAL AR HI 3.5X2.sdfa</InterfaceFilename>
+          <DisplayInformation>2.0mm</DisplayInformation>
+          <Keyword>20mm</Keyword>
+          <ReferenceRotationOffset>30</ReferenceRotationOffset>
+          <RotationLockCount>6</RotationLockCount>
+        </ImplantSubtypeConfig>
+        <ImplantSubtypeConfig>
+          <MarkerFilename>TRANSFER DE ESCANEAMENTO 3.STL</MarkerFilename>
+          <SupportFilename>Base T 3.8 SF 3.sdfa</SupportFilename>
+          <InterfaceFilename>PILAR DIGITAL AR HI 3.5X3.sdfa</InterfaceFilename>
+          <DisplayInformation>3.0mm</DisplayInformation>
+          <Keyword>30mm</Keyword>
+          <ReferenceRotationOffset>30</ReferenceRotationOffset>
+          <RotationLockCount>6</RotationLockCount>
+        </ImplantSubtypeConfig>
+      </SubtypeConfig>
+    </ImplantTypeConfig>
+  </TypeConfig>
+  <FileSignatures>
+    <FileSignature><Filename>Base T 3.8 SF 1.sdfa</Filename><Signature>fixture-signature</Signature></FileSignature>
+  </FileSignatures>
+</ImplantLibraryEntry>

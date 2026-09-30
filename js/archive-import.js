@@ -5,7 +5,20 @@
   function isArchive(file) {
     return /\.(zip|rar|r\d\d|z\d\d|zip\.\d+)$/i.test(file.name) || /(?:zip|rar)/i.test(file.type);
   }
-  function extract(file, {signal, onProgress} = {}) {
+  function extractedFile(item, mode) {
+    const lower=String(item.name||'').toLowerCase();
+    const type=mode==='dicom'
+      ? 'application/dicom'
+      : lower.endsWith('.xml')
+        ? 'application/xml'
+        : lower.endsWith('.stl')
+          ? 'model/stl'
+          : 'application/octet-stream';
+    const file=new File([item.buffer],item.name,{type});
+    try {Object.defineProperty(file,'archivePath',{value:item.name,enumerable:false});} catch {}
+    return file;
+  }
+  function extractMode(file, mode, {signal, onProgress} = {}) {
     return new Promise((resolve,reject) => {
       if (signal?.aborted) return reject(abortError());
       if (/\.part\d+\.rar$|\.[rz]\d\d$|\.zip\.\d+$/i.test(file.name)) return reject(new Error('Arquivos divididos em partes não são suportados. Use um ZIP ou RAR único.'));
@@ -14,19 +27,29 @@
       const cleanup = () => { clearTimeout(timer); worker.terminate(); signal?.removeEventListener('abort',cancel); };
       const finish = (error,result) => {cleanup(); error ? reject(error) : resolve(result);};
       const cancel = () => finish(abortError());
-      const timer = setTimeout(()=>finish(new Error('A extração excedeu o tempo disponível. Tente um exame menor.')),120000);
+      const timer = setTimeout(()=>finish(new Error('A extração excedeu o tempo disponível. Tente um arquivo menor.')),120000);
       signal?.addEventListener('abort',cancel,{once:true});
       worker.onerror = () => finish(new Error('Não foi possível iniciar o extrator. Conecte-se à internet e reabra o aplicativo.'));
       worker.onmessage = ({data}) => {
         if (data.type==='progress') onProgress?.(data);
         if (data.type==='error') finish(new Error(data.message));
         if (data.type==='done') {
-          if (!data.files.length) return finish(new Error('Nenhum arquivo DICOM encontrado no ZIP ou RAR.'));
-          finish(null,data.files.map(item=>new File([item.buffer],item.name,{type:'application/dicom'})));
+          if (!data.files.length) {
+            return finish(new Error(mode==='implant-library'
+              ? 'Nenhum config.xml, STL ou SDFA de biblioteca foi encontrado no ZIP ou RAR.'
+              : 'Nenhum arquivo DICOM encontrado no ZIP ou RAR.'));
+          }
+          finish(null,data.files.map(item=>extractedFile(item,mode)));
         }
       };
-      worker.postMessage({file});
+      worker.postMessage({file,mode});
     });
+  }
+  function extract(file, options = {}) {
+    return extractMode(file,'dicom',options);
+  }
+  function extractImplantLibrary(file, options = {}) {
+    return extractMode(file,'implant-library',options);
   }
   function chooseSeries(report, signal) {
     if (signal?.aborted) return Promise.reject(abortError());
@@ -52,5 +75,5 @@
       document.body.append(dialog);dialog.showModal();
     });
   }
-  window.OdontoArchiveImport={isArchive,extract,chooseSeries};
+  window.OdontoArchiveImport={isArchive,extract,extractImplantLibrary,chooseSeries};
 })();

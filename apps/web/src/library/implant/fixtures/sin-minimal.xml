@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImplantLibraryEntry>
+  <RegistrationClickCenter><x>-1.6</x><y>11.82</y><z>-0.12</z></RegistrationClickCenter>
+  <AxisAsymmetric><x>-1</x><y>0</y><z>0</z></AxisAsymmetric>
+  <MarkerFilename>J_CMSW.stl</MarkerFilename>
+  <ScrewFilename>160323_PT 16 - Parafuso de retencao.sdfa</ScrewFilename>
+  <ImplantFilename>AD_CMSW.stl</ImplantFilename>
+  <DisplayInformation>SIN | CM 16° (STRONG SW)</DisplayInformation>
+  <IsWithInterface>true</IsWithInterface>
+  <IsWithRotationLock>true</IsWithRotationLock>
+  <SupportOrientation>1</SupportOrientation>
+  <AxisScrewChannel><x>0</x><y>1</y><z>0</z></AxisScrewChannel>
+  <AxisScrewChannelMaxUserAngle IsDesignConstraint="true">25</AxisScrewChannelMaxUserAngle>
+  <Supplier>SIN Implante</Supplier>
+  <SupplierLink>https://sin.example/</SupplierLink>
+  <AxisOcclusal><x>0</x><y>1</y><z>0</z></AxisOcclusal>
+  <TypeConfig>
+    <ImplantTypeConfig>
+      <InterfaceFilename>ICMT 0502.stl</InterfaceFilename>
+      <DisplayInformation>ICMT 0502</DisplayInformation>
+      <Keyword>ICMT0502</Keyword>
+      <SubtypeConfig>
+        <ImplantSubtypeConfig><SupportFilename>G_ICMT_0502.stl</SupportFilename><DisplayInformation>Padrao</DisplayInformation><Keyword>Padro</Keyword></ImplantSubtypeConfig>
+        <ImplantSubtypeConfig><SupportFilename>G_ICMT_0502+2.stl</SupportFilename><DisplayInformation>+0.02mm</DisplayInformation><Keyword>002mm</Keyword></ImplantSubtypeConfig>
+        <ImplantSubtypeConfig><SupportFilename>G_ICMT_0502+4.stl</SupportFilename><DisplayInformation>+0.04mm</DisplayInformation><Keyword>004mm</Keyword></ImplantSubtypeConfig>
+        <ImplantSubtypeConfig><SupportFilename>G_ICMT_0502+6.stl</SupportFilename><DisplayInformation>+0.06mm</DisplayInformation><Keyword>006mm</Keyword></ImplantSubtypeConfig>
+      </SubtypeConfig>
+    </ImplantTypeConfig>
+  </TypeConfig>
+</ImplantLibraryEntry>

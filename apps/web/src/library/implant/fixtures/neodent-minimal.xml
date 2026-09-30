@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImplantLibraryEntry>
+  <RegistrationClickCenter><x>0.07</x><y>2.5</y><z>5.15</z></RegistrationClickCenter>
+  <AxisAsymmetric><x>0</x><y>1</y><z>0</z></AxisAsymmetric>
+  <MarkerFilename>scanmarker2_talmax.stl</MarkerFilename>
+  <ImplantFilename>EFF305_29_D ANALOGO DO IMPLANTE 4_00 EGM.stl</ImplantFilename>
+  <DisplayInformation>[A3.2] Neodent Grand Morse</DisplayInformation>
+  <IsWithInterface>false</IsWithInterface>
+  <IsWithRotationLock>true</IsWithRotationLock>
+  <SupportOrientation>1</SupportOrientation>
+  <AxisOcclusal><x>0</x><y>0</y><z>1</z></AxisOcclusal>
+  <TypeConfig>
+    <ImplantTypeConfig>
+      <SupportFilename>grandmorse_hex.stl</SupportFilename>
+      <DisplayInformation>Implante</DisplayInformation>
+      <Keyword>Implante</Keyword>
+      <SubtypeConfig>
+        <ImplantSubtypeConfig>
+          <SupportFilename>grandmorse_hex.stl</SupportFilename>
+          <DisplayInformation>[3.0] Hex</DisplayInformation>
+          <Keyword>InHex</Keyword>
+        </ImplantSubtypeConfig>
+        <ImplantSubtypeConfig>
+          <SupportFilename>grandmorse_rot.stl</SupportFilename>
+          <DisplayInformation>[3.0] Rot</DisplayInformation>
+          <Keyword>InNoHex</Keyword>
+        </ImplantSubtypeConfig>
+      </SubtypeConfig>
+    </ImplantTypeConfig>
+    <ImplantTypeConfig>
+      <DisplayInformation>Link</DisplayInformation>
+      <Keyword>Interface</Keyword>
+      <SubtypeConfig>
+        <ImplantSubtypeConfig>
+          <SupportFilename>interface_small_3_8_cinta_150.stl</SupportFilename>
+          <InterfaceFilename>LINK CAD CAM CINTA 1_50MM SMALL.stl</InterfaceFilename>
+          <DisplayInformation>[Aberto] Cinta 1.5mm SMALL</DisplayInformation>
+          <Keyword>OutHex</Keyword>
+        </ImplantSubtypeConfig>
+        <ImplantSubtypeConfig>
+          <SupportFilename>interface_large_4_4_closed_cinta_350.stl</SupportFilename>
+          <InterfaceFilename>LINK CAD CAM CINTA 3_50MM LARGE.stl</InterfaceFilename>
+          <DisplayInformation>[Fechado] Cinta 3.5mm LARGE</DisplayInformation>
+          <Keyword>FechadoCinta35mmLARGE</Keyword>
+        </ImplantSubtypeConfig>
+      </SubtypeConfig>
+    </ImplantTypeConfig>
+  </TypeConfig>
+</ImplantLibraryEntry>
